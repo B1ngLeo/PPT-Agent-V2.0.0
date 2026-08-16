@@ -17,6 +17,7 @@ packages/contracts/state-machines.json
 services/worker/contracts/
 docs/evidence/*.json
 docs/evidence/recovery/*.json
+docs/evidence/security/*.json
 tests/golden/
 tests/security-fixtures/
 designs/

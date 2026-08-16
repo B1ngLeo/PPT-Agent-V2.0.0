@@ -57,6 +57,12 @@ JOB_STAGES = (
 )
 SLIDE_STATUSES = ("pending", "running", "ready", "failed", "retrying", "cancelled")
 SLIDE_STAGES = ("content_generation", "rendering", "qa")
+ORGANIZATION_KINDS = ("synthetic", "personal", "team")
+USER_STATUSES = ("active", "disabled")
+MEMBERSHIP_ROLES = ("owner", "member")
+MEMBERSHIP_STATUSES = ("active", "revoked")
+ARTIFACT_PARTITIONS = ("quarantine", "clean", "tmp", "published")
+ARTIFACT_STATUSES = ("pending", "published", "revoked", "deleted")
 TERMINAL_JOB_STATUSES = frozenset(
     {"cancelled", "succeeded", "partially_succeeded", "failed"}
 )
@@ -70,12 +76,51 @@ def _values(values: tuple[str, ...]) -> str:
     return ", ".join(f"'{value}'" for value in values)
 
 
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("issuer", "subject", name="uq_users_issuer_subject"),
+        CheckConstraint(f"status IN ({_values(USER_STATUSES)})", name="valid_status"),
+        Index("ix_users_email_normalized", "email_normalized"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    issuer: Mapped[str] = mapped_column(String(320), nullable=False)
+    subject: Mapped[str] = mapped_column(String(320), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320))
+    email_normalized: Mapped[str | None] = mapped_column(String(320))
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    last_login_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Organization(Base):
     __tablename__ = "organizations"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_organizations_slug"),
+        UniqueConstraint(
+            "personal_owner_user_id", name="uq_organizations_personal_owner_user"
+        ),
+        CheckConstraint(
+            f"kind IN ({_values(ORGANIZATION_KINDS)})", name="valid_kind"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="synthetic")
     name: Mapped[str] = mapped_column(String(160), nullable=False)
+    slug: Mapped[str] = mapped_column(String(160), nullable=False)
+    personal_owner_user_id: Mapped[str | None] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("users.id", ondelete="RESTRICT")
+    )
+    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -95,6 +140,36 @@ class ServiceActor(Base):
         String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "user_id", name="uq_memberships_organization_user"
+        ),
+        CheckConstraint(f"role IN ({_values(MEMBERSHIP_ROLES)})", name="valid_role"),
+        CheckConstraint(
+            f"status IN ({_values(MEMBERSHIP_STATUSES)})", name="valid_status"
+        ),
+        Index("ix_memberships_user_status", "user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="owner")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -302,12 +377,6 @@ class OutboxEvent(Base):
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["actor_id", "organization_id"],
-            ["service_actors.id", "service_actors.organization_id"],
-            ondelete="CASCADE",
-            name="fk_idempotency_records_actor_org",
-        ),
         UniqueConstraint(
             "organization_id",
             "actor_id",
@@ -321,6 +390,7 @@ class IdempotencyRecord(Base):
     id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     actor_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="service")
     route: Mapped[str] = mapped_column(String(320), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
     request_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -390,4 +460,153 @@ class UsageReservation(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Entitlement(Base):
+    __tablename__ = "entitlements"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_entitlements_organization"),
+        CheckConstraint("max_slides_per_deck BETWEEN 1 AND 100", name="slides_bounded"),
+        CheckConstraint("monthly_slide_limit >= 0", name="monthly_slides_nonnegative"),
+        CheckConstraint("max_concurrent_jobs >= 1", name="concurrency_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    plan_code: Mapped[str] = mapped_column(String(64), nullable=False, default="p1-default")
+    max_slides_per_deck: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    monthly_slide_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
+    max_concurrent_jobs: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    allowed_modes: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UsageLedger(Base):
+    __tablename__ = "usage_ledger"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "dedupe_key", name="uq_usage_ledger_org_dedupe"
+        ),
+        CheckConstraint("quantity >= 0", name="quantity_nonnegative"),
+        Index("ix_usage_ledger_org_occurred", "organization_id", "occurred_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    job_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    metric: Mapped[str] = mapped_column(String(64), nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(320), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Artifact(Base):
+    __tablename__ = "artifacts"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_artifacts_id_organization"),
+        UniqueConstraint("object_key", name="uq_artifacts_object_key"),
+        CheckConstraint(
+            f"partition IN ({_values(ARTIFACT_PARTITIONS)})", name="valid_partition"
+        ),
+        CheckConstraint(
+            f"status IN ({_values(ARTIFACT_STATUSES)})", name="valid_status"
+        ),
+        CheckConstraint("size_bytes >= 0", name="size_nonnegative"),
+        Index("ix_artifacts_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    artifact_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    partition: Mapped[str] = mapped_column(String(16), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    retention_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ArtifactDownloadGrant(Base):
+    __tablename__ = "artifact_download_grants"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_artifact_download_grants_artifact_org",
+        ),
+        Index("ix_artifact_download_grants_expires", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    request_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_org_created", "organization_id", "created_at"),
+        Index("ix_audit_logs_request", "request_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    resource_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    action: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

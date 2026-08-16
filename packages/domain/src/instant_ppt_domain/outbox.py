@@ -55,7 +55,11 @@ def enqueue_expired_job_recoveries(
                     aggregate_id=job.id,
                     dedupe_key=dedupe_key,
                     destination="instant_ppt.process_fake_job",
-                    payload={"jobId": job.id, "reason": "lease_expired"},
+                    payload={
+                        "jobId": job.id,
+                        "organizationId": job.organization_id,
+                        "reason": "lease_expired",
+                    },
                     status="pending",
                     available_at=now,
                 )

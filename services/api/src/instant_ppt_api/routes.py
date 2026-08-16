@@ -9,8 +9,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from instant_ppt_domain.config import DomainSettings
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.service import (
-    SYNTHETIC_ACTOR_ID,
-    SYNTHETIC_ORGANIZATION_ID,
     CreateJobCommand,
     IdempotencyConflict,
     InvalidTransition,
@@ -21,8 +19,10 @@ from instant_ppt_domain.service import (
     retry_slide,
     serialize_job_snapshot,
 )
+from instant_ppt_domain.tenancy import append_audit
 from sqlalchemy.orm import Session, sessionmaker
 
+from instant_ppt_api.auth import AuthDependency
 from instant_ppt_api.events import stream_events
 from instant_ppt_api.problems import problem_response
 from instant_ppt_api.schemas import CreateGenerationJobRequest, MutationRequest
@@ -43,11 +43,8 @@ def create_job(
     draft_id: str,
     payload: CreateGenerationJobRequest,
     request: Request,
+    auth: AuthDependency,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
-    organization_id: Annotated[
-        str, Header(alias="X-Organization-ID")
-    ] = SYNTHETIC_ORGANIZATION_ID,
-    actor_id: Annotated[str, Header(alias="X-Actor-ID")] = SYNTHETIC_ACTOR_ID,
 ) -> JSONResponse:
     data = payload.data
     body = payload.model_dump(by_alias=True, mode="json")
@@ -56,8 +53,8 @@ def create_job(
             result = create_generation_job(
                 session,
                 CreateJobCommand(
-                    organization_id=organization_id,
-                    actor_id=actor_id,
+                    organization_id=auth.organization_id,
+                    actor_id=auth.user_id,
                     draft_id=draft_id,
                     idempotency_key=idempotency_key,
                     request_body=body,
@@ -71,6 +68,15 @@ def create_job(
                     crash_once_at_position=data.crash_once_at_position,
                 ),
             )
+            append_audit(
+                session,
+                auth,
+                resource_type="generation_job",
+                resource_id=result.job_id,
+                action="generation_job.created",
+                request_id=request.state.request_id,
+                outcome="replayed" if result.replayed else "succeeded",
+            )
         headers = {**result.headers, "Idempotency-Replayed": str(result.replayed).lower()}
         return JSONResponse(result.body, status_code=result.status_code, headers=headers)
     except IdempotencyConflict as error:
@@ -80,6 +86,7 @@ def create_job(
             title="幂等键已被不同请求使用",
             detail=str(error),
             instance=str(request.url.path),
+            request_id=request.state.request_id,
         )
 
 
@@ -87,13 +94,11 @@ def create_job(
 def get_generation_job(
     job_id: str,
     request: Request,
-    organization_id: Annotated[
-        str, Header(alias="X-Organization-ID")
-    ] = SYNTHETIC_ORGANIZATION_ID,
+    auth: AuthDependency,
 ) -> JSONResponse:
     try:
         with _factory(request)() as session:
-            job = get_job(session, job_id, organization_id)
+            job = get_job(session, job_id, auth.organization_id)
             snapshot = serialize_job_snapshot(session, job)
         return JSONResponse(
             {
@@ -111,6 +116,7 @@ def get_generation_job(
             title="资源不存在",
             detail="任务不存在或无权访问",
             instance=str(request.url.path),
+            request_id=request.state.request_id,
         )
 
 
@@ -119,16 +125,23 @@ def cancel_generation_job(
     job_id: str,
     payload: MutationRequest,
     request: Request,
+    auth: AuthDependency,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
-    organization_id: Annotated[
-        str, Header(alias="X-Organization-ID")
-    ] = SYNTHETIC_ORGANIZATION_ID,
 ) -> JSONResponse:
     del payload, idempotency_key
     try:
         with _factory(request).begin() as session:
-            job = request_cancel(session, job_id, organization_id)
+            job = request_cancel(session, job_id, auth.organization_id)
             snapshot = serialize_job_snapshot(session, job)
+            append_audit(
+                session,
+                auth,
+                resource_type="generation_job",
+                resource_id=job_id,
+                action="generation_job.cancel.requested",
+                request_id=request.state.request_id,
+                outcome="succeeded",
+            )
         return JSONResponse(
             {
                 "schemaVersion": 1,
@@ -147,6 +160,7 @@ def cancel_generation_job(
             title="资源不存在",
             detail="任务不存在或无权访问",
             instance=str(request.url.path),
+            request_id=request.state.request_id,
         )
 
 
@@ -156,15 +170,22 @@ def retry_generation_slide(
     slide_id: str,
     payload: MutationRequest,
     request: Request,
+    auth: AuthDependency,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
-    organization_id: Annotated[
-        str, Header(alias="X-Organization-ID")
-    ] = SYNTHETIC_ORGANIZATION_ID,
 ) -> JSONResponse:
     del payload, idempotency_key
     try:
         with _factory(request).begin() as session:
-            slide = retry_slide(session, job_id, slide_id, organization_id)
+            slide = retry_slide(session, job_id, slide_id, auth.organization_id)
+            append_audit(
+                session,
+                auth,
+                resource_type="generation_job_slide",
+                resource_id=slide_id,
+                action="generation_slide.retry.requested",
+                request_id=request.state.request_id,
+                outcome="succeeded",
+            )
         return JSONResponse(
             {
                 "schemaVersion": 1,
@@ -183,6 +204,7 @@ def retry_generation_slide(
             title="资源不存在",
             detail="任务或页面不存在",
             instance=str(request.url.path),
+            request_id=request.state.request_id,
         )
     except InvalidTransition as error:
         return problem_response(
@@ -191,6 +213,7 @@ def retry_generation_slide(
             title="当前状态不能重试",
             detail=str(error),
             instance=str(request.url.path),
+            request_id=request.state.request_id,
         )
 
 
@@ -198,14 +221,12 @@ def retry_generation_slide(
 async def generation_job_events(
     job_id: str,
     request: Request,
+    auth: AuthDependency,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
-    organization_id: Annotated[
-        str, Header(alias="X-Organization-ID")
-    ] = SYNTHETIC_ORGANIZATION_ID,
 ) -> StreamingResponse | JSONResponse:
     try:
         with _factory(request)() as session:
-            get_job(session, job_id, organization_id)
+            get_job(session, job_id, auth.organization_id)
     except ResourceNotFound:
         return problem_response(
             status=404,
@@ -213,6 +234,7 @@ async def generation_job_events(
             title="资源不存在",
             detail="任务不存在或无权访问",
             instance=str(request.url.path),
+            request_id=request.state.request_id,
         )
     settings = _settings(request)
     return StreamingResponse(
@@ -221,7 +243,7 @@ async def generation_job_events(
             _factory(request),
             redis_url=settings.redis_events_url,
             job_id=job_id,
-            organization_id=organization_id,
+            organization_id=auth.organization_id,
             last_event_id=last_event_id,
             heartbeat_seconds=settings.sse_heartbeat_seconds,
         ),

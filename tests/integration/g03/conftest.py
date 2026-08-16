@@ -11,23 +11,25 @@ from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
+from .helpers import MemoryObjectStore
+
 
 @pytest.fixture(scope="session")
 def database_url() -> str:
-    value = os.environ.get("G02_TEST_DATABASE_URL")
+    value = os.environ.get("G03_TEST_DATABASE_URL")
     if not value:
-        pytest.fail("G02_TEST_DATABASE_URL is required; use pnpm verify:integration")
+        pytest.fail("G03_TEST_DATABASE_URL is required; use pnpm verify:integration")
     return value
 
 
 @pytest.fixture(scope="session")
 def redis_events_url() -> str:
-    return os.environ.get("G02_TEST_REDIS_EVENTS_URL", "redis://localhost:6379/14")
+    return os.environ.get("G03_TEST_REDIS_EVENTS_URL", "redis://localhost:6379/12")
 
 
 @pytest.fixture(scope="session")
 def celery_broker_url() -> str:
-    return os.environ.get("G02_TEST_CELERY_BROKER_URL", "redis://localhost:6379/15")
+    return os.environ.get("G03_TEST_CELERY_BROKER_URL", "redis://localhost:6379/13")
 
 
 @pytest.fixture(scope="session")
@@ -39,7 +41,7 @@ def session_factory(database_url: str) -> sessionmaker[Session]:
 
 
 @pytest.fixture(autouse=True)
-def clean_g02_state(
+def clean_g03_state(
     session_factory: sessionmaker[Session], redis_events_url: str, celery_broker_url: str
 ) -> None:
     table_names = (
@@ -68,11 +70,17 @@ def clean_g02_state(
 
 
 @pytest.fixture
+def memory_store() -> MemoryObjectStore:
+    return MemoryObjectStore()
+
+
+@pytest.fixture
 def client(
     session_factory: sessionmaker[Session],
     database_url: str,
     redis_events_url: str,
     celery_broker_url: str,
+    memory_store: MemoryObjectStore,
 ) -> TestClient:
     settings = DomainSettings(
         database_url=database_url,
@@ -81,6 +89,15 @@ def client(
         sse_heartbeat_seconds=0.1,
         outbox_poll_seconds=0.05,
         worker_lease_seconds=30,
+        app_environment="test",
+        auth_mode="local",
+        download_url_ttl_seconds=15,
     )
-    with TestClient(create_app(settings=settings, session_factory=session_factory)) as test_client:
+    with TestClient(
+        create_app(
+            settings=settings,
+            session_factory=session_factory,
+            object_store=memory_store,
+        )
+    ) as test_client:
         yield test_client

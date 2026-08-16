@@ -23,6 +23,7 @@ from instant_ppt_domain.models import (
     PublishedFixtureManifest,
     ServiceActor,
     UsageReservation,
+    User,
 )
 from instant_ppt_domain.state import (
     InvalidTransition,
@@ -97,23 +98,30 @@ def canonical_sha256(value: Any) -> str:
 
 def ensure_synthetic_context(
     session: Session, organization_id: str, actor_id: str
-) -> tuple[Organization, ServiceActor]:
+) -> tuple[Organization, ServiceActor | User]:
     organization = session.get(Organization, organization_id)
     if organization is None:
         organization = Organization(
-            id=organization_id, kind="synthetic", name="G02 synthetic organization"
+            id=organization_id,
+            kind="synthetic",
+            name="G02 synthetic organization",
+            slug=f"synthetic-{organization_id.lower()}",
         )
         session.add(organization)
         session.flush()
     actor = session.get(ServiceActor, actor_id)
     if actor is None:
-        actor = ServiceActor(
-            id=actor_id,
-            organization_id=organization_id,
-            name="G02 deterministic service actor",
-        )
-        session.add(actor)
-        session.flush()
+        user = session.get(User, actor_id)
+        if user is not None:
+            actor = user
+        else:
+            actor = ServiceActor(
+                id=actor_id,
+                organization_id=organization_id,
+                name="G02 deterministic service actor",
+            )
+            session.add(actor)
+            session.flush()
     elif actor.organization_id != organization_id:
         raise ResourceNotFound("service actor is not in the requested organization")
     return organization, actor
@@ -254,7 +262,7 @@ def _add_task_outbox(session: Session, job: GenerationJob, reason: str) -> None:
             aggregate_id=job.id,
             dedupe_key=f"task:{job.id}:{reason}",
             destination="instant_ppt.process_fake_job",
-            payload={"jobId": job.id},
+            payload={"jobId": job.id, "organizationId": job.organization_id},
             status="pending",
             available_at=utc_now(),
         )
@@ -399,6 +407,7 @@ def create_generation_job(session: Session, command: CreateJobCommand) -> Create
             id=new_ulid(),
             organization_id=command.organization_id,
             actor_id=command.actor_id,
+            actor_kind=("user" if session.get(User, command.actor_id) else "service"),
             route=route,
             idempotency_key=command.idempotency_key,
             request_sha256=request_sha,

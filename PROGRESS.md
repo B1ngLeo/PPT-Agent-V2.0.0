@@ -4,12 +4,12 @@
 
 ## 当前 Goal
 
-- Goal：G03 / 身份、租户与存储底座
+- Goal：G04 / 安全上传与 Source 解析闭环
 - 状态：in_progress
-- 当前检查点：G03 身份 schema、授权上下文与 G02 数据无损迁移设计
-- 已验证：G00–G02 complete；P0 Gate passed；G01 required Gate 3/3、G02 required Gate 1/1 均通过且无 waiver；根 `pnpm verify` 通过
-- 剩余工作：身份提供方 ADR、users/memberships/entitlements/audit/artifact schema、local-only auth、tenant/API/SSE/object/download 隔离、MinIO 与安全验证、G03 Gate
-- 决策/偏离：P0 允许进入 G03；G03 必须保留现有 synthetic organization/job 数据并将开发身份绕过限定为非生产；无 SPEC 偏离
+- 当前检查点：G03 Gate 与根验证完成，读取 G04 上传/扫描/解析合同并设计产品化安全流水线
+- 已验证：G00–G03 complete；P0 Gate passed；G01 required Gate 3/3、G02 1/1、G03 1/1 均通过且无 waiver；最新根 `pnpm verify` 通过
+- 剩余工作：G04 上传会话、直传复核、quarantine→scan→clean→parse、恢复/安全矩阵、容器沙箱与 Gate
+- 决策/偏离：G03 采用标准 OIDC 和私有 MinIO，完整保留 G02 数据；G04 复用 G01 threat rules 并产品化，不降低既有 fail-closed 门槛；无 SPEC 偏离
 - 阻塞：无
 - 恢复记录：无当前恢复项；全部重复问题均在 3 次以内解决
 
@@ -34,13 +34,20 @@
 - G02 CP-02A 状态真相：新增 `packages/domain`、9 组 PostgreSQL 持久模型、租户复合外键/唯一/检查约束、显式状态转换与 Alembic 首版迁移；upgrade→downgrade→upgrade、schema drift、Ruff 及 16 项 API/Worker/领域单测通过。
 - G02 CP-02B 幂等与竞态：创建任务在同一事务提交 immutable snapshot、job、slides、usage reservation、initial event/outbox/task 与响应记录；8 线程同 key 并发只创建一份副作用，异 body 冲突、重复投递、partial、cancel/publish 竞态均通过。
 - G02 CP-02C SSE 与恢复：实现 snapshot→DB replay→Redis live handoff、Last-Event-ID、reset、seq 去重、heartbeat 与终态关闭；实现 late ack Celery Fake Worker、单页事务边界、lease 与 PostgreSQL expired-lease 对账恢复。
-- G02 恢复矩阵：真实 Worker 进程强杀、模拟崩溃、单页 partial、cancel/publish、Redis 清空、outbox fanout 与 SSE resume 各连续 10/10 通过；总计 73/73、0 skipped，最终证据 SHA-256 `4A516422…`。
+- G02 恢复矩阵：真实 Worker 进程强杀、模拟崩溃、单页 partial、cancel/publish、Redis 清空、outbox fanout 与 SSE resume 各连续 10/10 通过；总计 73/73、0 skipped，G03 根回归后的最新证据 SHA-256 `E887C01F…`。
 - G02 Gate 完成：设计、工程证据和机器可读恢复矩阵已固化；`pnpm verify:gates --goal G02` 1/1 与 Markdown 链接验证通过。
 - P0 Gate 完成：当前 worktree 重新通过合同、Web 生产构建、G01 13/13 安全与 10/10 双链金样本、G02 73/73 恢复矩阵；API/Worker/outbox 非 root 镜像构建和三页容器 E2E 通过，综合报告结论为 passed，可进入 G03。
+- G03 Identity 模块：接受 ADR-002 标准 OIDC；严格校验 RSA/JWKS、issuer、audience、时间声明，local 身份仅限 local/test，staging/production 配置绕过会在应用构造时失败；6 项快速安全测试通过。
+- G03 Tenant 模块：新增 users/memberships/personal organizations/entitlements/usage/audit，首次登录以 advisory lock 保证 8 并发只创建一套身份行；所有 API、SSE 与后台任务统一使用 `TenantContext` 并在数据库查询中复核 organization。
+- G03 Migration 模块：正式 G03 Alembic revision 将 G02 fixed synthetic organization 原地升级为默认个人组织；自动完成 `0001_g02 → head → 0001_g02 → head`，现有 job 11 个关键字段全保留且 Alembic 无 drift。
+- G03 Storage 模块：私有 MinIO bucket、四分区 tenant key、artifact metadata、15–900 秒下载授权、grant/audit 和无 URL 持久化已完成；真实签名下载成功，未签名、篡改及 15 秒过期访问均拒绝。
+- G03 独立集成矩阵：PostgreSQL/Redis/真实 MinIO 共 8/8 passed、0 failed、0 skipped；跨租户 API/SSE/worker/artifact/download、日志脱敏、disabled user 和过期幂等授权均通过。
+- G03 容器 E2E：API/Worker/outbox 三镜像顺序构建并以 uid `10001` 运行；Alice 登录读取 entitlement、创建两页任务并由真实 outbox/Celery 完成，Bob 猜测 job/artifact 均 404，签名工件字节一致且运行时日志无认证头、邮箱、正文或签名 URL。
+- G03 Gate 完成：最新根 `pnpm verify` 依次通过合同、Web 生产构建、15 项 API、12 项 Worker、G02 73 项、G03 8 项、10 份金样本、G01/G03 安全与链接；`pnpm verify:gates --goal G03` 1/1 passed，无 waiver。
 
 ## 进行中事项
 
-- G03：读取身份/数据/安全/对象存储合同，冻结身份提供方与 token exchange ADR，设计向正式 identity 外键的无损迁移。
+- G04：读取 PLAN 8 与 SPEC FR-SOURCE、数据治理、安全边界，盘点 G01 可复用 intake harness，冻结上传会话/对象状态/扫描解析事务设计。
 
 ## 问题及解决方案
 
@@ -74,6 +81,9 @@
 | Redis Pub/Sub 测试在 `SUBSCRIBE` 确认帧消费前发布，偶发收不到 fanout                  |        1 | 测试先消费订阅确认再触发 outbox；10/10 fanout 通过，生产分发代码无错误。                                                                                                                         |
 | Windows Celery solo 强杀后 Kombu 未按 3 秒配置自动恢复未确认消息                      |        3 | 保留 late ack/受限预取并对齐 visibility 配置；最终以 PostgreSQL lease 为真相，由 outbox 对账过期 lease 并按 lease token 去重重投，真实进程强杀 10/10 通过。                                      |
 | Docker Compose 并行构建在中文仓库路径产生 BuildKit gRPC session header 错误           |        2 | 错误发生在 Dockerfile 执行前；关闭 Compose Bake 后逐服务顺序构建，API、Worker、outbox 三镜像全部成功，运行时 E2E 通过。                                                                          |
+| MinIO 首次启动时健康端口短暂接受后关闭连接                                            |        1 | readiness probe 将 connection reset 作为有界启动重试；真实业务请求不使用该重试路径，随后完整私有对象矩阵通过。                                                                                   |
+| G03 迁移保真 canary 初始使用了非 G02 固定 synthetic organization ID                   |        1 | 对齐 G02 固定 organization/service actor 常量后，双向迁移、11 字段数据保真与 schema drift 全部通过。                                                                                             |
+| 下载授权幂等记录初版包含短时签名 URL                                                  |        1 | 只持久化原始过期时间；重放在原截止时间内重新签名且不创建新 grant，过期后返回 410，新测试确认 artifact/grant/audit/idempotency 均无 URL。                                                         |
 
 ## Goal 历史
 
@@ -103,3 +113,11 @@
 - 决策：passed，G03 可开始；G01 3/3 与 G02 1/1 required Gate 均 passed，无 waiver、failed 或 skipped recovery case。
 - 复核：根 `pnpm verify`、13/13 threat rejection、10/10 source/render、73/73 recovery、三运行时镜像与容器三页 HTTP E2E 全部通过。
 - 证据：`docs/p0-gate-report.md`、`docs/evidence/gate-manifest.yaml`。
+
+### G03 / 身份、租户与存储底座 — complete
+
+- 产物：标准 OIDC/local-only adapter、personal organization 与 membership、entitlement/usage、统一 `TenantContext`、后台 tenant recheck、私有四分区对象键、artifact/grant/audit、短时下载授权与 G02 无损迁移。
+- 验证：15 项 API、6 项快速安全、8/8 PostgreSQL/Redis/真实 MinIO 隔离矩阵、73/73 G02 恢复回归、三非 root 运行时容器用户 E2E、迁移双向保真与无 schema drift；根 `pnpm verify` 通过。
+- 不变量：生产不能启用 dev auth；API/SSE/Worker/对象查询都含 organization；跨租户统一 404；bucket 无公开 policy/ACL；签名 URL 不进入持久数据或日志；幂等重放不延长原授权。
+- Gate：`GATE-G03-TENANCY` automated security matrix 1/1 passed，无 waiver。
+- 证据：`docs/design/g03-identity-tenancy-storage.md`、`docs/evidence/g03-identity-tenancy-storage.md`、`docs/evidence/security/g03-tenancy-results.json`、`docs/evidence/security/g03-container-e2e.json`。

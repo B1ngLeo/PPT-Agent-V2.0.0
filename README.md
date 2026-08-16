@@ -23,7 +23,7 @@ pnpm verify
 
 环境版本、Windows/Linux 说明和合同变更流程见 [开发文档](docs/development.md)。尚未进入对应 Goal 的测试入口会明确报告 `not-configured`；从首次实现起必须运行真实检查。
 
-G01 引擎、安全、金样本、SBOM、容器及 PowerPoint/WPS 三项 required Gate 已全部通过；详见 [G01 证据](docs/evidence/g01-engine-license-golden.md)。当前按 PLAN 顺序开发 G02 持久任务、幂等、SSE 与恢复 Spike。
+G00–G02 与 P0 Gate 已通过；G03 身份、租户、私有对象和下载授权已完成独立安全矩阵，当前执行全仓回归后按 PLAN 进入 G04。详见 [G03 证据](docs/evidence/g03-identity-tenancy-storage.md)。
 
 ## Repository policy
 

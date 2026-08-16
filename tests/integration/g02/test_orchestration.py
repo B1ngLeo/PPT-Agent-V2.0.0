@@ -208,4 +208,7 @@ def test_outbox_redis_fanout(
     assert dispatched == 2
     assert message is not None
     assert published_tasks[0][0] == "instant_ppt.process_fake_job"
-    assert published_tasks[0][1] == {"jobId": job_id}
+    assert published_tasks[0][1] == {
+        "jobId": job_id,
+        "organizationId": SYNTHETIC_ORGANIZATION_ID,
+    }

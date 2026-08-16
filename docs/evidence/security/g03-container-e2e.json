@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "goal": "G03",
+  "startedAt": "2026-08-16T04:23:17.696727Z",
+  "completedAt": "2026-08-16T04:23:22.363956Z",
+  "status": "passed",
+  "runtimeUserIds": {
+    "api": "10001",
+    "worker": "10001",
+    "outbox": "10001"
+  },
+  "services": ["api", "worker", "outbox", "postgres", "redis", "minio"],
+  "journey": {
+    "aliceOrganizationId": "01M04CYMPNYZ7ZY9KYGNGRJ0A1",
+    "bobOrganizationId": "01M04CYNZ6DDWGPJ6C49RSKXX7",
+    "jobId": "01M04CYNZYADBNS8S9XQFTZA8F",
+    "jobStatus": "succeeded",
+    "artifactId": "01M04CYPJ291ADRBJGN0R9SP8X",
+    "download": "signed bytes matched; cross-tenant denied",
+    "logRedaction": "passed"
+  }
+}

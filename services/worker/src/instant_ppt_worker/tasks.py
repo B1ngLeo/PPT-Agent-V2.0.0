@@ -26,7 +26,7 @@ def _kill_process(_: SlideStart) -> None:
     reject_on_worker_lost=True,
     max_retries=2,
 )
-def process_fake_job_task(self: Task, job_id: str) -> str:
+def process_fake_job_task(self: Task, job_id: str, organization_id: str) -> str:
     settings = DomainSettings.from_env()
     engine = create_domain_engine(settings.database_url)
     factory = create_session_factory(engine)
@@ -36,6 +36,7 @@ def process_fake_job_task(self: Task, job_id: str) -> str:
             factory,
             job_id,
             worker_id,
+            organization_id=organization_id,
             lease_seconds=settings.worker_lease_seconds,
             crash_callback=_kill_process,
         )

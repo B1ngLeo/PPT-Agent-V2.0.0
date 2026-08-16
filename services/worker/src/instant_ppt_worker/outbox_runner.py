@@ -26,7 +26,10 @@ def _request_stop(*_: object) -> None:
 def _publish_task(destination: str, payload: dict, dedupe_key: str) -> None:
     celery_app.send_task(
         destination,
-        kwargs={"job_id": payload["jobId"]},
+        kwargs={
+            "job_id": payload["jobId"],
+            "organization_id": payload["organizationId"],
+        },
         task_id=dedupe_key,
         retry=True,
         retry_policy={

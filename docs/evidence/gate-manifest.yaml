@@ -1,5 +1,5 @@
 schemaVersion: 1
-updatedAt: 2026-08-16T11:27:25+08:00
+updatedAt: 2026-08-16T12:14:24+08:00
 gates:
   - id: GATE-G00-CONTRACT-BASELINE
     goal: G00
@@ -89,13 +89,22 @@ gates:
   - id: GATE-G03-TENANCY
     goal: G03
     required: true
-    status: pending
+    status: passed
     ownerRole: security
-    approver: null
-    checkedAt: null
-    targetVersions: []
-    evidence: []
-    notes: Cross-organization API, object, SSE, and download denial.
+    approver: automated:g03-security-matrix
+    checkedAt: 2026-08-16T12:14:24+08:00
+    targetVersions:
+      [postgresql-17.6, minio-RELEASE.2025-04-22, pyjwt-2.13.0, minio-py-7.2.20]
+    evidence:
+      [
+        "docs/design/g03-identity-tenancy-storage.md",
+        "docs/evidence/g03-identity-tenancy-storage.md",
+        "docs/evidence/security/g03-tenancy-results.json",
+        "docs/evidence/security/g03-container-e2e.json",
+        "docs/adr/ADR-002-identity-provider.md",
+        "docs/adr/ADR-007-retention-download.md",
+      ]
+    notes: Automated security matrix and non-root container user journey passed cross-organization API, SSE, worker, object and download denial plus real private MinIO unsigned, tampered and expired URL checks.
     waiver: null
   - id: GATE-G04-SOURCE-SECURITY
     goal: G04

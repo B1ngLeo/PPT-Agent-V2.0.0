@@ -33,16 +33,27 @@ def current(database_url: str | None = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage the Instant PPT PostgreSQL schema")
-    parser.add_argument("action", choices=("upgrade", "downgrade", "current"))
+    parser.add_argument(
+        "action", choices=("upgrade", "downgrade", "current", "revision", "check")
+    )
     parser.add_argument("revision", nargs="?", default=None)
     parser.add_argument("--database-url", default=None)
+    parser.add_argument("--message", default="schema change")
     arguments = parser.parse_args()
     if arguments.action == "upgrade":
         upgrade(arguments.database_url, arguments.revision or "head")
     elif arguments.action == "downgrade":
         downgrade(arguments.database_url, arguments.revision or "base")
-    else:
+    elif arguments.action == "current":
         current(arguments.database_url)
+    elif arguments.action == "revision":
+        command.revision(
+            alembic_config(arguments.database_url),
+            message=arguments.message,
+            autogenerate=True,
+        )
+    else:
+        command.check(alembic_config(arguments.database_url))
 
 
 if __name__ == "__main__":

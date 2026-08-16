@@ -12,6 +12,7 @@ from instant_ppt_domain.service import (
     claim_job,
     complete_slide,
     finalize_job,
+    get_job,
     heartbeat_job,
     start_next_slide,
 )
@@ -26,10 +27,14 @@ def process_fake_job(
     job_id: str,
     worker_id: str,
     *,
+    organization_id: str | None = None,
     lease_seconds: int = 30,
     crash_callback: Callable[[SlideStart], None] | None = None,
 ) -> str:
     """Process one job with a resumable transaction around every slide boundary."""
+    if organization_id is not None:
+        with session_factory() as session:
+            get_job(session, job_id, organization_id)
     with session_factory.begin() as session:
         claimed = claim_job(
             session, job_id, worker_id, lease_seconds=lease_seconds
