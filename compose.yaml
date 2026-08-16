@@ -38,6 +38,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-instant-ppt-local}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-local-development-only}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_API_CORS_ALLOW_ORIGIN:-http://localhost:3000}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -51,17 +52,27 @@ services:
     restart: unless-stopped
 
   clamav:
-    image: clamav/clamav:1.4.2
+    image: instant-ppt-clamav:1.4.3-bookworm
+    build:
+      context: .
+      dockerfile: services/clamav/Dockerfile
     ports:
       - "3310:3310"
-    volumes:
-      - clamav-data:/var/lib/clamav
     healthcheck:
-      test: ["CMD-SHELL", "printf 'PING\\n' | nc 127.0.0.1 3310 | grep PONG"]
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 90s
+      test: ["CMD", "python", "/usr/local/bin/clamd-health.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 768m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /run/clamav:rw,noexec,nosuid,size=8m
     restart: unless-stopped
 
   api:
@@ -85,6 +96,8 @@ services:
       OIDC_ALGORITHMS: ${OIDC_ALGORITHMS:-RS256}
       OIDC_CLOCK_SKEW_SECONDS: ${OIDC_CLOCK_SKEW_SECONDS:-30}
       DOWNLOAD_URL_TTL_SECONDS: ${DOWNLOAD_URL_TTL_SECONDS:-900}
+      UPLOAD_SESSION_TTL_SECONDS: ${UPLOAD_SESSION_TTL_SECONDS:-600}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
       S3_REGION: ${S3_REGION:-us-east-1}
@@ -113,7 +126,11 @@ services:
     build:
       context: .
       dockerfile: services/worker/Dockerfile
-    environment: *runtime-environment
+    environment:
+      <<: *runtime-environment
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      CLAMAV_TIMEOUT_SECONDS: ${CLAMAV_TIMEOUT_SECONDS:-15}
     entrypoint: ["celery"]
     command:
       - -A
@@ -128,6 +145,19 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 1.5
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+      - /workspace:rw,noexec,nosuid,size=64m
     restart: unless-stopped
 
   outbox:
@@ -149,4 +179,3 @@ volumes:
   postgres-data:
   redis-data:
   minio-data:
-  clamav-data:

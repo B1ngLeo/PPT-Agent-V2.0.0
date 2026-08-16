@@ -1,8 +1,23 @@
-"""Repository and vendored-engine paths used by the adapter."""
+"""Repository and vendored-engine paths used by editable and wheel installs."""
 
+import os
 from pathlib import Path
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+
+def _repository_root() -> Path:
+    configured = os.getenv("INSTANT_PPT_REPOSITORY_ROOT", "").strip()
+    if configured:
+        root = Path(configured).resolve()
+        if not (root / "vendor" / "ppt-master").is_dir():
+            raise RuntimeError("INSTANT_PPT_REPOSITORY_ROOT has no vendored engine")
+        return root
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "vendor" / "ppt-master").is_dir():
+            return parent
+    raise RuntimeError("vendored ppt-master engine could not be located")
+
+
+REPOSITORY_ROOT = _repository_root()
 VENDOR_ROOT = REPOSITORY_ROOT / "vendor" / "ppt-master"
 ENGINE_SCRIPTS = VENDOR_ROOT / "scripts"
 

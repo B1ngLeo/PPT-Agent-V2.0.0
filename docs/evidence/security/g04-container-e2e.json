@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "goal": "G04",
+  "gate": "GATE-G04-SOURCE-SECURITY",
+  "generatedAt": "2026-08-16T05:18:57.441681Z",
+  "result": "passed",
+  "validSource": {
+    "sourceId": "01M04G4CW48YRRT295BDRSDVFR",
+    "status": "parsed",
+    "scanStatus": "clean",
+    "parseStatus": "succeeded",
+    "artifactCount": 2,
+    "quarantineKey": "tenants/01M04FQQM6YTXCSHQXY8KNFKMR/quarantine/01M04G4CW48YRRT295BDRSDVFS"
+  },
+  "threatSource": {
+    "sourceId": "01M04G4EQHH71VWVQP5QB61601",
+    "status": "rejected",
+    "errorCode": "SOURCE_MALWARE_TEST_SIGNATURE",
+    "parseAttempt": 0,
+    "findingCodes": [
+      "SOURCE_MALWARE_DETECTED",
+      "SOURCE_MALWARE_TEST_SIGNATURE"
+    ]
+  },
+  "containers": {
+    "apiUser": "10001:10001",
+    "workerUser": "10001:10001",
+    "outboxUser": "10001:10001",
+    "clamavUser": "clamav:clamav",
+    "workerReadOnly": true,
+    "workerCapDrop": [
+      "ALL"
+    ],
+    "clamavReadOnly": true,
+    "clamavCapDrop": [
+      "ALL"
+    ],
+    "clamavHealth": "healthy",
+    "clamavImage": "instant-ppt-clamav:1.4.3-bookworm"
+  }
+}

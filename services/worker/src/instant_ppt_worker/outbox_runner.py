@@ -24,12 +24,19 @@ def _request_stop(*_: object) -> None:
 
 
 def _publish_task(destination: str, payload: dict, dedupe_key: str) -> None:
-    celery_app.send_task(
-        destination,
-        kwargs={
+    if destination == "instant_ppt.process_source":
+        kwargs = {
+            "source_id": payload["sourceId"],
+            "organization_id": payload["organizationId"],
+        }
+    else:
+        kwargs = {
             "job_id": payload["jobId"],
             "organization_id": payload["organizationId"],
-        },
+        }
+    celery_app.send_task(
+        destination,
+        kwargs=kwargs,
         task_id=dedupe_key,
         retry=True,
         retry_policy={

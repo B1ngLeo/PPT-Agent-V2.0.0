@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "goal": "G04",
+  "generatedAt": "2026-08-16T13:25:00+08:00",
+  "result": "passed",
+  "browser": "Codex in-app Chromium",
+  "responsive": [
+    { "width": 390, "horizontalOverflow": false, "primaryTargetHeight": 46 },
+    { "width": 768, "horizontalOverflow": false, "primaryTargetHeight": 46 },
+    { "width": 1440, "horizontalOverflow": false, "primaryTargetHeight": 46 }
+  ],
+  "uploadJourney": {
+    "fixture": "tests/golden/07-template-brand/source/input.html",
+    "finalStatus": "parsed",
+    "artifactCount": 2
+  },
+  "refreshRecoveryJourney": {
+    "fixture": "tests/golden/08-dense-docx/source/input.docx",
+    "workerPausedStatus": "uploaded",
+    "filenameVisibleAfterReload": true,
+    "statusVisibleAfterReload": true,
+    "finalStatusAfterWorkerResume": "parsed",
+    "artifactCount": 2
+  },
+  "consoleWarningsOrErrors": 0
+}

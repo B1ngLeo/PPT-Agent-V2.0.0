@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 
 from instant_ppt_domain.artifacts import ArtifactUnavailable, ObjectStat
+from instant_ppt_domain.sources import ObjectDigest, UploadPolicy
 from minio import Minio
+from minio.datatypes import PostPolicy
 from minio.error import S3Error
+from urllib3.exceptions import HTTPError
 
 
 def _endpoint(value: str) -> tuple[str, bool]:
@@ -46,6 +50,9 @@ class MinioPrivateObjectStore:
         endpoint, secure = _endpoint(settings.endpoint)
         public_endpoint, public_secure = _endpoint(settings.public_endpoint)
         self._bucket = settings.bucket
+        self._public_base = (
+            f"{'https' if public_secure else 'http'}://{public_endpoint}"
+        )
         self._client = Minio(
             endpoint,
             access_key=settings.access_key,
@@ -72,12 +79,94 @@ class MinioPrivateObjectStore:
     def stat(self, object_key: str) -> ObjectStat:
         try:
             result = self._client.stat_object(self._bucket, object_key)
-        except S3Error as error:
+        except (S3Error, HTTPError) as error:
             raise ArtifactUnavailable("artifact object is unavailable") from error
         return ObjectStat(size_bytes=result.size, etag=result.etag)
 
     def presign_get(self, object_key: str, *, expires: timedelta) -> str:
         try:
             return self._signer.presigned_get_object(self._bucket, object_key, expires=expires)
-        except S3Error as error:
+        except (S3Error, HTTPError) as error:
             raise ArtifactUnavailable("artifact URL could not be signed") from error
+
+    def presign_post(
+        self,
+        object_key: str,
+        *,
+        content_type: str,
+        sha256: str,
+        size_bytes: int,
+        expires_at: datetime,
+    ) -> UploadPolicy:
+        policy = PostPolicy(self._bucket, expires_at)
+        policy.add_equals_condition("key", object_key)
+        policy.add_equals_condition("Content-Type", content_type)
+        policy.add_equals_condition("x-amz-meta-sha256", sha256)
+        policy.add_content_length_range_condition(size_bytes, size_bytes)
+        try:
+            fields = self._signer.presigned_post_policy(policy)
+        except (S3Error, ValueError) as error:
+            raise ArtifactUnavailable("upload policy could not be signed") from error
+        fields.update(
+            {
+                "key": object_key,
+                "Content-Type": content_type,
+                "x-amz-meta-sha256": sha256,
+            }
+        )
+        return UploadPolicy(
+            url=f"{self._public_base}/{self._bucket}",
+            fields={str(key): str(value) for key, value in fields.items()},
+        )
+
+    def digest(self, object_key: str, *, max_bytes: int) -> ObjectDigest:
+        response = None
+        try:
+            stat = self._client.stat_object(self._bucket, object_key)
+            if stat.size > max_bytes:
+                return ObjectDigest(
+                    size_bytes=stat.size,
+                    sha256="",
+                    content_type=getattr(stat, "content_type", None),
+                    metadata=_object_metadata(stat),
+                )
+            response = self._client.get_object(self._bucket, object_key)
+            digest = hashlib.sha256()
+            size = 0
+            for chunk in response.stream(1024 * 1024):
+                size += len(chunk)
+                if size > max_bytes:
+                    return ObjectDigest(
+                        size_bytes=size,
+                        sha256="",
+                        content_type=getattr(stat, "content_type", None),
+                        metadata=_object_metadata(stat),
+                    )
+                digest.update(chunk)
+            if size != stat.size:
+                raise ArtifactUnavailable("upload object changed while it was verified")
+            return ObjectDigest(
+                size_bytes=size,
+                sha256=digest.hexdigest(),
+                content_type=getattr(stat, "content_type", None),
+                metadata=_object_metadata(stat),
+            )
+        except ArtifactUnavailable:
+            raise
+        except (S3Error, HTTPError, OSError) as error:
+            raise ArtifactUnavailable("upload object is unavailable") from error
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
+
+
+def _object_metadata(stat: object) -> dict[str, str]:
+    raw = getattr(stat, "metadata", None) or {}
+    normalized: dict[str, str] = {}
+    for key, value in raw.items():
+        name = str(key).lower()
+        if name.startswith("x-amz-meta-"):
+            name = name.removeprefix("x-amz-meta-")
+        normalized[name] = str(value)
+    return normalized

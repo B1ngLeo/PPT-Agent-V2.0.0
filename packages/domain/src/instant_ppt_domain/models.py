@@ -63,6 +63,22 @@ MEMBERSHIP_ROLES = ("owner", "member")
 MEMBERSHIP_STATUSES = ("active", "revoked")
 ARTIFACT_PARTITIONS = ("quarantine", "clean", "tmp", "published")
 ARTIFACT_STATUSES = ("pending", "published", "revoked", "deleted")
+UPLOAD_SESSION_STATUSES = ("pending", "uploaded", "completed", "expired", "rejected")
+SOURCE_STATUSES = (
+    "upload_pending",
+    "uploading",
+    "uploaded",
+    "scanning",
+    "clean",
+    "parsing",
+    "parsed",
+    "rejected",
+    "parse_failed",
+    "cancelled",
+)
+SCAN_STATUSES = ("pending", "running", "clean", "rejected", "failed")
+PARSE_STATUSES = ("pending", "running", "succeeded", "failed")
+SOURCE_ARTIFACT_KINDS = ("markdown", "asset", "conversion_profile")
 TERMINAL_JOB_STATUSES = frozenset(
     {"cancelled", "succeeded", "partially_succeeded", "failed"}
 )
@@ -609,4 +625,138 @@ class AuditLog(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Source(Base):
+    __tablename__ = "sources"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_sources_id_organization"),
+        ForeignKeyConstraint(
+            ["input_artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_sources_input_artifact_org",
+        ),
+        CheckConstraint(f"status IN ({_values(SOURCE_STATUSES)})", name="valid_status"),
+        CheckConstraint(
+            f"scan_status IN ({_values(SCAN_STATUSES)})", name="valid_scan_status"
+        ),
+        CheckConstraint(
+            f"parse_status IN ({_values(PARSE_STATUSES)})", name="valid_parse_status"
+        ),
+        CheckConstraint("size_bytes >= 0", name="size_nonnegative"),
+        CheckConstraint("scan_attempt BETWEEN 0 AND 5", name="scan_attempt_bounded"),
+        CheckConstraint("parse_attempt BETWEEN 0 AND 5", name="parse_attempt_bounded"),
+        Index("ix_sources_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    input_artifact_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    extension: Mapped[str] = mapped_column(String(12), nullable=False)
+    declared_mime_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    detected_mime_type: Mapped[str | None] = mapped_column(String(160))
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="upload_pending")
+    scan_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    parse_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    scan_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    parse_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    scan_decision: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    source_package: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    parser_version: Mapped[str | None] = mapped_column(String(160))
+    error_code: Mapped[str | None] = mapped_column(String(120))
+    error_detail: Mapped[str | None] = mapped_column(String(1000))
+    retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scan_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    parse_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UploadSession(Base):
+    __tablename__ = "upload_sessions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_id", "organization_id"],
+            ["sources.id", "sources.organization_id"],
+            ondelete="CASCADE",
+            name="fk_upload_sessions_source_org",
+        ),
+        UniqueConstraint("source_id", name="uq_upload_sessions_source"),
+        UniqueConstraint("object_key", name="uq_upload_sessions_object_key"),
+        CheckConstraint(
+            f"status IN ({_values(UPLOAD_SESSION_STATUSES)})", name="valid_status"
+        ),
+        CheckConstraint("expected_size_bytes >= 1", name="expected_size_positive"),
+        CheckConstraint("max_bytes >= expected_size_bytes", name="max_covers_expected"),
+        Index("ix_upload_sessions_org_expires", "organization_id", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    declared_mime_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    expected_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    max_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_code: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SourceArtifact(Base):
+    __tablename__ = "source_artifacts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_id", "organization_id"],
+            ["sources.id", "sources.organization_id"],
+            ondelete="CASCADE",
+            name="fk_source_artifacts_source_org",
+        ),
+        ForeignKeyConstraint(
+            ["artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_source_artifacts_artifact_org",
+        ),
+        UniqueConstraint("artifact_id", name="uq_source_artifacts_artifact"),
+        CheckConstraint(
+            f"kind IN ({_values(SOURCE_ARTIFACT_KINDS)})", name="valid_kind"
+        ),
+        Index("ix_source_artifacts_source_kind", "source_id", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

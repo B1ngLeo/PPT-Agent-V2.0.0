@@ -9,6 +9,7 @@ dependencies = [
   "instant-ppt-domain",
   "mammoth==1.12.1",
   "markdownify==1.2.3",
+  "minio==7.2.20",
   "numpy==2.5.2",
   "pillow==12.3.0",
   "pydantic==2.13.4",

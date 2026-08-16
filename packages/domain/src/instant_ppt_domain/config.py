@@ -28,6 +28,8 @@ class DomainSettings:
     oidc_algorithms: tuple[str, ...] = ("RS256",)
     oidc_clock_skew_seconds: int = 30
     download_url_ttl_seconds: int = 900
+    upload_session_ttl_seconds: int = 600
+    web_origin: str = "http://localhost:3000"
 
     def __post_init__(self) -> None:
         if self.app_environment not in {"local", "test", "staging", "production"}:
@@ -47,6 +49,8 @@ class DomainSettings:
             raise ValueError("only explicitly configured RSA OIDC algorithms are supported")
         if not 15 <= self.download_url_ttl_seconds <= 900:
             raise ValueError("DOWNLOAD_URL_TTL_SECONDS must be between 15 and 900")
+        if not 60 <= self.upload_session_ttl_seconds <= 900:
+            raise ValueError("UPLOAD_SESSION_TTL_SECONDS must be between 60 and 900")
 
     @classmethod
     def from_env(cls) -> DomainSettings:
@@ -69,4 +73,6 @@ class DomainSettings:
             ),
             oidc_clock_skew_seconds=int(os.getenv("OIDC_CLOCK_SKEW_SECONDS", "30")),
             download_url_ttl_seconds=int(os.getenv("DOWNLOAD_URL_TTL_SECONDS", "900")),
+            upload_session_ttl_seconds=int(os.getenv("UPLOAD_SESSION_TTL_SECONDS", "600")),
+            web_origin=os.getenv("WEB_ORIGIN", "http://localhost:3000").rstrip("/"),
         )

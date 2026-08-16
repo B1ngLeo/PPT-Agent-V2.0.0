@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from instant_ppt_domain.config import DomainSettings
 from instant_ppt_domain.database import create_domain_engine, create_session_factory
 from instant_ppt_domain.ids import new_ulid
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from instant_ppt_api.auth import ApiAuthenticationError, OidcTokenVerifier
 from instant_ppt_api.g03_routes import router as g03_router
+from instant_ppt_api.g04_routes import router as g04_router
 from instant_ppt_api.object_store import MinioPrivateObjectStore, ObjectStoreSettings
 from instant_ppt_api.problems import problem_response
 from instant_ppt_api.routes import router
@@ -36,6 +38,24 @@ def create_app(
         create_domain_engine(resolved_settings.database_url)
     )
     application = FastAPI(title="即刻AI-PPT API", version="0.0.0")
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[resolved_settings.web_origin],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Dev-User-Email",
+            "X-Dev-User-Name",
+            "X-Dev-User-Subject",
+            "X-Organization-ID",
+            "X-Request-ID",
+        ],
+        expose_headers=["Idempotency-Replayed", "Location", "X-Request-ID"],
+        max_age=600,
+    )
     application.state.settings = resolved_settings
     application.state.session_factory = resolved_factory
     application.state.token_verifier = token_verifier or (
@@ -89,6 +109,7 @@ def create_app(
 
     application.include_router(router)
     application.include_router(g03_router)
+    application.include_router(g04_router)
     return application
 
 

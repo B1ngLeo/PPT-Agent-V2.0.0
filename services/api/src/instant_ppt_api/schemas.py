@@ -32,6 +32,23 @@ class MutationRequest(BaseModel):
     base_revision_id: str | None = Field(default=None, alias="baseRevisionId")
 
 
+class CreateUploadSessionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(min_length=1, max_length=255)
+    declared_mime_type: str = Field(min_length=1, max_length=160, alias="declaredMimeType")
+    expected_sha256: str = Field(pattern=r"^[a-f0-9]{64}$", alias="expectedSha256")
+    size_bytes: int = Field(ge=1, le=50 * 1024 * 1024, alias="sizeBytes")
+
+
+class CreateUploadSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: CreateUploadSessionData
+    base_revision_id: str | None = Field(default=None, alias="baseRevisionId")
+
+
 class CreateGenerationJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

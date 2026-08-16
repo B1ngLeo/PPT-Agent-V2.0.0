@@ -4,12 +4,12 @@
 
 ## 当前 Goal
 
-- Goal：G04 / 安全上传与 Source 解析闭环
+- Goal：G05 / 草稿、意图、大纲与 Web 工作台
 - 状态：in_progress
-- 当前检查点：G03 Gate 与根验证完成，读取 G04 上传/扫描/解析合同并设计产品化安全流水线
-- 已验证：G00–G03 complete；P0 Gate passed；G01 required Gate 3/3、G02 1/1、G03 1/1 均通过且无 waiver；最新根 `pnpm verify` 通过
-- 剩余工作：G04 上传会话、直传复核、quarantine→scan→clean→parse、恢复/安全矩阵、容器沙箱与 Gate
-- 决策/偏离：G03 采用标准 OIDC 和私有 MinIO，完整保留 G02 数据；G04 复用 G01 threat rules 并产品化，不降低既有 fail-closed 门槛；无 SPEC 偏离
+- 当前检查点：G04 全模块、真实容器链路与 Gate 完成，开始读取 G05 草稿/意图/大纲/模板和工作台合同
+- 已验证：G00–G04 complete；P0 Gate passed；G01 required Gate 3/3、G02–G04 各 1/1 均通过且无 waiver；G04 API 21、Worker 15、安全 12、集成 14 与容器 E2E 通过
+- 剩余工作：G05 草稿/意图/大纲工作台、G06 真实生成、G07 编辑导出闭环、G08 发布工程与最终用户 E2E
+- 决策/偏离：G04 采用精确预签名约束、三次哈希复核、真实 ClamAV + G01 双层检查、clean-only parser 和不可变工件；生产病毒库 freshness 监控归 G08；无 SPEC 偏离
 - 阻塞：无
 - 恢复记录：无当前恢复项；全部重复问题均在 3 次以内解决
 
@@ -44,10 +44,17 @@
 - G03 独立集成矩阵：PostgreSQL/Redis/真实 MinIO 共 8/8 passed、0 failed、0 skipped；跨租户 API/SSE/worker/artifact/download、日志脱敏、disabled user 和过期幂等授权均通过。
 - G03 容器 E2E：API/Worker/outbox 三镜像顺序构建并以 uid `10001` 运行；Alice 登录读取 entitlement、创建两页任务并由真实 outbox/Celery 完成，Bob 猜测 job/artifact 均 404，签名工件字节一致且运行时日志无认证头、邮箱、正文或签名 URL。
 - G03 Gate 完成：最新根 `pnpm verify` 依次通过合同、Web 生产构建、15 项 API、12 项 Worker、G02 73 项、G03 8 项、10 份金样本、G01/G03 安全与链接；`pnpm verify:gates --goal G03` 1/1 passed，无 waiver。
+- G04 Upload 模块：新增 tenant-scoped `sources`、`upload_sessions`、`source_artifacts` 与 Alembic revision；预签名 POST 固定 key/MIME/SHA/精确大小/过期时间，complete 通过 HEAD + 流式 SHA/真实大小/元数据复核，关闭会话不再签发；迁移双向与 drift 通过。
+- G04 Scan 模块：产品化 G01 extension/MIME/magic、ZIP bomb/路径/符号链接、Office active/external、PDF 加密/损坏、HTML active/external 检查；ClamAV 1.4.3 使用 INSTREAM，任何连接/超时/响应错误 fail closed；Worker 在扫描前第三次 hash，篡改无法进入 clean。
+- G04 Parse 模块：仅持久 clean decision 且 key/hash 绑定的对象可解析；DOCX/PPTX/HTML 走固定 vendored engine，PDF 走已批准 pypdf；Markdown/profile/assets 以新 ULID、SHA、版本和保留期不可变发布，parse/retry 各最多五次。
+- G04 Web 模块：实现文档拖放/选择、浏览器 SHA、私有直传、状态轮询、刷新恢复和 retryable 入口；`ui-styling` 可访问性规则落实为语义控件、焦点、live region、减弱动画与 46px 触控目标，390/768/1440px 无溢出且控制台无告警。
+- G04 独立矩阵：12 项快速安全、14/14 PostgreSQL/真实 MinIO 集成通过，覆盖四格式、checksum、magic、ZIP bomb、traversal、加密/损坏、scanner loss、篡改、幂等、跨租户与 API 重启恢复。
+- G04 容器 E2E：精确 Debian ClamAV 包、API、独立 outbox 镜像和 Worker 顺序构建；合法来源经真实 ClamAV 到 parsed/2 工件，恶意标记同时命中 clamd 和 intake 且 parseAttempt=0；Worker/ClamAV 非 root、只读、cap drop、CPU/内存/PID/tmp/time 限制通过。
+- G04 Gate 完成：设计、工程证据、14 项机器矩阵和真实容器证据已固化；`GATE-G04-SOURCE-SECURITY` 自动通过，无 waiver。
 
 ## 进行中事项
 
-- G04：读取 PLAN 8 与 SPEC FR-SOURCE、数据治理、安全边界，盘点 G01 可复用 intake harness，冻结上传会话/对象状态/扫描解析事务设计。
+- G05：读取 PLAN 9 与 SPEC FR-DRAFT/INTENT/OUTLINE/TEMPLATE/Provider 合同，盘点 prototype 与当前 Web，冻结不可变 revision、乐观锁和批准流程。
 
 ## 问题及解决方案
 
@@ -84,6 +91,14 @@
 | MinIO 首次启动时健康端口短暂接受后关闭连接                                            |        1 | readiness probe 将 connection reset 作为有界启动重试；真实业务请求不使用该重试路径，随后完整私有对象矩阵通过。                                                                                   |
 | G03 迁移保真 canary 初始使用了非 G02 固定 synthetic organization ID                   |        1 | 对齐 G02 固定 organization/service actor 常量后，双向迁移、11 字段数据保真与 schema drift 全部通过。                                                                                             |
 | 下载授权幂等记录初版包含短时签名 URL                                                  |        1 | 只持久化原始过期时间；重放在原截止时间内重新签名且不创建新 grant，过期后返回 410，新测试确认 artifact/grant/audit/idempotency 均无 URL。                                                         |
+| Docker 镜像代理对上游 `clamav/clamav` 返回 403                                        |        2 | 使用 digest-pinned Debian/Python 基础镜像和精确 `clamav-daemon 1.4.3+dfsg-1~deb12u2` 构建受限服务；真实 INSTREAM OK/FOUND 通过。                                                                 |
+| ClamAV 在只读容器中显式打开 `/dev/stderr` 报符号链接循环                              |        1 | 移除显式 LogFile，前台 daemon 直接写容器输出，健康检查与日志均恢复。                                                                                                                             |
+| 只构建 Worker 未刷新 Compose 独立命名的 outbox 镜像                                   |        1 | G04 容器 verifier 顺序构建 clamav/API/Worker/outbox；原 pending source task 在刷新 outbox 后继续处理，证明持久恢复。                                                                             |
+| wheel 安装后的包路径比 editable 源码多一层导致 vendor 根错误                          |        1 | 路径解析遍历父目录寻找固定 vendor，也支持经校验的显式根；本地与 `/app/.venv` 容器均通过。                                                                                                        |
+| ClamAV 对完整 HTML 规范化后自定义原始字节签名未命中                                   |        2 | 真实 daemon 断言改用精确标记流；独立 active HTML fixture 继续验证结构拒绝，容器结果同时包含 clamd 与 intake finding。                                                                            |
+| Domain 层会把大写 SHA-256 静默转为小写                                                |        1 | 取消规范化并与 Pydantic 合同共同拒绝非小写 hash；单元与 complete mismatch 矩阵通过。                                                                                                             |
+| 移动端截图中 off-screen skip link 局部露出                                            |        1 | 改为 nowrap + translate 隐藏，仅键盘 focus 时恢复；三档浏览器测量无溢出。                                                                                                                        |
+| 浏览器 Fetch 拒绝中文 `X-Dev-User-Name` header                                        |        1 | UI 继续使用中文，但 local dev 身份头改为 ASCII 展示名；真实 HTML/DOCX 浏览器上传、刷新恢复与最终解析通过。                                                                                       |
 
 ## Goal 历史
 
@@ -121,3 +136,11 @@
 - 不变量：生产不能启用 dev auth；API/SSE/Worker/对象查询都含 organization；跨租户统一 404；bucket 无公开 policy/ACL；签名 URL 不进入持久数据或日志；幂等重放不延长原授权。
 - Gate：`GATE-G03-TENANCY` automated security matrix 1/1 passed，无 waiver。
 - 证据：`docs/design/g03-identity-tenancy-storage.md`、`docs/evidence/g03-identity-tenancy-storage.md`、`docs/evidence/security/g03-tenancy-results.json`、`docs/evidence/security/g03-container-e2e.json`。
+
+### G04 / 安全上传与 Source 解析闭环 — complete
+
+- 产物：upload/source/artifact schema 与迁移、精确 MinIO POST、complete 复核、真实 ClamAV + G01 扫描、clean-only parser、不可变 SourcePackage/Artifact、状态/retry API、响应式 Web 上传恢复组件和受限 ClamAV/Worker 容器。
+- 验证：21 项 API/domain、15 项 Worker、12 项快速安全、14/14 PostgreSQL/MinIO 集成、四格式成功、全部恶意 fixture 零解析、迁移 roundtrip/drift、三档 Web 渲染、浏览器 HTML/DOCX 上传/暂停/刷新/恢复与真实 API/outbox/Celery/ClamAV/MinIO 容器用户链路通过。
+- 不变量：用户文件名不进入 key；服务端实际字节是完成真相；scanner unavailable fail closed；只有 hash/key 绑定 clean decision 可解析；工件不可变；跨租户统一 404；attempt ≤5。
+- Gate：`GATE-G04-SOURCE-SECURITY` automated 1/1 passed，无 waiver。
+- 证据：`docs/design/g04-secure-source-pipeline.md`、`docs/evidence/g04-secure-source-pipeline.md`、`docs/evidence/security/g04-source-results.json`、`docs/evidence/security/g04-container-e2e.json`、`docs/evidence/g04-browser-e2e.json`。

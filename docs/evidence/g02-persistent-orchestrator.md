@@ -6,7 +6,7 @@ G02 is complete. The deterministic PostgreSQL/Celery/Redis orchestration spike m
 all PLAN 5.5–5.7 checkpoints and preserves the frozen G00 contract boundary. The
 machine-readable recovery matrix contains 73 passed tests, zero failed, and zero
 skipped. Its SHA-256 is
-`E887C01FFE2025D371B1AED26ED1D6704E71C1059917F19F684A5BA1AD7F4FD6`.
+`2AA9EB7F04732EF949F37A642C509179ABE2894BCAB4D8A02DA5AD7C5734DEE8`.
 
 ## Checkpoint mapping
 

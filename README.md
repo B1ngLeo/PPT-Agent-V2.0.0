@@ -23,7 +23,7 @@ pnpm verify
 
 环境版本、Windows/Linux 说明和合同变更流程见 [开发文档](docs/development.md)。尚未进入对应 Goal 的测试入口会明确报告 `not-configured`；从首次实现起必须运行真实检查。
 
-G00–G02 与 P0 Gate 已通过；G03 身份、租户、私有对象和下载授权已完成独立安全矩阵，当前执行全仓回归后按 PLAN 进入 G04。详见 [G03 证据](docs/evidence/g03-identity-tenancy-storage.md)。
+G00–G04 与 P0 Gate 已通过；身份/租户/私有对象底座和四格式安全来源流水线均完成独立安全矩阵与真实容器链路，当前按 PLAN 进入 G05 草稿、意图、大纲与 Web 工作台。详见 [G03 证据](docs/evidence/g03-identity-tenancy-storage.md)与 [G04 证据](docs/evidence/g04-secure-source-pipeline.md)。
 
 ## Repository policy
 
