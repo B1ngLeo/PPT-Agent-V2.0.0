@@ -11,6 +11,7 @@
 - 剩余工作：具名 Windows Chromium 精确 200% + 屏幕阅读器人工检查；product/security/legal 具名批准生产 Provider、区域、保留、供应商条款、客户披露及生产 KES/KMS
 - 决策/偏离：G05 P1 规划默认走 deterministic Fake Provider；Kimi/OpenAI 适配器仅保留 Worker 侧服务端配置。2026-08-16 官方 Kimi 列表尚未证明 `kimi-k3`、官方 OpenAI Images 列表尚未证明 `gpt-image-2`，因此不宣称真实生产集成完成；仍按已冻结 PLAN 保留精确模型名并将真实 smoke 设为密钥与供应商可用性双条件
 - 阻塞：工程自动化无阻塞；G08 最终发布仍受两个不可由自动化代签的人工 Gate 阻塞：当前 Windows 未安装 NVDA 且精确 Chromium 200% 尚未具名复核，ADR-005 的生产 Provider/区域/保留/供应商条款及 KES/KMS 尚未由 product/security/legal 具名批准
+- Goal 阻塞审计：同一组人工 Gate 已连续三个 Goal 回合保持不变；全部安全范围内的自动化实现、复验与证据补强均已完成，无法在没有具名人工检查和外部审批的情况下继续推进，因此 Codex Goal 标记为 `blocked`，项目发布状态仍保持 `waiting_for_human_gate`
 - 恢复记录：应用内浏览器的 Tab/Enter 注入连续 5 次不产生事件，已按防循环规则停止并记录；产品使用原生控件，键盘文本焦点、焦点恢复及完整用户旅程通过，无产品阻塞
 
 ## 已完成事项
