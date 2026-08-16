@@ -11,10 +11,13 @@ from sqlalchemy.orm import Session
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
     Draft,
+    GenerationJob,
+    GenerationSnapshot,
     IntentRevision,
     OutlineApproval,
     OutlineRevision,
     OutlineSlide,
+    Presentation,
     ProviderCall,
     Source,
     SourceArtifact,
@@ -274,6 +277,10 @@ def delete_draft(
         request_id=request_id,
         outcome="succeeded",
     )
+    # Cleanup is asynchronous, but visibility is revoked by deleted_at in this transaction.
+    from instant_ppt_domain.presentation import queue_project_cleanup
+
+    queue_project_cleanup(session, context, row, request_id=request_id)
     return row
 
 
@@ -796,4 +803,50 @@ def list_history(
     rows = list(session.scalars(statement.order_by(Draft.id.desc()).limit(limit + 1)))
     has_more = len(rows) > limit
     visible = rows[:limit]
-    return [serialize_draft(row) for row in visible], visible[-1].id if has_more else None
+    items: list[dict[str, Any]] = []
+    for row in visible:
+        job = session.scalar(
+            select(GenerationJob)
+            .join(GenerationSnapshot, GenerationSnapshot.id == GenerationJob.snapshot_id)
+            .where(
+                GenerationSnapshot.draft_id == row.id,
+                GenerationJob.organization_id == organization_id,
+            )
+            .order_by(GenerationJob.created_at.desc())
+            .limit(1)
+        )
+        presentation = session.scalar(
+            select(Presentation)
+            .where(
+                Presentation.draft_id == row.id,
+                Presentation.organization_id == organization_id,
+                Presentation.deleted_at.is_(None),
+            )
+            .order_by(Presentation.updated_at.desc())
+            .limit(1)
+        )
+        item = serialize_draft(row)
+        item.update(
+            {
+                "historyState": (
+                    "result"
+                    if presentation is not None
+                    else "monitor"
+                    if job is not None
+                    else "draft"
+                ),
+                "jobId": job.id if job else None,
+                "jobStatus": job.status if job else None,
+                "presentationId": presentation.id if presentation else None,
+                "presentationStatus": presentation.status if presentation else None,
+                "route": (
+                    f"/?draft={row.id}&presentation={presentation.id}"
+                    if presentation
+                    else f"/?draft={row.id}&job={job.id}"
+                    if job
+                    else f"/?draft={row.id}"
+                ),
+            }
+        )
+        items.append(item)
+    return items, visible[-1].id if has_more else None

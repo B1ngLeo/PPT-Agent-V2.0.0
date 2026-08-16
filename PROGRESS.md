@@ -4,11 +4,11 @@
 
 ## 当前 Goal
 
-- Goal：G06 / 真实生成、监控与工件发布
-- 状态：complete
-- 当前检查点：G06 Gate 与整仓回归通过，准备提交并进入 G07
-- 已验证：根 `pnpm verify` 完整通过；G00–G06 required Gate 全部 passed；G06 独立集成 7/7、长中文 SVG/PPTX 文本完整性、生产 Web 与真实浏览器 8/8 发布/刷新恢复通过
-- 剩余工作：G07 编辑导出与历史闭环，G08 发布工程与最终用户 E2E
+- Goal：G08 / P1 安全、质量、可观测与发布门禁
+- 状态：in_progress
+- 当前检查点：G07 已完成并通过根级全量验证，正在执行 G08 发布工程差距审计
+- 已验证：G07 4/4 集成、真实生产浏览器用户闭环、22/22 对象删除、根 `pnpm verify` 与 G00–G07 required Gate 全部 passed
+- 剩余工作：G08 安全/质量/可观测/恢复/兼容/发布证据与最终用户 E2E
 - 决策/偏离：G05 P1 规划默认走 deterministic Fake Provider；Kimi/OpenAI 适配器仅保留 Worker 侧服务端配置。2026-08-16 官方 Kimi 列表尚未证明 `kimi-k3`、官方 OpenAI Images 列表尚未证明 `gpt-image-2`，因此不宣称真实生产集成完成；仍按已冻结 PLAN 保留精确模型名并将真实 smoke 设为密钥与供应商可用性双条件
 - 阻塞：无
 - 恢复记录：应用内浏览器的 Tab/Enter 注入连续 5 次不产生事件，已按防循环规则停止并记录；产品使用原生控件，键盘文本焦点、焦点恢复及完整用户旅程通过，无产品阻塞
@@ -61,10 +61,15 @@
 - G06 恢复模块：7/7 真实 PostgreSQL/MinIO/Redis/引擎矩阵通过，覆盖 Worker 子进程 `os._exit(73)`、租约接管、上传后崩溃、重复投递、Redis 容器重启与 SSE 回放、partial/单页 retry、取消与 publish 竞态、配额和跨租户隐藏。
 - G06 Web 模块：完成真实任务启动、URL 刷新恢复、fetch SSE + Last-Event-ID/有界重连、五阶段/逐页稳定身份/取消/重试/发布物监控；生产 Next.js 构建真实浏览器完成 8/8、publication v1、13 工件、1 Presentation revision 与 images 0。
 - G06 内容完整性模块：真实生产旅程发现长中文正文被早期 SVG 截断并被 PPTX package QA 正确拒绝；改为按 East Asian Width 动态字号且保留完整批准文本，SVG QA、可编辑 PPTX 文本回归及新鲜 8 页任务首次尝试全部通过。
+- G07 Revision 模块：新增不可变 operation-set revision、乐观锁、stable slideId 文本/排序/删除、至少一页与 partial 显式接受守卫；迁移 roundtrip、immutable trigger 和无 drift 通过。
+- G07 Worker/导出模块：单页候选在 QA 前保留旧 ready 版本，成功后原子切换且记录 lineage；export job 固定精确 revision，经唯一引擎执行真实 PPTX/package QA，独立发布 export manifest 并幂等计费。
+- G07 Web/历史模块：完成“AI 可编辑草稿”、内联单页指令、文字保存/排序/删除、精确版本 PPTX 与项目 JSON 下载、真实历史 result 路由、390px 响应式与键盘跳转；Blob 下载不再跳离编辑器。
+- G07 删除模块：软删除后 API/SSE/授权立即 404，异步清理取消任务、移除私有对象并撤销 Artifact；真实用户旅程清理 22/22 对象、零失败，旧签名 URL 404。
+- G07 Gate 完成：4/4 PostgreSQL/引擎集成、G03 下载过期/重签回归、8 页生产浏览器闭环、全根验证与 `GATE-G07-USER-CLOSURE` 1/1 passed，无 waiver。
 
 ## 进行中事项
 
-- 无 G06 未完成项；下一顺序 Goal 为 G07。
+- G08：审计并补齐 P1 安全、无障碍、性能、恢复、可观测、供应链、运维与发布门禁，完成 E2E-001–012 最终证据。
 
 ## 问题及解决方案
 
@@ -118,7 +123,12 @@
 | 应用内浏览器 Tab/Enter 键注入不产生焦点移动或激活事件                                 |        5 | 按防循环规则停止继续尝试并固化 harness limitation；原生 button/link、label、键盘文本输入、dialog 焦点恢复、44px 目标与完整真实点击旅程作为补偿证据，clean console 为 0。                         |
 | G06 迁移 drop check constraint 被 Alembic naming convention 再次拼接表名前缀          |        1 | 对既有约束名使用 `op.f(...)` 标记为已格式化名称；迁移双向演练与 schema drift 检查通过。                                                                                                          |
 | G06 SSE effect 随每次 job 对象刷新重建连接                                            |        1 | effect 只绑定稳定 job ID 与 terminal 标志；普通状态刷新保持同一事件流。                                                                                                                          |
-| G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                      |        1 | 独立矩阵前关闭套件外运行时；真实进程退出、过期租约接管和单次发布/计费随后通过。                                                                                                                  |
+| G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                      |        2 | G07 根验证首次被常驻 Docker Worker 抢占租约；关闭套件外 API/Worker/outbox 后 G06 7/7、G07 4/4 及第二轮根全量验证通过。                                                                           |
+| G07 数据下载使用跨域签名 URL时浏览器导航离开编辑器                                    |        2 | 第 1 次定位原生 anchor 对跨域 `download` 不可靠；第 2 次改为授权 fetch→Blob→DOM 临时链接，PPTX/JSON 命名文件实际落盘且编辑器路由保持。                                                           |
+| 应用内浏览器 download event 未捕获程序化 Blob 下载                                    |        2 | 两次等待均超时但页面成功消息、操作系统 Downloads 中两个 8,119-byte JSON 和 25,787-byte PPTX 均证明下载完成；记录为自动化 harness 限制，不重复修改正确产品路径。                                  |
+| G07 export package QA 因封面多条正文没有沿用生成合并规则而失败                        |        1 | 导出 DeckPlan 对封面正文使用与 G06 一致的合并规则；真实引擎 export、manifest 与 package QA 回归通过。                                                                                            |
+| G07 单页重生成使用原生 prompt，在应用内浏览器被自动取消                               |        1 | 替换为可访问的内联“AI 单页修改要求”输入框；生产浏览器真实重生成成功且 stable slideId 保持。                                                                                                      |
+| Docker BuildKit 在中文工作区再次无法编码 session header                               |        1 | 使用同一 Docker daemon 的 legacy builder 顺序构建 G07 API/Worker/outbox，三运行时启动和真实浏览器 E2E 通过；G08 将此纳入发布构建说明。                                                           |
 | G06 生产 Worker 消费到数据库清理前遗留 broker 消息并记录异常                          |        1 | 真实任务包装器将不存在的旧 job 收敛为幂等 `noop_missing`；有效任务仍保持严格租约与重试。                                                                                                         |
 | 长中文正文在 SVG 作者层被截断，PPTX package QA 拒绝批准文本丢失                       |        2 | 第 1 次仅修正逐页封面布局；第 2 次定位整稿可编辑文本缺失，改为 East Asian Width 动态字号并保留全文，SVG/PPTX 回归与 8 页真实发布通过。                                                           |
 | G06 应用内浏览器不提供 viewport resize 或历史 console 收集                            |        1 | 不宣称 G06 移动浏览器/零历史 console；记录能力限制，以生产构建、语义 DOM、空 terminal alert、显式响应式规则及 G05 三档 shell 矩阵补偿。                                                          |
@@ -183,3 +193,11 @@
 - 不变量：批准后输入不可变；PostgreSQL 为状态/事件真相；Redis 可重启；Worker kill/重投不重复发布或扣费；成功页重试复用；取消不会半发布；所有 published artifact 有 hash/版本/manifest；失败/取消无可用页不创建 Presentation；G07 前无编辑/最终导出。
 - Gate：`GATE-G06-GENERATION` automated 1/1 passed，无 waiver。
 - 证据：`docs/design/g06-real-generation-publication.md`、`docs/evidence/g06-real-generation-publication.md`、`docs/evidence/g06-browser-e2e.json`、`docs/evidence/g06-generation-junit.xml`。
+
+### G07 / 结果编辑、导出与历史闭环 — complete
+
+- 产物：不可变 Presentation revisions/slide versions、有限操作集、单页 QA 后原子重生成、精确 revision export job/manifest、短时私有下载、真实历史状态路由、结构化数据快照和可审计项目清理。
+- 验证：API/domain 21/21、Worker 18/18、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 7/7、G07 4/4、10/10 双链金样本、全安全矩阵和根 `pnpm verify` 通过；生产浏览器完成 8 页编辑/重排/重生成/刷新/历史/PPTX+JSON 下载/移动端/键盘旅程。
+- 不变量：approved outline/generation snapshot 不可变；stale revision 412；stable slideId 不漂移；候选 QA 前旧 ready 可见；export 固定明确 revision；partial 未决不导出；删除后 API/SSE/旧 URL/新授权立即或清理后统一 404。
+- Gate：`GATE-G07-USER-CLOSURE` automated 1/1 passed，无 waiver；本地测试项目 22/22 私有对象删除、零失败。
+- 证据：`docs/design/g07-editor-export-history.md`、`docs/evidence/g07-editor-export-history.md`、`docs/evidence/g07-browser-e2e.json`、`docs/evidence/g07-editor-export-junit.xml`。

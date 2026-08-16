@@ -1147,6 +1147,250 @@ select {
   font-family: ui-monospace, monospace;
   font-size: 0.7rem;
 }
+.publication-card > .primary-button {
+  justify-self: start;
+}
+.presentation-editor {
+  width: min(1500px, 100%);
+  margin: 0 auto;
+  padding-bottom: 5rem;
+}
+.presentation-topbar {
+  position: sticky;
+  top: 70px;
+  z-index: 35;
+  min-height: 78px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 254, 249, 0.96);
+  backdrop-filter: blur(18px);
+}
+.presentation-topbar > div:nth-child(2) {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+}
+.presentation-topbar > div:nth-child(2) span {
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+.presentation-top-actions {
+  justify-self: end;
+  display: flex;
+  gap: 0.55rem;
+}
+.ai-draft-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 2rem;
+  margin: 1.5rem;
+  padding: clamp(1.5rem, 4vw, 3.4rem);
+  border-radius: 1.25rem;
+  color: #f7f2e6;
+  background:
+    radial-gradient(
+      circle at 88% 20%,
+      rgba(199, 237, 122, 0.2),
+      transparent 30%
+    ),
+    #173328;
+  box-shadow: 0 28px 70px rgba(17, 45, 35, 0.18);
+}
+.ai-draft-banner h1 {
+  margin: 0;
+  color: #d8ff73;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: clamp(2.8rem, 7vw, 6rem);
+  font-weight: 500;
+  line-height: 0.95;
+}
+.ai-draft-banner > div > p:not(.eyebrow) {
+  max-width: 720px;
+  color: #d8e5dc;
+  line-height: 1.7;
+}
+.regeneration-instruction {
+  max-width: 720px;
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 1.25rem;
+  color: #d8e5dc;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+.regeneration-instruction input {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 0.55rem;
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+}
+.regeneration-instruction input::placeholder {
+  color: #aebeb4;
+}
+.ai-draft-banner dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-self: start;
+  gap: 0.6rem;
+  margin: 0;
+}
+.ai-draft-banner dl div {
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+.ai-draft-banner dt {
+  color: #aebeb4;
+  font-size: 0.68rem;
+}
+.ai-draft-banner dd {
+  margin: 0.4rem 0 0;
+  font-weight: 800;
+}
+.partial-warning,
+.project-lifecycle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin: 1rem 1.5rem;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid rgba(183, 121, 31, 0.35);
+  border-radius: 1rem;
+  background: #fff6d9;
+}
+.partial-warning h2,
+.project-lifecycle h2 {
+  margin: 0;
+  font-family: Georgia, "Songti SC", serif;
+  font-weight: 500;
+}
+.partial-warning p:not(.eyebrow),
+.project-lifecycle p:not(.eyebrow) {
+  margin-bottom: 0;
+  color: #5f5b4d;
+  line-height: 1.6;
+}
+.presentation-slides {
+  margin: 3rem 1.5rem 0;
+}
+.presentation-slide-list {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.25rem;
+}
+.presentation-slide-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) 132px;
+  align-items: start;
+  gap: 1rem;
+  padding: 1.15rem;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--success);
+  border-radius: 1rem;
+  background: rgba(255, 254, 249, 0.94);
+}
+.presentation-slide-card.status-failed {
+  border-left-color: var(--danger);
+  background: #fff3ee;
+}
+.presentation-slide-number {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+}
+.presentation-slide-number span {
+  display: grid;
+  place-items: center;
+  width: 3.3rem;
+  height: 3.3rem;
+  border-radius: 50%;
+  color: white;
+  background: var(--ink);
+  font-family: ui-monospace, monospace;
+  font-weight: 800;
+}
+.presentation-slide-number small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+.presentation-slide-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+.presentation-slide-copy label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+.presentation-slide-copy input,
+.presentation-slide-copy textarea {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  color: var(--ink);
+  background: white;
+  resize: vertical;
+}
+.presentation-slide-copy input {
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 1.35rem;
+}
+.presentation-slide-copy > small {
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  font-size: 0.66rem;
+}
+.presentation-slide-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+.presentation-slide-actions button {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  background: white;
+  cursor: pointer;
+}
+.presentation-slide-actions .save-slide-button,
+.presentation-slide-actions .danger-button {
+  grid-column: 1 / -1;
+}
+.danger-button {
+  min-height: 42px;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid rgba(166, 52, 38, 0.35);
+  border-radius: 0.55rem;
+  color: #8f2d20;
+  background: #fff3ee;
+  font-weight: 800;
+  cursor: pointer;
+}
+.project-lifecycle {
+  margin-top: 3rem;
+  border-color: rgba(166, 52, 38, 0.25);
+  background: rgba(255, 254, 249, 0.85);
+}
+.presentation-slide-actions button:disabled,
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
 .workspace-body {
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(330px, 3fr);
@@ -1449,6 +1693,20 @@ select {
   .monitor-hero {
     grid-template-columns: 1fr;
   }
+  .ai-draft-banner {
+    grid-template-columns: 1fr;
+  }
+  .presentation-slide-card {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .presentation-slide-actions {
+    grid-column: 2;
+    grid-template-columns: repeat(5, minmax(88px, 1fr));
+  }
+  .presentation-slide-actions .save-slide-button,
+  .presentation-slide-actions .danger-button {
+    grid-column: auto;
+  }
   .generation-slide-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1517,6 +1775,55 @@ select {
   .monitor-topbar > button:last-child {
     grid-column: 1 / -1;
     justify-self: stretch;
+  }
+  .presentation-topbar {
+    top: 64px;
+    grid-template-columns: auto 1fr;
+    padding: 0.6rem 0.7rem;
+  }
+  .presentation-topbar > div:nth-child(2) {
+    justify-items: end;
+  }
+  .presentation-top-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .ai-draft-banner,
+  .presentation-slides,
+  .partial-warning,
+  .project-lifecycle {
+    margin-right: 0.7rem;
+    margin-left: 0.7rem;
+  }
+  .ai-draft-banner {
+    padding: 1.25rem;
+  }
+  .ai-draft-banner dl {
+    grid-template-columns: 1fr;
+  }
+  .partial-warning,
+  .project-lifecycle {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .presentation-slide-card {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 0.7rem;
+    padding: 0.8rem;
+  }
+  .presentation-slide-number span {
+    width: 2.7rem;
+    height: 2.7rem;
+  }
+  .presentation-slide-actions {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .presentation-slide-actions .save-slide-button,
+  .presentation-slide-actions .danger-button {
+    grid-column: 1 / -1;
   }
   .monitor-stepper {
     overflow-x: auto;

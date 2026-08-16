@@ -1147,9 +1147,12 @@ class PresentationRevision(Base):
     generation_job_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     snapshot_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     manifest_artifact_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    based_on_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    actor_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
     operation: Mapped[str] = mapped_column(String(40), nullable=False, default="generation")
     partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    accepted_missing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -1192,8 +1195,164 @@ class SlideVersion(Base):
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     body: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     artifact_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    source_slide_version_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
     error_code: Mapped[str | None] = mapped_column(String(80))
     payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class SlideRegenerationJob(Base):
+    __tablename__ = "slide_regeneration_jobs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["presentation_id", "organization_id"],
+            ["presentations.id", "presentations.organization_id"],
+            ondelete="CASCADE",
+            name="fk_slide_regeneration_jobs_presentation_org",
+        ),
+        ForeignKeyConstraint(
+            ["base_revision_id", "organization_id"],
+            ["presentation_revisions.id", "presentation_revisions.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_slide_regeneration_jobs_revision_org",
+        ),
+        UniqueConstraint("id", "organization_id", name="uq_slide_regeneration_jobs_id_org"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="valid_status",
+        ),
+        Index("ix_slide_regeneration_jobs_presentation", "presentation_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    presentation_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    base_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    slide_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    instruction: Mapped[str] = mapped_column(String(2000), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    result_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    result_artifact_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ExportJob(Base):
+    __tablename__ = "export_jobs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["presentation_id", "organization_id"],
+            ["presentations.id", "presentations.organization_id"],
+            ondelete="CASCADE",
+            name="fk_export_jobs_presentation_org",
+        ),
+        ForeignKeyConstraint(
+            ["presentation_revision_id", "organization_id"],
+            ["presentation_revisions.id", "presentation_revisions.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_export_jobs_revision_org",
+        ),
+        UniqueConstraint("id", "organization_id", name="uq_export_jobs_id_org"),
+        UniqueConstraint(
+            "presentation_revision_id", "options_sha256", name="uq_export_jobs_revision_options"
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="valid_status",
+        ),
+        CheckConstraint(
+            "stage IN ('queued', 'compiling', 'package_qa', 'publishing')",
+            name="valid_stage",
+        ),
+        Index("ix_export_jobs_presentation_created", "presentation_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    presentation_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    presentation_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    stage: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    options_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    artifact_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    manifest_artifact_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DataExport(Base):
+    __tablename__ = "data_exports"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_data_exports_draft_org",
+        ),
+        UniqueConstraint("id", "organization_id", name="uq_data_exports_id_org"),
+        UniqueConstraint("draft_id", "snapshot_sha256", name="uq_data_exports_snapshot"),
+        CheckConstraint("status IN ('succeeded', 'failed')", name="valid_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ProjectCleanupJob(Base):
+    __tablename__ = "project_cleanup_jobs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_project_cleanup_jobs_draft_org",
+        ),
+        UniqueConstraint("draft_id", name="uq_project_cleanup_jobs_draft"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed')",
+            name="valid_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

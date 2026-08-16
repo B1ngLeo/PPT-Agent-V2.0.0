@@ -17,6 +17,11 @@ from instant_ppt_worker.generation_pipeline import (
     InjectedGenerationCrash,
     process_generation_job,
 )
+from instant_ppt_worker.presentation_pipeline import (
+    process_export,
+    process_project_cleanup,
+    process_slide_regeneration,
+)
 from instant_ppt_worker.source_pipeline import (
     ScannerUnavailable,
     SourceObjectError,
@@ -120,5 +125,70 @@ def process_source_task(self: Task, source_id: str, organization_id: str) -> str
         countdown = min(2 ** (self.request.retries + 1), 8)
         retry_error = RuntimeError(str(error))
         raise self.retry(exc=retry_error, countdown=countdown, max_retries=2) from error
+    finally:
+        engine.dispose()
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="instant_ppt.process_slide_regeneration",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=2,
+    soft_time_limit=180,
+    time_limit=210,
+)
+def process_slide_regeneration_task(
+    self: Task, job_id: str, organization_id: str
+) -> str:
+    del self
+    settings = DomainSettings.from_env()
+    engine = create_domain_engine(settings.database_url)
+    factory = create_session_factory(engine)
+    try:
+        return process_slide_regeneration(factory, job_id, organization_id)
+    finally:
+        engine.dispose()
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="instant_ppt.process_export",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=2,
+    soft_time_limit=600,
+    time_limit=660,
+)
+def process_export_task(self: Task, job_id: str, organization_id: str) -> str:
+    del self
+    settings = DomainSettings.from_env()
+    engine = create_domain_engine(settings.database_url)
+    factory = create_session_factory(engine)
+    try:
+        return process_export(factory, job_id, organization_id)
+    finally:
+        engine.dispose()
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="instant_ppt.process_project_cleanup",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=2,
+    soft_time_limit=180,
+    time_limit=210,
+)
+def process_project_cleanup_task(self: Task, job_id: str, organization_id: str) -> str:
+    del self
+    settings = DomainSettings.from_env()
+    engine = create_domain_engine(settings.database_url)
+    factory = create_session_factory(engine)
+    try:
+        return process_project_cleanup(factory, job_id, organization_id)
     finally:
         engine.dispose()

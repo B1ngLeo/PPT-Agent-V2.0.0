@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "goal": "G04",
   "gate": "GATE-G04-SOURCE-SECURITY",
-  "generatedAt": "2026-08-16T08:04:30.372215Z",
+  "generatedAt": "2026-08-16T09:14:58.857393Z",
   "environment": {
     "database": "PostgreSQL 17.6",
     "objectStore": "MinIO RELEASE.2025-04-22",
@@ -29,79 +29,79 @@
     {
       "name": "test_four_valid_formats_parse_and_publish[.pdf]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.598,
+      "durationSeconds": 0.468,
       "status": "passed"
     },
     {
       "name": "test_four_valid_formats_parse_and_publish[.pptx]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 1.637,
+      "durationSeconds": 1.49,
       "status": "passed"
     },
     {
       "name": "test_four_valid_formats_parse_and_publish[.html]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 1.009,
+      "durationSeconds": 1.325,
       "status": "passed"
     },
     {
       "name": "test_upload_checksum_mismatch_is_persistently_rejected",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.27,
+      "durationSeconds": 0.336,
       "status": "passed"
     },
     {
       "name": "test_scanner_unavailable_fails_closed_and_retry_is_idempotent",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.574,
+      "durationSeconds": 0.617,
       "status": "passed"
     },
     {
       "name": "test_malicious_or_invalid_sources_never_reach_clean_or_parse[magic-mismatch.pdf]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.292,
+      "durationSeconds": 0.351,
       "status": "passed"
     },
     {
       "name": "test_malicious_or_invalid_sources_never_reach_clean_or_parse[ratio.docx]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.324,
+      "durationSeconds": 0.421,
       "status": "passed"
     },
     {
       "name": "test_malicious_or_invalid_sources_never_reach_clean_or_parse[traversal.docx]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.402,
+      "durationSeconds": 0.418,
       "status": "passed"
     },
     {
       "name": "test_malicious_or_invalid_sources_never_reach_clean_or_parse[encrypted.pdf]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.446,
+      "durationSeconds": 0.352,
       "status": "passed"
     },
     {
       "name": "test_malicious_or_invalid_sources_never_reach_clean_or_parse[corrupt.pdf]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.377,
+      "durationSeconds": 0.336,
       "status": "passed"
     },
     {
       "name": "test_malicious_or_invalid_sources_never_reach_clean_or_parse[active.html]",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.316,
+      "durationSeconds": 0.438,
       "status": "passed"
     },
     {
       "name": "test_post_complete_tamper_and_cross_tenant_access_are_denied",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.366,
+      "durationSeconds": 0.541,
       "status": "passed"
     },
     {
       "name": "test_create_complete_retries_and_api_restart_recover_same_source",
       "classname": "tests.integration.g04.test_source_flow",
-      "durationSeconds": 0.444,
+      "durationSeconds": 0.685,
       "status": "passed"
     }
   ]

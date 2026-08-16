@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -86,6 +87,27 @@ class MinioPrivateObjectStore:
             return self._signer.presigned_get_object(self._bucket, object_key, expires=expires)
         except (S3Error, HTTPError) as error:
             raise ArtifactUnavailable("artifact URL could not be signed") from error
+
+    def put_bytes(self, object_key: str, payload: bytes, media_type: str) -> None:
+        """Publish canonical application output without exposing a public bucket."""
+        try:
+            self.ensure_private_bucket()
+            self._client.put_object(
+                self._bucket,
+                object_key,
+                io.BytesIO(payload),
+                len(payload),
+                content_type=media_type,
+                metadata={"sha256": hashlib.sha256(payload).hexdigest()},
+            )
+        except (S3Error, HTTPError, OSError) as error:
+            raise ArtifactUnavailable("artifact object could not be published") from error
+
+    def remove(self, object_key: str) -> None:
+        try:
+            self._client.remove_object(self._bucket, object_key)
+        except (S3Error, HTTPError) as error:
+            raise ArtifactUnavailable("artifact object could not be removed") from error
 
     def presign_post(
         self,

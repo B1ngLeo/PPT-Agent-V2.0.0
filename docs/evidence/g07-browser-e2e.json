@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "goal": "G07",
+  "generatedAt": "2026-08-16T17:02:00+08:00",
+  "result": "passed",
+  "browser": "Codex in-app Chromium",
+  "server": "Next.js 16.2.9 production build",
+  "journey": {
+    "topic": "G07 端到端：可编辑演示、精确版本导出与安全删除",
+    "draftId": "01M04W0W2XXVCWG7CFVD6940HB",
+    "jobId": "01M04W1MHXVAFJDSXA525F092M",
+    "presentationId": "018DS7KY7RZ2G726VGQMWF1B3H",
+    "initialSlideCount": 8,
+    "finalRevisionNumber": 4,
+    "finalRevisionId": "01BH1NG585GZ0AF75BBCRDA53N",
+    "textEditPersistedAfterReload": true,
+    "stableSlideReordered": true,
+    "stableSlideRegenerated": true,
+    "oldReadyVisibleUntilQa": true,
+    "historyRestoredResultRoute": true
+  },
+  "export": {
+    "revisionId": "01BH1NG585GZ0AF75BBCRDA53N",
+    "exportId": "01M04W8AYT0VKJ000PMETW0D7D",
+    "artifactId": "016H7T395186VWK31DESN0VMZQ",
+    "pptxDownloaded": true,
+    "pptxBytes": 25787,
+    "projectDataDownloaded": true,
+    "projectDataBytes": 8119,
+    "editorRouteRetainedDuringDownloads": true,
+    "crossTenantGrantStatus": 404,
+    "sharedExpiryAndResignMatrix": "tests/integration/g03/test_artifacts.py and tests/integration/g03/test_minio.py"
+  },
+  "database": {
+    "revisionCount": 4,
+    "regenerationJobsSucceeded": 1,
+    "exportJobsSucceeded": 1,
+    "exportUsage": 1,
+    "slideUsage": 9,
+    "imageUsage": 0,
+    "publishedArtifactCountBeforeDelete": 22
+  },
+  "accessibility": {
+    "mobileViewport": "390x844",
+    "mobileKeyControlsPresent": true,
+    "semanticEditorRegionsPresent": true,
+    "labeledRegenerationInstruction": true,
+    "keyboardSkipLinkActivated": true,
+    "defaultViewportRestored": true
+  },
+  "deletion": {
+    "preDeleteDownloadStatus": 200,
+    "deleteStatus": 204,
+    "cleanupStatus": "succeeded",
+    "artifactCount": 22,
+    "removedObjectCount": 22,
+    "failedObjectCount": 0,
+    "presentationAfterDelete": 404,
+    "generationJobAfterDelete": 404,
+    "sseAfterDelete": 404,
+    "oldSignedUrlAfterCleanup": 404,
+    "newGrantAfterDelete": 404
+  },
+  "runtimeNotes": [
+    "The browser download-event waiter did not observe programmatic Blob downloads, so actual named files and byte sizes were verified in the operating-system Downloads directory.",
+    "Destructive browser clicks were avoided; the exact locally-created test Draft was deleted through the same HTTP API using a bounded non-browser E2E harness."
+  ]
+}

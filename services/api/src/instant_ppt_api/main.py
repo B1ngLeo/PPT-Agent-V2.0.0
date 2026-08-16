@@ -18,6 +18,7 @@ from instant_ppt_api.auth import ApiAuthenticationError, OidcTokenVerifier
 from instant_ppt_api.g03_routes import router as g03_router
 from instant_ppt_api.g04_routes import router as g04_router
 from instant_ppt_api.g05_routes import router as g05_router
+from instant_ppt_api.g07_routes import router as g07_router
 from instant_ppt_api.object_store import MinioPrivateObjectStore, ObjectStoreSettings
 from instant_ppt_api.planning import DeterministicPlanningGateway
 from instant_ppt_api.problems import problem_response
@@ -115,6 +116,7 @@ def create_app(
     application.include_router(g03_router)
     application.include_router(g04_router)
     application.include_router(g05_router)
+    application.include_router(g07_router)
     return application
 
 

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
     Artifact,
+    Draft,
     GenerationArtifact,
     GenerationJob,
     GenerationJobSlide,
@@ -139,11 +140,17 @@ def _advisory_lock(session: Session, scope: str) -> None:
 
 
 def _job_query(job_id: str, organization_id: str, *, for_update: bool = False) -> Select:
-    statement = select(GenerationJob).where(
-        GenerationJob.id == job_id,
-        GenerationJob.organization_id == organization_id,
+    statement = (
+        select(GenerationJob)
+        .outerjoin(GenerationSnapshot, GenerationSnapshot.id == GenerationJob.snapshot_id)
+        .outerjoin(Draft, Draft.id == GenerationSnapshot.draft_id)
+        .where(
+            GenerationJob.id == job_id,
+            GenerationJob.organization_id == organization_id,
+            Draft.deleted_at.is_(None),
+        )
     )
-    return statement.with_for_update() if for_update else statement
+    return statement.with_for_update(of=GenerationJob) if for_update else statement
 
 
 def get_job(

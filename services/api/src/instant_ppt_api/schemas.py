@@ -165,3 +165,58 @@ class GenerateOutlineRequest(BaseModel):
     schema_version: Literal[1] = Field(alias="schemaVersion")
     data: GenerateOutlineData = Field(default_factory=GenerateOutlineData)
     base_revision_id: str | None = Field(default=None, alias="baseRevisionId")
+
+
+class PresentationOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["update_text", "move", "delete", "accept_missing"]
+    slide_id: str | None = Field(default=None, min_length=26, max_length=26, alias="slideId")
+    title: str | None = Field(default=None, max_length=300)
+    body: list[str] | None = None
+    position: int | None = Field(default=None, ge=1, le=30)
+
+
+class PresentationRevisionData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operations: list[PresentationOperation] = Field(min_length=1, max_length=100)
+
+
+class PresentationRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: PresentationRevisionData
+    base_revision_id: str = Field(min_length=26, max_length=26, alias="baseRevisionId")
+
+
+class SlideRegenerationData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: str = Field(default="", max_length=2000)
+
+
+class SlideRegenerationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: SlideRegenerationData = Field(default_factory=SlideRegenerationData)
+    base_revision_id: str = Field(min_length=26, max_length=26, alias="baseRevisionId")
+
+
+class PresentationExportData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    presentation_revision_id: str | None = Field(
+        default=None, min_length=26, max_length=26, alias="presentationRevisionId"
+    )
+    filename: str | None = Field(default=None, min_length=1, max_length=180)
+
+
+class PresentationExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: PresentationExportData = Field(default_factory=PresentationExportData)
+    base_revision_id: str | None = Field(default=None, alias="baseRevisionId")

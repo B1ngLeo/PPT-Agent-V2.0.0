@@ -113,6 +113,70 @@ type DraftSnapshot = {
   currentIntent: IntentRevision | null;
   currentOutline: OutlineRevision | null;
   generationSummary: GenerationSummary | null;
+  historyState?: "draft" | "monitor" | "result";
+  jobId?: string | null;
+  jobStatus?: string | null;
+  presentationId?: string | null;
+  presentationStatus?: string | null;
+  route?: string;
+};
+
+type PresentationSlide = {
+  slideVersionId: string;
+  slideId: string;
+  outlineSlideId: string;
+  position: number;
+  status: "ready" | "failed";
+  title: string;
+  body: string[];
+  artifactId: string | null;
+  sourceSlideVersionId: string | null;
+  errorCode: string | null;
+};
+
+type PresentationRevision = {
+  presentationRevisionId: string;
+  presentationId: string;
+  basedOnRevisionId: string | null;
+  revisionNumber: number;
+  operation: string;
+  partial: boolean;
+  acceptedMissing: boolean;
+  manifestArtifactId: string;
+  slides: PresentationSlide[];
+  createdAt: string;
+};
+
+type Presentation = {
+  presentationId: string;
+  draftId: string;
+  generationJobId: string;
+  title: string;
+  status: "ready" | "partial";
+  currentRevisionId: string;
+  lockVersion: number;
+  currentRevision: PresentationRevision;
+};
+
+type PresentationExport = {
+  exportId: string;
+  presentationId: string;
+  presentationRevisionId: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  stage: "queued" | "compiling" | "package_qa" | "publishing";
+  artifactId: string | null;
+  manifestArtifactId: string | null;
+  errorCode: string | null;
+};
+
+type RegenerationOperation = {
+  regenerationJobId: string;
+  presentationId: string;
+  baseRevisionId: string;
+  slideId: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  resultRevisionId: string | null;
+  errorCode: string | null;
 };
 
 type GenerationJobSlide = {
@@ -220,6 +284,24 @@ async function api<T>(
     );
   }
   return body;
+}
+
+async function downloadAuthorizedFile(url: string, filename: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`下载对象失败（${response.status}）`);
+  const objectUrl = URL.createObjectURL(await response.blob());
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.rel = "noopener";
+    anchor.style.display = "none";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  }
 }
 
 function mutation(data: unknown, baseRevisionId: string | null = null) {
@@ -341,7 +423,7 @@ async function streamGenerationEvents(
 
 export function WorkspaceApp() {
   const [view, setView] = useState<
-    "loading" | "home" | "workspace" | "monitor"
+    "loading" | "home" | "workspace" | "monitor" | "presentation"
   >("loading");
   const [templates, setTemplates] = useState<TemplateVersion[]>([]);
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
@@ -357,6 +439,12 @@ export function WorkspaceApp() {
   const [generationJob, setGenerationJob] = useState<GenerationJob | null>(
     null,
   );
+  const [presentation, setPresentation] = useState<Presentation | null>(null);
+  const [presentationMessage, setPresentationMessage] = useState(
+    "这是 AI 可编辑草稿，每次修改都会创建不可变版本。",
+  );
+  const [regenerationInstruction, setRegenerationInstruction] =
+    useState("让结论更清晰，并保留当前事实");
   const [streamState, setStreamState] = useState<StreamState>("closed");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [failedSaveKind, setFailedSaveKind] = useState<FailedSaveKind>(null);
@@ -399,6 +487,33 @@ export function WorkspaceApp() {
     );
     setHistory(response.data.items);
   }, []);
+
+  const loadPresentation = useCallback(
+    async (presentationId: string, push = false, showLoading = false) => {
+      if (showLoading) setView("loading");
+      try {
+        const response = await api<Presentation>(
+          `/v1/presentations/${presentationId}`,
+        );
+        setPresentation(response.data);
+        setPresentationMessage(
+          `当前为第 ${response.data.currentRevision.revisionNumber} 个不可变版本。`,
+        );
+        setView("presentation");
+        if (push) {
+          window.history.pushState(
+            {},
+            "",
+            `/?draft=${response.data.draftId}&presentation=${response.data.presentationId}`,
+          );
+        }
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "演示文稿恢复失败");
+        if (showLoading) setView("home");
+      }
+    },
+    [],
+  );
 
   const loadGenerationJob = useCallback(
     async (jobId: string, push = false, showLoading = false) => {
@@ -494,9 +609,12 @@ export function WorkspaceApp() {
         setUsage(usageResponse.data);
         await refreshHistory();
         const parameters = new URLSearchParams(window.location.search);
+        const presentationId = parameters.get("presentation");
         const jobId = parameters.get("job");
         const draftId = parameters.get("draft");
-        if (jobId) await loadGenerationJob(jobId, false, false);
+        if (presentationId)
+          await loadPresentation(presentationId, false, false);
+        else if (jobId) await loadGenerationJob(jobId, false, false);
         else if (draftId) await openDraft(draftId, false);
         else setView("home");
       } catch (reason) {
@@ -509,7 +627,7 @@ export function WorkspaceApp() {
     return () => {
       active = false;
     };
-  }, [loadGenerationJob, openDraft, refreshHistory]);
+  }, [loadGenerationJob, loadPresentation, openDraft, refreshHistory]);
 
   const generationJobId = generationJob?.jobId;
   const generationJobTerminal = generationJob?.terminal;
@@ -994,9 +1112,242 @@ export function WorkspaceApp() {
     }
   };
 
+  const applyPresentationOperations = async (
+    operations: Array<Record<string, unknown>>,
+    message: string,
+  ) => {
+    if (!presentation || busyMessage) return;
+    setBusyMessage(message);
+    setError(null);
+    try {
+      await api<PresentationRevision>(
+        `/v1/presentations/${presentation.presentationId}/revisions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation({ operations }, presentation.currentRevisionId),
+        },
+      );
+      await loadPresentation(presentation.presentationId);
+      setPresentationMessage("修改已保存为新版本，可从版本历史追溯。");
+      await refreshHistory();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "演示文稿修改失败");
+      setPresentationMessage("当前版本保持不变；本地输入仍在，可重试。");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
+  const changePresentationSlide = (
+    slideId: string,
+    change: Partial<Pick<PresentationSlide, "title" | "body">>,
+  ) => {
+    setPresentation((current) =>
+      current
+        ? {
+            ...current,
+            currentRevision: {
+              ...current.currentRevision,
+              slides: current.currentRevision.slides.map((slide) =>
+                slide.slideId === slideId ? { ...slide, ...change } : slide,
+              ),
+            },
+          }
+        : current,
+    );
+  };
+
+  const regeneratePresentationSlide = async (slideId: string) => {
+    if (!presentation || busyMessage) return;
+    const instruction = regenerationInstruction.trim();
+    setBusyMessage("AI 正在后台重生成；旧版本仍可见…");
+    setPresentationMessage("候选页通过质量检查前，当前就绪版本不会被替换。");
+    setError(null);
+    try {
+      const queued = await api<RegenerationOperation>(
+        `/v1/presentations/${presentation.presentationId}/slides/${slideId}:regenerate`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation({ instruction }, presentation.currentRevisionId),
+        },
+      );
+      let operation = queued.data;
+      for (
+        let attempt = 0;
+        attempt < 120 &&
+        (operation.status === "queued" || operation.status === "running");
+        attempt += 1
+      ) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
+        operation = (
+          await api<RegenerationOperation>(
+            `/v1/operations/${queued.data.regenerationJobId}`,
+          )
+        ).data;
+      }
+      if (operation.status !== "succeeded") {
+        throw new Error(
+          operation.errorCode
+            ? `单页重生成失败：${operation.errorCode}`
+            : "单页重生成未能完成",
+        );
+      }
+      await loadPresentation(presentation.presentationId);
+      setPresentationMessage("新页面已通过质量检查并原子切换为当前版本。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "单页重生成失败");
+      setPresentationMessage("重生成未发布；之前的就绪版本仍保持可见。");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
+  const exportPresentation = async () => {
+    if (!presentation || busyMessage) return;
+    setBusyMessage("正在按当前精确版本编译并执行包检…");
+    setError(null);
+    try {
+      const queued = await api<PresentationExport>(
+        `/v1/presentations/${presentation.presentationId}/exports`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation(
+            {
+              presentationRevisionId: presentation.currentRevisionId,
+              filename: `${presentation.title}.pptx`,
+            },
+            presentation.currentRevisionId,
+          ),
+        },
+      );
+      let exportJob = queued.data;
+      for (
+        let attempt = 0;
+        attempt < 120 &&
+        (exportJob.status === "queued" || exportJob.status === "running");
+        attempt += 1
+      ) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
+        exportJob = (
+          await api<PresentationExport>(`/v1/exports/${queued.data.exportId}`)
+        ).data;
+      }
+      if (exportJob.status !== "succeeded" || !exportJob.artifactId) {
+        throw new Error(
+          exportJob.errorCode
+            ? `导出失败：${exportJob.errorCode}`
+            : "导出未能完成",
+        );
+      }
+      const authorization = await api<{
+        downloadUrl: string;
+        expiresAt: string;
+      }>(`/v1/artifacts/${exportJob.artifactId}:authorize-download`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: mutation({}),
+      });
+      await downloadAuthorizedFile(
+        authorization.data.downloadUrl,
+        `${presentation.title}.pptx`,
+      );
+      setPresentationMessage(
+        `已导出版本 ${exportJob.presentationRevisionId.slice(-8)}，短期下载链接已签发。`,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "导出失败");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
+  const exportProjectData = async () => {
+    if (!presentation || busyMessage) return;
+    setBusyMessage("正在固定项目数据快照…");
+    setError(null);
+    try {
+      const result = await api<{ artifactId: string }>(
+        `/v1/drafts/${presentation.draftId}:export-data`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation({}),
+        },
+      );
+      const authorization = await api<{ downloadUrl: string }>(
+        `/v1/artifacts/${result.data.artifactId}:authorize-download`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation({}),
+        },
+      );
+      await downloadAuthorizedFile(
+        authorization.data.downloadUrl,
+        `${presentation.title}-project-data.json`,
+      );
+      setPresentationMessage("项目结构化数据快照已固定并可下载。");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "项目数据导出失败");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
+  const deleteProject = async () => {
+    if (!presentation || busyMessage) return;
+    setBusyMessage("正在撤销访问并排队清理项目…");
+    try {
+      const response = await fetch(
+        `${API_BASE}/v1/drafts/${presentation.draftId}`,
+        { method: "DELETE", headers: authHeaders() },
+      );
+      if (!response.ok) throw new Error(`删除失败（${response.status}）`);
+      setPresentation(null);
+      setBusyMessage(null);
+      returnHome();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "项目删除失败");
+      setBusyMessage(null);
+    }
+  };
+
+  const openHistoryItem = (item: DraftSnapshot) => {
+    setHistoryOpen(false);
+    if (item.historyState === "result" && item.presentationId) {
+      void loadPresentation(item.presentationId, true, true);
+    } else if (item.historyState === "monitor" && item.jobId) {
+      void loadGenerationJob(item.jobId, true, true);
+    } else {
+      void openDraft(item.draftId);
+    }
+  };
+
   const returnHome = () => {
     setView("home");
     setGenerationJob(null);
+    setPresentation(null);
     setStreamState("closed");
     lastEventId.current = "";
     window.history.pushState({}, "", "/");
@@ -1052,7 +1403,295 @@ export function WorkspaceApp() {
         </div>
       </header>
 
-      {view === "monitor" && generationJob ? (
+      {view === "presentation" && presentation ? (
+        <div className="presentation-editor">
+          <div className="presentation-topbar">
+            <button
+              className="quiet-button"
+              type="button"
+              onClick={() => void openDraft(presentation.draftId)}
+            >
+              ← 返回大纲
+            </button>
+            <div>
+              <strong>{presentation.title}</strong>
+              <span aria-live="polite">
+                rev {presentation.currentRevision.revisionNumber} ·{" "}
+                {presentation.currentRevisionId.slice(-8)}
+              </span>
+            </div>
+            <div className="presentation-top-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={Boolean(busyMessage)}
+                onClick={() => void exportProjectData()}
+              >
+                导出项目数据
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={
+                  Boolean(busyMessage) ||
+                  (presentation.currentRevision.partial &&
+                    !presentation.currentRevision.acceptedMissing)
+                }
+                onClick={() => void exportPresentation()}
+              >
+                {busyMessage ?? "导出当前版本 PPTX"}
+              </button>
+            </div>
+          </div>
+
+          <section
+            className="ai-draft-banner"
+            aria-labelledby="draft-banner-title"
+          >
+            <div>
+              <p className="eyebrow">AI EDITABLE DRAFT</p>
+              <h1 id="draft-banner-title">AI 可编辑草稿</h1>
+              <p aria-live="polite">{presentationMessage}</p>
+              <label className="regeneration-instruction">
+                <span>AI 单页修改要求</span>
+                <input
+                  value={regenerationInstruction}
+                  maxLength={2000}
+                  onChange={(event) =>
+                    setRegenerationInstruction(event.target.value)
+                  }
+                  placeholder="例如：让结论更锋利，并保留数据事实"
+                />
+              </label>
+            </div>
+            <dl>
+              <div>
+                <dt>状态</dt>
+                <dd>
+                  {presentation.status === "ready" ? "全部就绪" : "部分就绪"}
+                </dd>
+              </div>
+              <div>
+                <dt>页面</dt>
+                <dd>{presentation.currentRevision.slides.length}</dd>
+              </div>
+              <div>
+                <dt>版本锁</dt>
+                <dd>{presentation.lockVersion}</dd>
+              </div>
+            </dl>
+          </section>
+
+          {error ? (
+            <div className="error-banner" role="alert">
+              <span>{error}</span>
+              <button type="button" onClick={() => setError(null)}>
+                关闭
+              </button>
+            </div>
+          ) : null}
+
+          {presentation.currentRevision.partial ? (
+            <section
+              className="partial-warning"
+              aria-labelledby="partial-title"
+            >
+              <div>
+                <p className="eyebrow">NO SILENT OMISSION</p>
+                <h2 id="partial-title">仍有失败页面，不会静默漏导</h2>
+                <p>可重生成失败页、删除对应槽位，或明确接受缺页后导出。</p>
+              </div>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={
+                  presentation.currentRevision.acceptedMissing ||
+                  Boolean(busyMessage)
+                }
+                onClick={() =>
+                  void applyPresentationOperations(
+                    [{ type: "accept_missing" }],
+                    "正在记录缺页接受决定…",
+                  )
+                }
+              >
+                {presentation.currentRevision.acceptedMissing
+                  ? "已明确接受缺页"
+                  : "明确接受缺页并允许导出"}
+              </button>
+            </section>
+          ) : null}
+
+          <section
+            className="presentation-slides"
+            aria-labelledby="presentation-slides-title"
+          >
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">IMMUTABLE SLIDE VERSIONS</p>
+                <h2 id="presentation-slides-title">逐页编辑</h2>
+              </div>
+              <p>可编辑文字、调整顺序、删除或让 AI 只重生成一页。</p>
+            </div>
+            <div className="presentation-slide-list">
+              {presentation.currentRevision.slides.map((slide, index) => (
+                <article
+                  className={`presentation-slide-card status-${slide.status}`}
+                  key={slide.slideId}
+                >
+                  <div className="presentation-slide-number">
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <small>
+                      {slide.status === "ready" ? "已就绪" : "失败槽位"}
+                    </small>
+                  </div>
+                  <div className="presentation-slide-copy">
+                    <label>
+                      <span>页面标题</span>
+                      <input
+                        value={slide.title}
+                        maxLength={300}
+                        onChange={(event) =>
+                          changePresentationSlide(slide.slideId, {
+                            title: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>正文要点（每行一个）</span>
+                      <textarea
+                        rows={4}
+                        value={slide.body.join("\n")}
+                        onChange={(event) =>
+                          changePresentationSlide(slide.slideId, {
+                            body: event.target.value.split("\n"),
+                          })
+                        }
+                      />
+                    </label>
+                    <small>
+                      stable slide · {slide.slideId.slice(-8)} · version{" "}
+                      {slide.slideVersionId.slice(-8)}
+                    </small>
+                  </div>
+                  <div
+                    className="presentation-slide-actions"
+                    aria-label={`第 ${index + 1} 页操作`}
+                  >
+                    <button
+                      type="button"
+                      disabled={index === 0 || Boolean(busyMessage)}
+                      onClick={() =>
+                        void applyPresentationOperations(
+                          [
+                            {
+                              type: "move",
+                              slideId: slide.slideId,
+                              position: index,
+                            },
+                          ],
+                          "正在创建排序版本…",
+                        )
+                      }
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        index ===
+                          presentation.currentRevision.slides.length - 1 ||
+                        Boolean(busyMessage)
+                      }
+                      onClick={() =>
+                        void applyPresentationOperations(
+                          [
+                            {
+                              type: "move",
+                              slideId: slide.slideId,
+                              position: index + 2,
+                            },
+                          ],
+                          "正在创建排序版本…",
+                        )
+                      }
+                    >
+                      ↓
+                    </button>
+                    <button
+                      className="save-slide-button"
+                      type="button"
+                      disabled={!slide.title.trim() || Boolean(busyMessage)}
+                      onClick={() =>
+                        void applyPresentationOperations(
+                          [
+                            {
+                              type: "update_text",
+                              slideId: slide.slideId,
+                              title: slide.title,
+                              body: slide.body,
+                            },
+                          ],
+                          "正在保存页面版本…",
+                        )
+                      }
+                    >
+                      保存文字
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(busyMessage)}
+                      onClick={() =>
+                        void regeneratePresentationSlide(slide.slideId)
+                      }
+                    >
+                      AI 重生成
+                    </button>
+                    <button
+                      className="danger-button"
+                      type="button"
+                      disabled={
+                        presentation.currentRevision.slides.length === 1 ||
+                        Boolean(busyMessage)
+                      }
+                      onClick={() =>
+                        void applyPresentationOperations(
+                          [{ type: "delete", slideId: slide.slideId }],
+                          "正在创建删除版本…",
+                        )
+                      }
+                    >
+                      删除
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section
+            className="project-lifecycle"
+            aria-labelledby="project-lifecycle-title"
+          >
+            <div>
+              <p className="eyebrow">PROJECT LIFECYCLE</p>
+              <h2 id="project-lifecycle-title">项目访问与清理</h2>
+              <p>
+                删除后 API、事件流和下载授权会立即失效，对象由后台审计任务清理。
+              </p>
+            </div>
+            <button
+              className="danger-button"
+              type="button"
+              disabled={Boolean(busyMessage)}
+              onClick={() => void deleteProject()}
+            >
+              删除整个项目
+            </button>
+          </section>
+        </div>
+      ) : view === "monitor" && generationJob ? (
         <div className="generation-monitor">
           <div className="monitor-topbar">
             <button
@@ -1265,8 +1904,21 @@ export function WorkspaceApp() {
                   ))}
               </div>
               <small>
-                此处仅展示 G06 生成工件；编辑与最终导出将在 G07 开放。
+                生成基线已固定；进入编辑器后的修改会创建独立修订，不会覆盖原始发布。
               </small>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() =>
+                  void loadPresentation(
+                    generationJob.presentation!.presentationId,
+                    true,
+                    true,
+                  )
+                }
+              >
+                打开可编辑演示
+              </button>
             </section>
           ) : null}
         </div>
@@ -1855,10 +2507,7 @@ export function WorkspaceApp() {
                 type="button"
                 className="history-item"
                 key={item.draftId}
-                onClick={() => {
-                  setHistoryOpen(false);
-                  void openDraft(item.draftId);
-                }}
+                onClick={() => openHistoryItem(item)}
               >
                 <span>
                   <strong>{item.title}</strong>
@@ -1867,7 +2516,11 @@ export function WorkspaceApp() {
                   </small>
                 </span>
                 <span>
-                  {item.status} · {item.mode}
+                  {item.historyState === "result"
+                    ? `结果 · ${item.presentationStatus}`
+                    : item.historyState === "monitor"
+                      ? `任务 · ${item.jobStatus}`
+                      : `草稿 · ${item.status}`}
                 </span>
               </button>
             ))}

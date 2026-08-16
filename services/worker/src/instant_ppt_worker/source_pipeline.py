@@ -149,6 +149,12 @@ class WorkerObjectStore:
         except (S3Error, HTTPError, OSError) as error:
             raise SourceObjectError("parsed artifact could not be published") from error
 
+    def remove(self, object_key: str) -> None:
+        try:
+            self.client.remove_object(self.bucket, object_key)
+        except (S3Error, HTTPError) as error:
+            raise SourceObjectError("artifact object could not be removed") from error
+
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()

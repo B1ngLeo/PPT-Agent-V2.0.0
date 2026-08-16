@@ -172,13 +172,20 @@ gates:
   - id: GATE-G07-USER-CLOSURE
     goal: G07
     required: true
-    status: pending
+    status: passed
     ownerRole: qa
-    approver: null
-    checkedAt: null
-    targetVersions: []
-    evidence: []
-    notes: Revision-bound export, history recovery, deletion, and download expiry.
+    approver: automated:g07-editor-export-user-closure
+    checkedAt: 2026-08-16T17:02:00+08:00
+    targetVersions: [postgresql-17.6, minio-RELEASE.2025-04-22, nextjs-16.2.9]
+    evidence:
+      [
+        "docs/design/g07-editor-export-history.md",
+        "docs/evidence/g07-editor-export-history.md",
+        "docs/evidence/g07-browser-e2e.json",
+        "docs/evidence/g07-editor-export-junit.xml",
+        "docs/adr/ADR-007-retention-download.md",
+      ]
+    notes: Immutable optimistic revisions, stable-slide regeneration, exact concurrent export, partial guard, expiring tenant downloads, real browser history/downloads, and audited project deletion with 22/22 private objects removed all passed.
     waiver: null
   - id: GATE-G08-RELEASE
     goal: G08

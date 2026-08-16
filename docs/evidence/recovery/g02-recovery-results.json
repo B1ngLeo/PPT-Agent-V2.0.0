@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "goal": "G02",
-  "startedAt": "2026-08-16T08:02:08.671432Z",
-  "completedAt": "2026-08-16T08:03:49.923103Z",
+  "startedAt": "2026-08-16T09:12:21.492594Z",
+  "completedAt": "2026-08-16T09:14:13.925191Z",
   "database": "PostgreSQL 17.6 isolated test database",
   "redis": "Redis 7.4.2 isolated DB 14/15",
   "requiredConsecutiveIterations": 10,
@@ -19,241 +19,241 @@
       "name": "test_actual_celery_worker_kill_recovery[0]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.67
+      "durationSeconds": 9.082
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[1]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.716
+      "durationSeconds": 9.507
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[2]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.834
+      "durationSeconds": 9.785
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[3]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 9.113
+      "durationSeconds": 9.385
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[4]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 9.007
+      "durationSeconds": 9.341
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[5]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.777
+      "durationSeconds": 9.302
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[6]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.801
+      "durationSeconds": 9.203
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[7]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.755
+      "durationSeconds": 9.518
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[8]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.642
+      "durationSeconds": 9.614
     },
     {
       "name": "test_actual_celery_worker_kill_recovery[9]",
       "className": "tests.integration.g02.test_celery_kill",
       "status": "passed",
-      "durationSeconds": 8.565
+      "durationSeconds": 10.168
     },
     {
       "name": "test_http_idempotency_and_snapshot",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.2
+      "durationSeconds": 0.272
     },
     {
       "name": "test_sse_resume[0]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.169
+      "durationSeconds": 0.296
     },
     {
       "name": "test_sse_resume[1]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.172
+      "durationSeconds": 0.371
     },
     {
       "name": "test_sse_resume[2]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.171
+      "durationSeconds": 0.221
     },
     {
       "name": "test_sse_resume[3]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.166
+      "durationSeconds": 0.242
     },
     {
       "name": "test_sse_resume[4]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.169
+      "durationSeconds": 0.322
     },
     {
       "name": "test_sse_resume[5]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.178
+      "durationSeconds": 0.247
     },
     {
       "name": "test_sse_resume[6]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.243
+      "durationSeconds": 0.401
     },
     {
       "name": "test_sse_resume[7]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.228
+      "durationSeconds": 0.281
     },
     {
       "name": "test_sse_resume[8]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.248
+      "durationSeconds": 0.348
     },
     {
       "name": "test_sse_resume[9]",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.315
+      "durationSeconds": 0.298
     },
     {
       "name": "test_sse_unknown_sequence_returns_reset",
       "className": "tests.integration.g02.test_http_sse",
       "status": "passed",
-      "durationSeconds": 0.204
+      "durationSeconds": 0.256
     },
     {
       "name": "test_idempotency",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.248
+      "durationSeconds": 0.213
     },
     {
       "name": "test_worker_crash_recovery[0]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.234
+      "durationSeconds": 0.309
     },
     {
       "name": "test_worker_crash_recovery[1]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.213
+      "durationSeconds": 0.266
     },
     {
       "name": "test_worker_crash_recovery[2]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.18
+      "durationSeconds": 0.265
     },
     {
       "name": "test_worker_crash_recovery[3]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.178
+      "durationSeconds": 0.309
     },
     {
       "name": "test_worker_crash_recovery[4]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.186
+      "durationSeconds": 0.46
     },
     {
       "name": "test_worker_crash_recovery[5]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.216
+      "durationSeconds": 0.312
     },
     {
       "name": "test_worker_crash_recovery[6]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.186
+      "durationSeconds": 0.413
     },
     {
       "name": "test_worker_crash_recovery[7]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.181
+      "durationSeconds": 0.297
     },
     {
       "name": "test_worker_crash_recovery[8]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.195
+      "durationSeconds": 0.276
     },
     {
       "name": "test_worker_crash_recovery[9]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.18
+      "durationSeconds": 0.242
     },
     {
       "name": "test_partial_slide_completion[0]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.163
+      "durationSeconds": 0.224
     },
     {
       "name": "test_partial_slide_completion[1]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.196
+      "durationSeconds": 0.377
     },
     {
       "name": "test_partial_slide_completion[2]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.249
+      "durationSeconds": 0.264
     },
     {
       "name": "test_partial_slide_completion[3]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.232
+      "durationSeconds": 0.338
     },
     {
       "name": "test_partial_slide_completion[4]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.184
+      "durationSeconds": 0.267
     },
     {
       "name": "test_partial_slide_completion[5]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.261
+      "durationSeconds": 0.238
     },
     {
       "name": "test_partial_slide_completion[6]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.235
+      "durationSeconds": 0.225
     },
     {
       "name": "test_partial_slide_completion[7]",
@@ -265,194 +265,194 @@
       "name": "test_partial_slide_completion[8]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.175
+      "durationSeconds": 0.25
     },
     {
       "name": "test_partial_slide_completion[9]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.226
+      "durationSeconds": 0.291
     },
     {
       "name": "test_cancel_publish_race[0]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.149
+      "durationSeconds": 0.153
     },
     {
       "name": "test_cancel_publish_race[1]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.14
+      "durationSeconds": 0.172
     },
     {
       "name": "test_cancel_publish_race[2]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.138
+      "durationSeconds": 0.232
     },
     {
       "name": "test_cancel_publish_race[3]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.199
+      "durationSeconds": 0.166
     },
     {
       "name": "test_cancel_publish_race[4]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.151
+      "durationSeconds": 0.16
     },
     {
       "name": "test_cancel_publish_race[5]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.137
+      "durationSeconds": 0.167
     },
     {
       "name": "test_cancel_publish_race[6]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.146
+      "durationSeconds": 0.174
     },
     {
       "name": "test_cancel_publish_race[7]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.138
+      "durationSeconds": 0.213
     },
     {
       "name": "test_cancel_publish_race[8]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.132
+      "durationSeconds": 0.285
     },
     {
       "name": "test_cancel_publish_race[9]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.118
+      "durationSeconds": 0.223
     },
     {
       "name": "test_redis_restart[0]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.136
+      "durationSeconds": 0.344
     },
     {
       "name": "test_redis_restart[1]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.144
+      "durationSeconds": 0.19
     },
     {
       "name": "test_redis_restart[2]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.14
+      "durationSeconds": 0.213
     },
     {
       "name": "test_redis_restart[3]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.136
+      "durationSeconds": 0.207
     },
     {
       "name": "test_redis_restart[4]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.162
+      "durationSeconds": 0.177
     },
     {
       "name": "test_redis_restart[5]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.155
+      "durationSeconds": 0.221
     },
     {
       "name": "test_redis_restart[6]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.139
+      "durationSeconds": 0.196
     },
     {
       "name": "test_redis_restart[7]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.139
+      "durationSeconds": 0.182
     },
     {
       "name": "test_redis_restart[8]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.14
+      "durationSeconds": 0.183
     },
     {
       "name": "test_redis_restart[9]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.137
+      "durationSeconds": 0.192
     },
     {
       "name": "test_outbox_redis_fanout[0]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.089
+      "durationSeconds": 0.162
     },
     {
       "name": "test_outbox_redis_fanout[1]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.097
+      "durationSeconds": 0.133
     },
     {
       "name": "test_outbox_redis_fanout[2]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.097
+      "durationSeconds": 0.116
     },
     {
       "name": "test_outbox_redis_fanout[3]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.1
+      "durationSeconds": 0.119
     },
     {
       "name": "test_outbox_redis_fanout[4]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.102
+      "durationSeconds": 0.121
     },
     {
       "name": "test_outbox_redis_fanout[5]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.17
+      "durationSeconds": 0.109
     },
     {
       "name": "test_outbox_redis_fanout[6]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.1
+      "durationSeconds": 0.124
     },
     {
       "name": "test_outbox_redis_fanout[7]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.161
+      "durationSeconds": 0.108
     },
     {
       "name": "test_outbox_redis_fanout[8]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.112
+      "durationSeconds": 0.113
     },
     {
       "name": "test_outbox_redis_fanout[9]",
       "className": "tests.integration.g02.test_orchestration",
       "status": "passed",
-      "durationSeconds": 0.141
+      "durationSeconds": 0.181
     }
   ],
-  "junitSha256": "5767f2b4489d07b7a817a6d10b9b687700372a4eee764e17ae6993f5db1c6c28"
+  "junitSha256": "dd63580790f209875ee3e843a0e0ea20efbe05c39428dfe4c8c3e7ceedf58f30"
 }
