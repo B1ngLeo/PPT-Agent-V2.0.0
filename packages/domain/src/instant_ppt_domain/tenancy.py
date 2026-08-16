@@ -118,9 +118,7 @@ def store_user_idempotency(
 
 
 def _advisory_lock(session: Session, scope: str) -> None:
-    key = int.from_bytes(
-        hashlib.sha256(scope.encode("utf-8")).digest()[:8], "big", signed=True
-    )
+    key = int.from_bytes(hashlib.sha256(scope.encode("utf-8")).digest()[:8], "big", signed=True)
     session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
 
@@ -134,9 +132,7 @@ def _personal_name(claims: IdentityClaims) -> str:
     return f"{candidate[:140]} 的工作区"
 
 
-def _add_default_entitlement(
-    session: Session, organization_id: str, now: datetime
-) -> Entitlement:
+def _add_default_entitlement(session: Session, organization_id: str, now: datetime) -> Entitlement:
     entitlement = Entitlement(
         id=new_ulid(),
         organization_id=organization_id,
@@ -167,8 +163,7 @@ def provision_identity(
         user = User(
             id=(
                 DEFAULT_LOCAL_USER_ID
-                if claims.issuer == LOCAL_ISSUER
-                and claims.subject == DEFAULT_LOCAL_SUBJECT
+                if claims.issuer == LOCAL_ISSUER and claims.subject == DEFAULT_LOCAL_SUBJECT
                 else new_ulid()
             ),
             issuer=claims.issuer,
@@ -235,9 +230,7 @@ def provision_identity(
             Membership.organization_id == requested_organization_id
         )
     else:
-        membership_query = membership_query.where(
-            Organization.personal_owner_user_id == user.id
-        )
+        membership_query = membership_query.where(Organization.personal_owner_user_id == user.id)
     membership = session.scalar(membership_query)
     if membership is None:
         raise TenantNotFound("organization does not exist or is not accessible")

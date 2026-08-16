@@ -90,9 +90,9 @@ def utc_now() -> datetime:
 
 
 def canonical_sha256(value: Any) -> str:
-    encoded = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -459,9 +459,7 @@ def claim_job(
     return job
 
 
-def heartbeat_job(
-    session: Session, job_id: str, worker_id: str, *, lease_seconds: int
-) -> None:
+def heartbeat_job(session: Session, job_id: str, worker_id: str, *, lease_seconds: int) -> None:
     job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id).with_for_update())
     if job is None:
         raise ResourceNotFound(f"generation job not found: {job_id}")

@@ -89,9 +89,7 @@ async def stream_events(
         organization_id,
         last_event_id,
     )
-    snapshot, _ = await asyncio.to_thread(
-        _load_state, session_factory, job_id, organization_id, 0
-    )
+    snapshot, _ = await asyncio.to_thread(_load_state, session_factory, job_id, organization_id, 0)
     if last_seq is None or last_seq > snapshot["latestSeq"]:
         yield _sse(
             "reset",

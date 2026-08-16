@@ -118,9 +118,7 @@ def authorize_artifact_download(
                 "resourceType": "authorizeArtifactDownload",
                 "data": {
                     "downloadUrl": authorization.url,
-                    "expiresAt": authorization.expires_at.isoformat().replace(
-                        "+00:00", "Z"
-                    ),
+                    "expiresAt": authorization.expires_at.isoformat().replace("+00:00", "Z"),
                 },
                 "nextCursor": None,
             }

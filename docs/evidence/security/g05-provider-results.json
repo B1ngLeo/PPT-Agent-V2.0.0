@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "goal": "G05",
+  "generatedAt": "2026-08-16T14:34:25+08:00",
+  "result": "passed",
+  "results": {
+    "workerOnlySecretNames": true,
+    "browserBundleSecretNamesAbsent": true,
+    "reasoningContentAbsentFromProductContracts": true,
+    "p1ImageProviderCallCount": 0,
+    "moonshotSmoke": "not_run_no_secret",
+    "openAiImageSmoke": "not_run_no_secret"
+  },
+  "findings": {
+    "clientSecretNameHits": [],
+    "bundleSecretNameHits": [],
+    "productReasoningContentHits": []
+  },
+  "notes": [
+    "Secret presence is recorded only as a boolean-derived status; values are never read into evidence.",
+    "A real kimi-k3 smoke is conditional on MOONSHOT_API_KEY and provider availability.",
+    "The P1 flow must not call the preconfigured image provider."
+  ]
+}

@@ -43,8 +43,7 @@ class DomainSettings:
         ):
             raise ValueError("OIDC issuer, audience, and JWKS URL are required")
         if not self.oidc_algorithms or any(
-            algorithm not in {"RS256", "RS384", "RS512"}
-            for algorithm in self.oidc_algorithms
+            algorithm not in {"RS256", "RS384", "RS512"} for algorithm in self.oidc_algorithms
         ):
             raise ValueError("only explicitly configured RSA OIDC algorithms are supported")
         if not 15 <= self.download_url_ttl_seconds <= 900:

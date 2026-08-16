@@ -50,9 +50,7 @@ class MinioPrivateObjectStore:
         endpoint, secure = _endpoint(settings.endpoint)
         public_endpoint, public_secure = _endpoint(settings.public_endpoint)
         self._bucket = settings.bucket
-        self._public_base = (
-            f"{'https' if public_secure else 'http'}://{public_endpoint}"
-        )
+        self._public_base = f"{'https' if public_secure else 'http'}://{public_endpoint}"
         self._client = Minio(
             endpoint,
             access_key=settings.access_key,

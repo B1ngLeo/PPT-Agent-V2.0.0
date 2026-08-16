@@ -80,7 +80,7 @@ Goal 完成时追加：
 - 不删除用户现有文件或无关改动；
 - 依赖版本必须锁定并记录来源，不能使用浮动 `latest/main` 进入可重复构建；
 - 外部 Provider 不可用时用合同一致的 Fake Provider 验证，不得伪造“生产集成已完成”。
-- 当前真实开发 Provider 默认使用 DeepSeek API：`model=deepseek-v4-pro`、`base_url=https://api.deepseek.com`；密钥仅从服务端 `DEEPSEEK_API_KEY` 或 Secret Manager 读取，不得读取后打印、写入 `.env.example`、日志、测试快照或前端 bundle。
+- 当前真实开发文本 Provider 使用 Kimi API：`model=kimi-k3`、`base_url=https://api.moonshot.cn/v1`；预配置图片 Provider 使用 OpenAI Images API：`model=gpt-image-2`、`base_url=https://api.openai.com/v1`。密钥仅从 Worker 侧 `MOONSHOT_API_KEY`、`OPENAI_API_KEY` 或 Secret Manager 读取，不得读取后打印、写入 `.env.example`、日志、测试快照或前端 bundle。P1 产品流程仍保持图片调用为 0，图片 Provider 仅为后续明确批准的生图流程提供能力。
 
 ### 1.4 稳定验证入口
 
@@ -613,7 +613,7 @@ test_source_refresh_recovery
 ### 9.2 可复制启动提示
 
 ```text
-/goal 完成 PLAN.md 的 Goal G05“草稿、意图、大纲与 Web 工作台”。阅读 SPEC.md 的首页、IntentSpec、OutlineSpec、版本/批准和响应式要求，并参考 designs/ppt-ai-mvp 原型。实现真实草稿、自动保存、Provider Gateway、意图 revision、大纲 revision、撤销/恢复、乐观锁、内置模板选择和批准后的生成确认摘要；真实开发调用使用 DeepSeek API 的 deepseek-v4-pro，合同与回归测试使用 deterministic Fake Provider。密钥只从服务端 DEEPSEEK_API_KEY 读取且不得输出。不要创建真实 generation job 或调用 PPT 引擎。持续到刷新恢复、并发冲突、批准后不可变、Provider 合同、键盘和三档响应式 E2E 全部通过。
+/goal 完成 PLAN.md 的 Goal G05“草稿、意图、大纲与 Web 工作台”。阅读 SPEC.md 的首页、IntentSpec、OutlineSpec、版本/批准和响应式要求，并参考 designs/ppt-ai-mvp 原型。实现真实草稿、自动保存、Provider Gateway、意图 revision、大纲 revision、撤销/恢复、乐观锁、内置模板选择和批准后的生成确认摘要；真实开发文本调用使用 Kimi API 的 kimi-k3，合同与回归测试使用 deterministic Fake Provider。密钥只从 Worker 侧 MOONSHOT_API_KEY 读取且不得输出。OpenAI gpt-image-2 仅预配置，不得在 P1 流程中调用。不要创建真实 generation job 或调用 PPT 引擎。持续到刷新恢复、并发冲突、批准后不可变、Provider 合同、键盘和三档响应式 E2E 全部通过。
 ```
 
 ### 9.3 范围
@@ -624,8 +624,8 @@ test_source_refresh_recovery
 - 首页额度/能力展示读取 G03 entitlement API，不使用原型硬编码；
 - mode 只开放 native；非 P1 模式隐藏或明确禁用；
 - Intent 全字段，包括 language；
-- Provider Gateway + DeepSeek `deepseek-v4-pro` 适配器 + deterministic Fake Provider，并持久化脱敏的 provider_calls/用量元数据；
-- DeepSeek 适配器使用 OpenAI 兼容协议和可配置 base URL；不得把 DeepSeek 专有字段泄漏进领域合同；
+- Provider Gateway + Kimi `kimi-k3` 适配器 + deterministic Fake Provider，并持久化脱敏的 provider_calls/用量元数据；
+- Kimi 适配器使用 OpenAI 兼容 Chat Completions 协议和可配置 base URL；不得把 Kimi 专有字段泄漏进领域合同；
 - JSON Schema 输出校验和有限修复；
 - AI/人工修改都产生 revision；
 - 大纲增删、移动、单页重写、整纲优化、撤销/恢复；
@@ -653,8 +653,8 @@ test_source_refresh_recovery
 #### CP-05B Provider
 
 - Fake Provider 可重复；
-- 本机存在 `DEEPSEEK_API_KEY` 时，`deepseek-v4-pro` 最小 smoke test 和结构化输出合同通过；测试不得输出密钥或完整认证头；
-- DeepSeek 适配器无密钥时明确不可用，并可切换至 Fake Provider；
+- 本机存在 `MOONSHOT_API_KEY` 时，`kimi-k3` 最小 smoke test 和结构化输出合同通过；测试不得输出密钥、完整认证头或思维链；
+- Kimi 适配器无密钥时明确不可用，并可切换至 Fake Provider；
 - Schema 错误可恢复；
 - AI 聊天必须产生真实 revision 或失败，不只显示文案。
 
@@ -686,12 +686,12 @@ pnpm verify
 - 内置模板由 catalog API/不可变 templateVersionId 驱动；
 - 并发冲突不丢数据；
 - 批准后生成摘要包含全部 snapshot 输入；
-- DeepSeek 真实 smoke test 与 Fake Provider 回归测试各自留有脱敏证据；
+- Kimi K3 真实 smoke test 与 Fake Provider 回归测试各自留有脱敏证据；
 - 当前尚未启动真实生成，UI 明确停在确认边界。
 
 ### 9.8 暂停条件
 
-- DeepSeek 供应商条款、数据流向或生产使用尚未批准；开发可继续使用 Fake Provider，但不得宣称生产集成完成；
+- Kimi/OpenAI 供应商条款、数据流向或生产使用尚未批准；开发可继续使用 Fake Provider，但不得宣称生产集成完成；
 - 产品要求把 visual/template mode 提升到 P1 Core；
 - 版本语义只能通过原地覆盖实现。
 

@@ -55,3 +55,113 @@ class CreateGenerationJobRequest(BaseModel):
     schema_version: Literal[1] = Field(alias="schemaVersion")
     data: CreateGenerationJobData
     base_revision_id: str | None = Field(default=None, alias="baseRevisionId")
+
+
+class CreateDraftData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str = Field(default="", max_length=1000)
+    source_id: str | None = Field(default=None, min_length=26, max_length=26, alias="sourceId")
+    mode: Literal["native"] = "native"
+    template_version_id: str | None = Field(
+        default=None, min_length=26, max_length=26, alias="templateVersionId"
+    )
+
+
+class CreateDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: CreateDraftData
+    base_revision_id: None = Field(default=None, alias="baseRevisionId")
+
+
+class UpdateDraftData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    topic: str | None = Field(default=None, max_length=1000)
+    template_version_id: str | None = Field(
+        default=None, min_length=26, max_length=26, alias="templateVersionId"
+    )
+
+
+class UpdateDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: UpdateDraftData
+    base_revision_id: str | None = Field(default=None, alias="baseRevisionId")
+
+
+class IntentData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    audience: str = Field(min_length=1, max_length=200)
+    goal: str = Field(min_length=1, max_length=200)
+    target_slide_count: int = Field(ge=4, le=30, alias="targetSlideCount")
+    language: Literal["zh-CN", "en-US"] = "zh-CN"
+    content_depth: Literal["conclusion_first", "balanced", "research"] = Field(
+        default="balanced", alias="contentDepth"
+    )
+    visual_preference: Literal["data_first", "photo_illustration", "minimal_visual"] = Field(
+        default="data_first", alias="visualPreference"
+    )
+    notes: str = Field(default="", max_length=4000)
+    source_refs: list[str] = Field(default_factory=list, alias="sourceRefs")
+
+
+class IntentRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: IntentData
+    base_revision_id: str | None = Field(default=None, alias="baseRevisionId")
+
+
+class OutlineSlideData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outline_slide_id: str = Field(min_length=26, max_length=26, alias="outlineSlideId")
+    type: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=300)
+    key_points: list[str] = Field(min_length=1, alias="keyPoints")
+    source_citations: list[str] = Field(default_factory=list, alias="sourceCitations")
+
+
+class OutlineData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    story_summary: str = Field(min_length=1, max_length=4000, alias="storySummary")
+    target_slide_count: int = Field(ge=4, le=30, alias="targetSlideCount")
+    slides: list[OutlineSlideData] = Field(min_length=1, max_length=30)
+    operation: Literal[
+        "edit", "add", "delete", "move", "undo", "redo", "rewrite_slide", "optimize"
+    ] = "edit"
+
+
+class OutlineRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: OutlineData
+    base_revision_id: str | None = Field(default=None, alias="baseRevisionId")
+
+
+class GenerateOutlineData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: str = Field(default="", max_length=1000)
+    action: Literal["generate", "optimize", "rewrite_slide"] = "generate"
+    outline_slide_id: str | None = Field(
+        default=None, min_length=26, max_length=26, alias="outlineSlideId"
+    )
+
+
+class GenerateOutlineRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    data: GenerateOutlineData = Field(default_factory=GenerateOutlineData)
+    base_revision_id: str | None = Field(default=None, alias="baseRevisionId")

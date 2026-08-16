@@ -86,9 +86,7 @@ def create_source_upload_session(
                 request_body=body,
             )
             if replay is not None:
-                upload = get_upload_session(
-                    session, replay.resource_id, auth.organization_id
-                )
+                upload = get_upload_session(session, replay.resource_id, auth.organization_id)
                 if upload.status != "pending":
                     return problem_response(
                         status=409,
@@ -216,9 +214,7 @@ def complete_source_upload_session(
                         "Location": f"/v1/sources/{replay.resource_id}",
                     },
                 )
-            upload = get_upload_session(
-                session, upload_session_id, auth.organization_id
-            )
+            upload = get_upload_session(session, upload_session_id, auth.organization_id)
             digest = request.app.state.object_store.digest(
                 upload.object_key, max_bytes=upload.max_bytes
             )
@@ -237,10 +233,10 @@ def complete_source_upload_session(
                 "data": source_data,
                 "nextCursor": None,
             }
-            status_code = 202 if completed.accepted else (
-                410
-                if completed.rejection_code == "UPLOAD_SESSION_EXPIRED"
-                else 422
+            status_code = (
+                202
+                if completed.accepted
+                else (410 if completed.rejection_code == "UPLOAD_SESSION_EXPIRED" else 422)
             )
             store_user_idempotency(
                 session,
@@ -301,9 +297,7 @@ def get_source_status(
         with request.app.state.session_factory() as session:
             source = get_source(session, source_id, auth.organization_id)
             data = serialize_source(source)
-            data["artifacts"] = list_source_artifacts(
-                session, source_id, auth.organization_id
-            )
+            data["artifacts"] = list_source_artifacts(session, source_id, auth.organization_id)
         return JSONResponse(
             {
                 "schemaVersion": 1,

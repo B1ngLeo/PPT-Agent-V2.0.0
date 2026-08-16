@@ -59,7 +59,7 @@
 | 编辑能力 | 文本修改、页面排序、删除、单页重生成；不做 PowerPoint 级自由画布。 |
 | 取消语义 | P1 支持安全取消，不支持“暂停后继续”。UI 必须使用“取消任务/取消请求中”，不得复用原型的“暂停/继续”措辞。 |
 | 租户模型 | 每个用户自动拥有 personal organization；所有资源仍按 `organization_id` 隔离。 |
-| AI/图片供应商 | 通过 Provider Gateway 接入；当前开发默认使用 DeepSeek API 的 `deepseek-v4-pro`，`base_url=https://api.deepseek.com`，密钥只从服务端 `DEEPSEEK_API_KEY`/Secret Manager 读取；合同和回归测试继续使用确定性 Fake Provider。生产供应商、数据区域与模型版本仍须由 ADR 固定。 |
+| AI/图片供应商 | 通过 Provider Gateway 接入；当前开发文本模型使用 Kimi API 的 `kimi-k3`，`base_url=https://api.moonshot.cn/v1`，生图后端使用 OpenAI Images API 的 `gpt-image-2`；密钥只从服务端 `MOONSHOT_API_KEY`、`OPENAI_API_KEY`/Secret Manager 读取，合同和回归测试继续使用确定性 Fake Provider。P1 产品流程仍不触发生图，图片 Provider 仅作为后续能力预配置。生产数据区域、保留策略与供应商条款仍须由 ADR 固定。 |
 | 生成结果定位 | 明确标注为“可编辑初稿”；结果仍需用户核验事实、数据、图表和图片。 |
 
 ## 2. 产品定义
@@ -1014,7 +1014,7 @@ P1.1 不包含公开市场、组织治理、旧 `.ppt` 转换和任意模板“�
 2. ADR-002：生产身份提供方与 Web/API 令牌交换；
 3. ADR-003：PDF 商业许可或替代解析栈；
 4. ADR-004：固定 `ppt-master` commit、vendor 方式与升级流程；
-5. ADR-005：记录开发默认 Provider 为 DeepSeek API `deepseek-v4-pro`，并在发布前批准生产模型、数据区域、保留策略与供应商条款；
+5. ADR-005：记录开发文本 Provider 为 Kimi API `kimi-k3`、预配置图片 Provider 为 OpenAI `gpt-image-2`，并在发布前批准生产模型、数据区域、保留策略与供应商条款；
 6. ADR-006：对象存储、扫描器和环境拓扑；
 7. ADR-007：数据保留、删除与下载 URL 策略；
 8. ADR-008：PowerPoint/WPS 目标版本与视觉回归门槛；

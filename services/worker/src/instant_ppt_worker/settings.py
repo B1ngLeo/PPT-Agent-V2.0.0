@@ -1,4 +1,9 @@
-"""Worker settings that are safe to import before business orchestration exists."""
+"""Worker contracts and server-only provider settings."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict
 
@@ -12,3 +17,55 @@ class WorkerContract(BaseModel):
     adapter_name: str = "ppt-master-engine-adapter"
     engine_version: str = "ppt-master@v4.7.0+e8323bfa"
     parser_version: str = "source-parser@1+ppt-master-v4.7.0"
+
+
+@dataclass(frozen=True, slots=True)
+class KimiProviderSettings:
+    """Configuration for Kimi's OpenAI-compatible Chat Completions API."""
+
+    api_key: str = field(repr=False)
+    base_url: str = "https://api.moonshot.cn/v1"
+    model: str = "kimi-k3"
+    reasoning_effort: str = "max"
+    timeout_seconds: float = 120.0
+
+    @classmethod
+    def from_env(cls) -> KimiProviderSettings:
+        return cls(
+            api_key=os.getenv("MOONSHOT_API_KEY", "").strip(),
+            base_url=os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1").strip(),
+            model=os.getenv("KIMI_MODEL", "kimi-k3").strip(),
+            reasoning_effort=os.getenv("KIMI_REASONING_EFFORT", "max").strip(),
+            timeout_seconds=float(os.getenv("KIMI_TIMEOUT_SECONDS", "120")),
+        )
+
+    @property
+    def available(self) -> bool:
+        return bool(self.api_key)
+
+
+@dataclass(frozen=True, slots=True)
+class OpenAIImageSettings:
+    """Configuration for the OpenAI Images API used by ppt-master."""
+
+    api_key: str = field(repr=False)
+    backend: str = "openai"
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "gpt-image-2"
+    output_format: str = "png"
+    timeout_seconds: float = 300.0
+
+    @classmethod
+    def from_env(cls) -> OpenAIImageSettings:
+        return cls(
+            api_key=os.getenv("OPENAI_API_KEY", "").strip(),
+            backend=os.getenv("IMAGE_BACKEND", "openai").strip().lower(),
+            base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip(),
+            model=os.getenv("OPENAI_MODEL", "gpt-image-2").strip(),
+            output_format=os.getenv("OPENAI_OUTPUT_FORMAT", "png").strip().lower(),
+            timeout_seconds=float(os.getenv("OPENAI_IMAGE_TIMEOUT_SECONDS", "300")),
+        )
+
+    @property
+    def available(self) -> bool:
+        return self.backend == "openai" and bool(self.api_key)

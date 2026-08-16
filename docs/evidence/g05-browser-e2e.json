@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "goal": "G05",
+  "generatedAt": "2026-08-16T14:23:27+08:00",
+  "result": "passed",
+  "browser": "Codex in-app Chromium",
+  "journey": {
+    "topicToApprovedBoundary": true,
+    "refreshRecoveredAllEdits": true,
+    "historyRecoveredDraft": true,
+    "generationJobCount": 0,
+    "imageProviderCallCount": 0
+  },
+  "autosaveRecovery": {
+    "debounceMilliseconds": 800,
+    "localContentRetained": true,
+    "stableFailedStateWithoutRetryLoop": true,
+    "explicitRetrySucceeded": true,
+    "retryPersistedAfterReload": true
+  },
+  "revisionBehavior": {
+    "intentRevisionChangedAfterEdit": true,
+    "stableSlideIds": true,
+    "addDeleteMove": true,
+    "undoRedoCreateRevisions": true,
+    "aiCreatesRevision": true
+  },
+  "approval": {
+    "explicitRevisionIds": true,
+    "snapshotHashVisible": true,
+    "snapshotRemainsImmutableAfterEdit": true,
+    "postApprovalEditWarning": true,
+    "g06ActionDisabled": true
+  },
+  "responsive": [
+    {
+      "width": 390,
+      "height": 844,
+      "horizontalOverflow": false,
+      "templateColumns": 1,
+      "outlineColumns": 1,
+      "horizontalStepper": true,
+      "minimumTouchTarget": 44
+    },
+    {
+      "width": 900,
+      "height": 900,
+      "horizontalOverflow": false,
+      "templateColumns": 2,
+      "outlineColumns": 2,
+      "assistantDrawerOperable": true,
+      "minimumTouchTarget": 44
+    },
+    {
+      "width": 1440,
+      "height": 1000,
+      "horizontalOverflow": false,
+      "templateColumns": 3,
+      "workspaceColumns": "70/30",
+      "minimumTouchTarget": 44
+    }
+  ],
+  "accessibility": {
+    "nativeInteractiveElements": true,
+    "keyboardTextEntryAndFocus": true,
+    "dialogFocusRestored": true,
+    "liveSaveStatus": true,
+    "minimumTouchTarget": 44,
+    "keyboardActivationInjection": "test-harness-limited-after-five-attempts; native button and link semantics verified"
+  },
+  "consoleWarningsOrErrors": 0,
+  "testHarnessLimitations": [
+    "The in-app browser accepted semantic focus and keyboard text entry but did not inject Tab/Enter activation events. After five attempts this was recorded and stopped per the project loop rule; native button/link semantics, labels, focus restoration, and real click journeys are the compensating checks."
+  ]
+}

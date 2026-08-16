@@ -128,6 +128,17 @@ services:
       dockerfile: services/worker/Dockerfile
     environment:
       <<: *runtime-environment
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      KIMI_BASE_URL: ${KIMI_BASE_URL:-https://api.moonshot.cn/v1}
+      KIMI_MODEL: ${KIMI_MODEL:-kimi-k3}
+      KIMI_REASONING_EFFORT: ${KIMI_REASONING_EFFORT:-max}
+      KIMI_TIMEOUT_SECONDS: ${KIMI_TIMEOUT_SECONDS:-120}
+      IMAGE_BACKEND: ${IMAGE_BACKEND:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-image-2}
+      OPENAI_OUTPUT_FORMAT: ${OPENAI_OUTPUT_FORMAT:-png}
+      OPENAI_IMAGE_TIMEOUT_SECONDS: ${OPENAI_IMAGE_TIMEOUT_SECONDS:-300}
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
       CLAMAV_TIMEOUT_SECONDS: ${CLAMAV_TIMEOUT_SECONDS:-15}

@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from instant_ppt_api.auth import ApiAuthenticationError, OidcTokenVerifier
 from instant_ppt_api.g03_routes import router as g03_router
 from instant_ppt_api.g04_routes import router as g04_router
+from instant_ppt_api.g05_routes import router as g05_router
 from instant_ppt_api.object_store import MinioPrivateObjectStore, ObjectStoreSettings
+from instant_ppt_api.planning import DeterministicPlanningGateway
 from instant_ppt_api.problems import problem_response
 from instant_ppt_api.routes import router
 
@@ -31,6 +33,7 @@ def create_app(
     session_factory: sessionmaker[Session] | None = None,
     token_verifier: Any | None = None,
     object_store: Any | None = None,
+    planning_gateway: Any | None = None,
 ) -> FastAPI:
     """Create the API with injectable persistence for integration tests."""
     resolved_settings = settings or DomainSettings.from_env()
@@ -47,25 +50,25 @@ def create_app(
             "Authorization",
             "Content-Type",
             "Idempotency-Key",
+            "If-Match",
             "X-Dev-User-Email",
             "X-Dev-User-Name",
             "X-Dev-User-Subject",
             "X-Organization-ID",
             "X-Request-ID",
         ],
-        expose_headers=["Idempotency-Replayed", "Location", "X-Request-ID"],
+        expose_headers=["ETag", "Idempotency-Replayed", "Location", "X-Request-ID"],
         max_age=600,
     )
     application.state.settings = resolved_settings
     application.state.session_factory = resolved_factory
     application.state.token_verifier = token_verifier or (
-        OidcTokenVerifier(resolved_settings)
-        if resolved_settings.auth_mode == "oidc"
-        else None
+        OidcTokenVerifier(resolved_settings) if resolved_settings.auth_mode == "oidc" else None
     )
     application.state.object_store = object_store or MinioPrivateObjectStore(
         ObjectStoreSettings.from_env()
     )
+    application.state.planning_gateway = planning_gateway or DeterministicPlanningGateway()
 
     @application.middleware("http")
     async def request_context(request: Request, call_next):
@@ -110,6 +113,7 @@ def create_app(
     application.include_router(router)
     application.include_router(g03_router)
     application.include_router(g04_router)
+    application.include_router(g05_router)
     return application
 
 

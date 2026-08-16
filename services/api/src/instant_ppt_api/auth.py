@@ -72,9 +72,7 @@ class OidcTokenVerifier:
             issuer=str(claims["iss"]),
             subject=subject,
             email=(str(claims["email"]) if claims.get("email") else None),
-            display_name=str(
-                claims.get("name") or claims.get("preferred_username") or "OIDC user"
-            ),
+            display_name=str(claims.get("name") or claims.get("preferred_username") or "OIDC user"),
         )
 
 
@@ -103,9 +101,7 @@ def _local_claims(subject: str | None, email: str | None, name: str | None) -> I
 def require_auth(
     request: Request,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
-    organization_id: Annotated[
-        str | None, Header(alias="X-Organization-ID")
-    ] = None,
+    organization_id: Annotated[str | None, Header(alias="X-Organization-ID")] = None,
     dev_subject: Annotated[str | None, Header(alias="X-Dev-User-Subject")] = None,
     dev_email: Annotated[str | None, Header(alias="X-Dev-User-Email")] = None,
     dev_name: Annotated[str | None, Header(alias="X-Dev-User-Name")] = None,

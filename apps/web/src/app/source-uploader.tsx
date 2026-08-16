@@ -15,7 +15,7 @@ const MIME: Record<string, string> = {
   html: "text/html",
 };
 
-type SourceState = {
+export type SourceState = {
   sourceId: string;
   filename: string;
   status: string;
@@ -72,7 +72,11 @@ function stageLabel(source: SourceState | null, phase: Phase): string {
   return "来源已入队，等待安全处理";
 }
 
-export function SourceUploader() {
+export function SourceUploader({
+  onSourceReady,
+}: {
+  onSourceReady?: (source: SourceState) => void;
+}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [source, setSource] = useState<SourceState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +116,10 @@ export function SourceUploader() {
     }, 1500);
     return () => window.clearInterval(timer);
   }, [loadSource, phase, source?.sourceId]);
+
+  useEffect(() => {
+    if (source?.status === "parsed") onSourceReady?.(source);
+  }, [onSourceReady, source]);
 
   const upload = useCallback(async (file: File) => {
     setError(null);

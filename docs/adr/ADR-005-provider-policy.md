@@ -7,12 +7,12 @@
 
 ## Context
 
-Development names DeepSeek `deepseek-v4-pro`, while production data region, retention and supplier terms remain undecided.
+Development uses Kimi `kimi-k3` for text planning and preconfigures OpenAI `gpt-image-2` for a future image-generation path, while production data region, retention and supplier terms remain undecided. P1 product flows do not invoke the image provider.
 
 ## Decision
 
-Use a deterministic Fake Provider for contracts and regression. A server-only DeepSeek adapter may be smoke-tested in G05 when `DEEPSEEK_API_KEY` is present, but production readiness requires approval of model, region, retention and supplier terms. Secrets never enter contracts, logs, prompts saved as evidence, or browser bundles.
+Use a deterministic Fake Provider for contracts and regression. The server-only Kimi adapter may be smoke-tested when `MOONSHOT_API_KEY` is present. The server-only OpenAI Images adapter may be smoke-tested when `OPENAI_API_KEY` is present, but must not be invoked by the P1 product flow until that scope is separately approved. Production readiness requires approval of both providers' models, regions, retention and supplier terms. Secrets never enter contracts, logs, prompts saved as evidence, container image layers, or browser bundles.
 
 ## Verification
 
-G05 fake regression, optional redacted smoke evidence, and secret-scanning tests.
+Provider request-contract tests, G05 fake regression, optional redacted smoke evidence, and secret-scanning tests.

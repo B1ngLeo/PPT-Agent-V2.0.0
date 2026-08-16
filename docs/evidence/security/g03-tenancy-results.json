@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "goal": "G03",
-  "startedAt": "2026-08-16T05:28:34.125922Z",
-  "completedAt": "2026-08-16T05:28:54.814030Z",
+  "startedAt": "2026-08-16T06:32:56.929943Z",
+  "completedAt": "2026-08-16T06:33:17.073597Z",
   "status": "passed",
   "environment": {
     "database": "PostgreSQL 17.6 isolated G03 databases",
@@ -27,50 +27,50 @@
       "name": "test_private_download_authorization_is_tenant_scoped_and_idempotent",
       "className": "tests.integration.g03.test_artifacts",
       "status": "passed",
-      "durationSeconds": 0.292
+      "durationSeconds": 0.312
     },
     {
       "name": "test_expired_idempotent_authorization_requires_a_new_key",
       "className": "tests.integration.g03.test_artifacts",
       "status": "passed",
-      "durationSeconds": 0.221
+      "durationSeconds": 0.179
     },
     {
       "name": "test_expired_or_wrong_partition_artifact_fails_closed",
       "className": "tests.integration.g03.test_artifacts",
       "status": "passed",
-      "durationSeconds": 0.194
+      "durationSeconds": 0.213
     },
     {
       "name": "test_request_logging_excludes_headers_content_and_signed_urls",
       "className": "tests.integration.g03.test_artifacts",
       "status": "passed",
-      "durationSeconds": 0.103
+      "durationSeconds": 0.11
     },
     {
       "name": "test_private_minio_download_is_signed_tamper_proof_and_expires",
       "className": "tests.integration.g03.test_minio",
       "status": "passed",
-      "durationSeconds": 16.417
+      "durationSeconds": 16.449
     },
     {
       "name": "test_concurrent_first_login_creates_one_personal_organization",
       "className": "tests.integration.g03.test_tenancy",
       "status": "passed",
-      "durationSeconds": 0.122
+      "durationSeconds": 0.119
     },
     {
       "name": "test_entitlements_usage_and_cross_tenant_api_sse_denial",
       "className": "tests.integration.g03.test_tenancy",
       "status": "passed",
-      "durationSeconds": 0.269
+      "durationSeconds": 0.283
     },
     {
       "name": "test_disabled_user_is_rejected",
       "className": "tests.integration.g03.test_tenancy",
       "status": "passed",
-      "durationSeconds": 0.085
+      "durationSeconds": 0.096
     }
   ],
-  "junitSha256": "2b0290337e481e9212e5d22f5f4a6f0e4fa4966418372236298b74ebd77c160a"
+  "junitSha256": "dff9872afb2085291d9b2c17e7408d442739ce52f8e56d8592911944aa2eadf9"
 }

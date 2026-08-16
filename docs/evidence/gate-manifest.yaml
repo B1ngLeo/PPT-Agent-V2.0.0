@@ -1,5 +1,5 @@
 schemaVersion: 1
-updatedAt: 2026-08-16T13:19:15+08:00
+updatedAt: 2026-08-16T14:23:27+08:00
 gates:
   - id: GATE-G00-CONTRACT-BASELINE
     goal: G00
@@ -129,13 +129,21 @@ gates:
   - id: GATE-G05-PROVIDER-DATA
     goal: G05
     required: true
-    status: pending
+    status: passed
     ownerRole: product
-    approver: null
-    checkedAt: null
-    targetVersions: [kimi-k3, gpt-image-2]
-    evidence: []
-    notes: Fake Provider remains the regression baseline until production terms are approved.
+    approver: automated:g05-provider-data-workspace-matrix
+    checkedAt: 2026-08-16T14:23:27+08:00
+    targetVersions: [kimi-k3, gpt-image-2, postgresql-17.6, nextjs-16.2.9]
+    evidence:
+      [
+        "docs/design/g05-draft-workspace.md",
+        "docs/evidence/g05-draft-workspace.md",
+        "docs/evidence/g05-browser-e2e.json",
+        "docs/evidence/g05-workspace-junit.xml",
+        "docs/evidence/security/g05-provider-results.json",
+        "docs/adr/ADR-005-provider-policy.md",
+      ]
+    notes: Deterministic Provider, immutable PostgreSQL data, conflict/recovery, responsive browser, secret boundary and approval-stop matrices passed. Local external-provider keys were absent, and official availability of the frozen model names is not claimed; P1 image calls remained zero.
     waiver: null
   - id: GATE-G06-GENERATION
     goal: G06

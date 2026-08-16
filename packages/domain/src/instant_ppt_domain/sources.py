@@ -120,9 +120,7 @@ def validate_upload_request(
     if not _SHA256.fullmatch(normalized_sha):
         raise UploadValidationError("expectedSha256 must be a lowercase SHA-256 digest")
     if not 1 <= size_bytes <= MAX_SOURCE_BYTES:
-        raise UploadValidationError(
-            f"sizeBytes must be between 1 and {MAX_SOURCE_BYTES} bytes"
-        )
+        raise UploadValidationError(f"sizeBytes must be between 1 and {MAX_SOURCE_BYTES} bytes")
     return safe_filename, extension, normalized_sha
 
 
@@ -164,9 +162,7 @@ def create_upload_session(
         id=upload_session_id,
         organization_id=context.organization_id,
         source_id=source_id,
-        object_key=tenant_object_key(
-            context.organization_id, "quarantine", upload_session_id
-        ),
+        object_key=tenant_object_key(context.organization_id, "quarantine", upload_session_id),
         declared_mime_type=SUPPORTED_SOURCE_TYPES[extension],
         expected_sha256=normalized_sha,
         expected_size_bytes=size_bytes,
@@ -256,9 +252,7 @@ def complete_upload_session(
     upload = get_upload_session(
         session, upload_session_id, context.organization_id, for_update=True
     )
-    source = get_source(
-        session, upload.source_id, context.organization_id, for_update=True
-    )
+    source = get_source(session, upload.source_id, context.organization_id, for_update=True)
     if upload.status == "completed":
         return CompleteUploadResult(upload, source, accepted=True)
     if upload.status in {"expired", "rejected"}:
@@ -407,9 +401,7 @@ def list_source_artifacts(
             "mimeType": artifact.media_type,
             "sizeBytes": artifact.size_bytes,
             "parserVersion": association.parser_version,
-            "createdAt": association.created_at.astimezone(UTC)
-            .isoformat()
-            .replace("+00:00", "Z"),
+            "createdAt": association.created_at.astimezone(UTC).isoformat().replace("+00:00", "Z"),
         }
         for association, artifact in rows
     ]
@@ -422,9 +414,7 @@ def retry_source_processing(
     *,
     request_id: str,
 ) -> Source:
-    source = get_source(
-        session, source_id, context.organization_id, for_update=True
-    )
+    source = get_source(session, source_id, context.organization_id, for_update=True)
     if not source.retryable or source.status not in {"rejected", "parse_failed"}:
         raise SourceRetryRejected("source is not in a retryable failure state")
     if source.scan_status != "clean":

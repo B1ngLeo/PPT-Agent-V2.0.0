@@ -4,14 +4,14 @@
 
 ## 当前 Goal
 
-- Goal：G05 / 草稿、意图、大纲与 Web 工作台
+- Goal：G06 / 真实生成、监控与工件发布
 - 状态：in_progress
-- 当前检查点：G04 全模块、真实容器链路与 Gate 完成，开始读取 G05 草稿/意图/大纲/模板和工作台合同
-- 已验证：G00–G04 complete；P0 Gate passed；G01 required Gate 3/3、G02–G04 各 1/1 均通过且无 waiver；G04 API 21、Worker 15、安全 12、集成 14 与容器 E2E 通过
-- 剩余工作：G05 草稿/意图/大纲工作台、G06 真实生成、G07 编辑导出闭环、G08 发布工程与最终用户 E2E
-- 决策/偏离：G04 采用精确预签名约束、三次哈希复核、真实 ClamAV + G01 双层检查、clean-only parser 和不可变工件；生产病毒库 freshness 监控归 G08；无 SPEC 偏离
+- 当前检查点：G05 CP-05A/B/C 与 required Gate 完成，开始 G06 真实逐页生成、监控、取消、partial/retry 与不可变发布
+- 已验证：G00–G05 complete；P0 Gate passed；G01 required Gate 3/3、G02–G05 各 1/1 均通过且无 waiver；G05 Provider 7、真实 PostgreSQL 集成 4、Web 生产构建、安全与三档浏览器 E2E 通过
+- 剩余工作：G06 真实生成、G07 编辑导出闭环、G08 发布工程与最终用户 E2E
+- 决策/偏离：G05 P1 规划默认走 deterministic Fake Provider；Kimi/OpenAI 适配器仅保留 Worker 侧服务端配置。2026-08-16 官方 Kimi 列表尚未证明 `kimi-k3`、官方 OpenAI Images 列表尚未证明 `gpt-image-2`，因此不宣称真实生产集成完成；仍按已冻结 PLAN 保留精确模型名并将真实 smoke 设为密钥与供应商可用性双条件
 - 阻塞：无
-- 恢复记录：无当前恢复项；全部重复问题均在 3 次以内解决
+- 恢复记录：应用内浏览器的 Tab/Enter 注入连续 5 次不产生事件，已按防循环规则停止并记录；产品使用原生控件，键盘文本焦点、焦点恢复及完整用户旅程通过，无产品阻塞
 
 ## 已完成事项
 
@@ -51,10 +51,15 @@
 - G04 独立矩阵：12 项快速安全、14/14 PostgreSQL/真实 MinIO 集成通过，覆盖四格式、checksum、magic、ZIP bomb、traversal、加密/损坏、scanner loss、篡改、幂等、跨租户与 API 重启恢复。
 - G04 容器 E2E：精确 Debian ClamAV 包、API、独立 outbox 镜像和 Worker 顺序构建；合法来源经真实 ClamAV 到 parsed/2 工件，恶意标记同时命中 clamd 和 intake 且 parseAttempt=0；Worker/ClamAV 非 root、只读、cap drop、CPU/内存/PID/tmp/time 限制通过。
 - G04 Gate 完成：设计、工程证据、14 项机器矩阵和真实容器证据已固化；`GATE-G04-SOURCE-SECURITY` 自动通过，无 waiver。
+- G05 Provider 基础模块：完成 Worker-only Kimi/OpenAI 配置、HTTPX MockTransport 合同、脱敏异常、确定性 Fake Provider 与最多两次 JSON 修复 Gateway；移除 reasoning content 的领域暴露，7 项 Provider 单测通过，P1 产品链路图片调用仍为 0。
+- G05 Workspace 数据模块：新增 drafts、3 个内置 templates/不可变 template_versions、provider_calls、intent/outline revisions、稳定 outline slides 与独立 approvals；数据库 trigger 阻止 revision/version UPDATE/DELETE，迁移 `G04 → G05 → G04 → G05`、3 条 seed 与无 drift 通过。
+- G05 Workspace API 模块：实现草稿创建/刷新/ETag 自动保存/软删除/历史、意图 AI 推断与人工 revision、大纲生成/优化/人工 revision/list/get、明确 revision 批准摘要和模板 catalog；4 组集成场景覆盖幂等、刷新、跨租户、并发 412、稳定 slide ID、撤销/恢复、批准后继续修改和图片调用 0，全部通过。
+- G05 Web 模块：完成 API 驱动首页与工作台、Intent/Outline 800ms revision 自动保存、失败稳定态/显式重试、增删移动、撤销恢复、AI 真实 revision、历史对话框与批准摘要；1440/900/390 三档无横向溢出，模板 3/2/1 列、平板双列幻灯片与可开合助手抽屉、移动横向步骤及 44px 触控目标通过。
+- G05 Gate 完成：7 项 Provider、4 项 PostgreSQL 集成、不可变 trigger、冲突/租户/幂等/刷新、clean console 浏览器旅程、秘密/思维链/图片 0 边界均固化证据；`GATE-G05-PROVIDER-DATA` 1/1 自动通过，无 waiver。外部密钥缺失，按条件未运行真实 smoke，且不宣称冻结模型名的官方生产可用性。
 
 ## 进行中事项
 
-- G05：读取 PLAN 9 与 SPEC FR-DRAFT/INTENT/OUTLINE/TEMPLATE/Provider 合同，盘点 prototype 与当前 Web，冻结不可变 revision、乐观锁和批准流程。
+- G06：复用 G01 engine-adapter、G02 orchestrator 和 G05 approved revision，梳理 generation snapshot、逐页状态、SSE、取消、partial/retry 与 immutable manifest 发布边界。
 
 ## 问题及解决方案
 
@@ -99,6 +104,13 @@
 | Domain 层会把大写 SHA-256 静默转为小写                                                |        1 | 取消规范化并与 Pydantic 合同共同拒绝非小写 hash；单元与 complete mismatch 矩阵通过。                                                                                                             |
 | 移动端截图中 off-screen skip link 局部露出                                            |        1 | 改为 nowrap + translate 隐藏，仅键盘 focus 时恢复；三档浏览器测量无溢出。                                                                                                                        |
 | 浏览器 Fetch 拒绝中文 `X-Dev-User-Name` header                                        |        1 | UI 继续使用中文，但 local dev 身份头改为 ASCII 展示名；真实 HTML/DOCX 浏览器上传、刷新恢复与最终解析通过。                                                                                       |
+| 冻结计划指定的 `kimi-k3` / `gpt-image-2` 尚未出现在 2026-08-16 官方模型枚举           |        1 | 保留用户冻结的精确模型配置，不擅自替换；Fake Provider 继续完成 G05，真实 smoke 仅在密钥存在且供应商端接受模型时运行，证据明确标记未验证，图片 Provider 不接入 P1。                               |
+| G05 集成测试把中文主题拼进 `Idempotency-Key`，HTTPX 按 ASCII header 合同拒绝          |        1 | 幂等键改为主题 UTF-8 SHA-256 的短前缀；请求正文仍保留完整中文，4 组工作台集成场景通过。                                                                                                          |
+| 本地浏览器使用 `127.0.0.1:3000` 不在默认 Web CORS 白名单                              |        1 | 统一本地入口为 `http://localhost:3000`，API 仍监听 loopback；README 与 G05 设计明确该约束。                                                                                                      |
+| 自动保存失败后 effect 再次调度请求，可能形成重试循环                                  |        1 | 增加失败类型与稳定 failed 状态，仅允许用户显式重试；停 API、保留本地编辑、恢复 API、重试并刷新后值仍持久化。                                                                                     |
+| closed `details` 在桌面有布局尺寸但内容未实际绘制                                     |        1 | 以受控 open 状态保证非平板始终展开，平板保留可开合原生抽屉；桌面截图、平板开合和移动布局复验通过。                                                                                               |
+| Provider 名称常量误落在图片适配器类末尾                                               |        1 | 为 Kimi 与 OpenAI Image 适配器分别声明 `kimi` / `openai-image`，并新增合同断言，7 项 Provider 测试通过。                                                                                         |
+| 应用内浏览器 Tab/Enter 键注入不产生焦点移动或激活事件                                 |        5 | 按防循环规则停止继续尝试并固化 harness limitation；原生 button/link、label、键盘文本输入、dialog 焦点恢复、44px 目标与完整真实点击旅程作为补偿证据，clean console 为 0。                         |
 
 ## Goal 历史
 
@@ -144,3 +156,11 @@
 - 不变量：用户文件名不进入 key；服务端实际字节是完成真相；scanner unavailable fail closed；只有 hash/key 绑定 clean decision 可解析；工件不可变；跨租户统一 404；attempt ≤5。
 - Gate：`GATE-G04-SOURCE-SECURITY` automated 1/1 passed，无 waiver。
 - 证据：`docs/design/g04-secure-source-pipeline.md`、`docs/evidence/g04-secure-source-pipeline.md`、`docs/evidence/security/g04-source-results.json`、`docs/evidence/security/g04-container-e2e.json`、`docs/evidence/g04-browser-e2e.json`。
+
+### G05 / 草稿、意图、大纲与 Web 工作台 — complete
+
+- 产物：三套不可变内置模板、Draft/Intent/Outline/approval/provider-call schema 与迁移、Fake/Worker-only Provider Gateway、tenant API、响应式 Web 工作台、稳定自动保存与历史恢复。
+- 验证：7/7 Provider 合同、4/4 PostgreSQL 集成、迁移 roundtrip/drift、不可变 trigger、并发 412、跨租户 404、刷新与断网重试、1440/900/390 浏览器用户旅程、Web 生产构建和秘密/思维链/图片 0 安全门禁通过。
+- 不变量：revision/version/approval 不可修改；outlineSlideId 稳定；undo/redo/AI 只追加 revision；批准绑定精确输入 hash；P1 图片调用为 0；G06 前 generation job 为 0。
+- Gate：`GATE-G05-PROVIDER-DATA` automated 1/1 passed，无 waiver；外部密钥缺失使真实 smoke 不适用，冻结模型名的外部可用性未被虚报。
+- 证据：`docs/design/g05-draft-workspace.md`、`docs/evidence/g05-draft-workspace.md`、`docs/evidence/g05-browser-e2e.json`、`docs/evidence/security/g05-provider-results.json`、`docs/evidence/g05-workspace-junit.xml`。

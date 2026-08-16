@@ -36,9 +36,7 @@ def process_fake_job(
         with session_factory() as session:
             get_job(session, job_id, organization_id)
     with session_factory.begin() as session:
-        claimed = claim_job(
-            session, job_id, worker_id, lease_seconds=lease_seconds
-        )
+        claimed = claim_job(session, job_id, worker_id, lease_seconds=lease_seconds)
         if claimed is None:
             return "noop_terminal"
 

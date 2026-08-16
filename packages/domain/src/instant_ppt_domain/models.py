@@ -79,9 +79,10 @@ SOURCE_STATUSES = (
 SCAN_STATUSES = ("pending", "running", "clean", "rejected", "failed")
 PARSE_STATUSES = ("pending", "running", "succeeded", "failed")
 SOURCE_ARTIFACT_KINDS = ("markdown", "asset", "conversion_profile")
-TERMINAL_JOB_STATUSES = frozenset(
-    {"cancelled", "succeeded", "partially_succeeded", "failed"}
-)
+DRAFT_STATUSES = ("draft", "outline_ready", "approved", "deleted")
+REVISION_ACTORS = ("user", "ai", "system")
+PROVIDER_CALL_STATUSES = ("succeeded", "failed", "rate_limited", "timed_out")
+TERMINAL_JOB_STATUSES = frozenset({"cancelled", "succeeded", "partially_succeeded", "failed"})
 
 
 class Base(DeclarativeBase):
@@ -120,12 +121,8 @@ class Organization(Base):
     __tablename__ = "organizations"
     __table_args__ = (
         UniqueConstraint("slug", name="uq_organizations_slug"),
-        UniqueConstraint(
-            "personal_owner_user_id", name="uq_organizations_personal_owner_user"
-        ),
-        CheckConstraint(
-            f"kind IN ({_values(ORGANIZATION_KINDS)})", name="valid_kind"
-        ),
+        UniqueConstraint("personal_owner_user_id", name="uq_organizations_personal_owner_user"),
+        CheckConstraint(f"kind IN ({_values(ORGANIZATION_KINDS)})", name="valid_kind"),
     )
 
     id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
@@ -167,13 +164,9 @@ class ServiceActor(Base):
 class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (
-        UniqueConstraint(
-            "organization_id", "user_id", name="uq_memberships_organization_user"
-        ),
+        UniqueConstraint("organization_id", "user_id", name="uq_memberships_organization_user"),
         CheckConstraint(f"role IN ({_values(MEMBERSHIP_ROLES)})", name="valid_role"),
-        CheckConstraint(
-            f"status IN ({_values(MEMBERSHIP_STATUSES)})", name="valid_status"
-        ),
+        CheckConstraint(f"status IN ({_values(MEMBERSHIP_STATUSES)})", name="valid_status"),
         Index("ix_memberships_user_status", "user_id", "status"),
     )
 
@@ -197,9 +190,7 @@ class Membership(Base):
 class GenerationSnapshot(Base):
     __tablename__ = "generation_snapshots"
     __table_args__ = (
-        UniqueConstraint(
-            "id", "organization_id", name="uq_generation_snapshots_id_organization"
-        ),
+        UniqueConstraint("id", "organization_id", name="uq_generation_snapshots_id_organization"),
         UniqueConstraint(
             "organization_id", "snapshot_sha256", name="uq_generation_snapshots_org_sha"
         ),
@@ -301,9 +292,7 @@ class GenerationJobSlide(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
-    stage: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="content_generation"
-    )
+    stage: Mapped[str] = mapped_column(String(32), nullable=False, default="content_generation")
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
     failure_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="none")
@@ -510,9 +499,7 @@ class Entitlement(Base):
 class UsageLedger(Base):
     __tablename__ = "usage_ledger"
     __table_args__ = (
-        UniqueConstraint(
-            "organization_id", "dedupe_key", name="uq_usage_ledger_org_dedupe"
-        ),
+        UniqueConstraint("organization_id", "dedupe_key", name="uq_usage_ledger_org_dedupe"),
         CheckConstraint("quantity >= 0", name="quantity_nonnegative"),
         Index("ix_usage_ledger_org_occurred", "organization_id", "occurred_at"),
     )
@@ -540,12 +527,8 @@ class Artifact(Base):
     __table_args__ = (
         UniqueConstraint("id", "organization_id", name="uq_artifacts_id_organization"),
         UniqueConstraint("object_key", name="uq_artifacts_object_key"),
-        CheckConstraint(
-            f"partition IN ({_values(ARTIFACT_PARTITIONS)})", name="valid_partition"
-        ),
-        CheckConstraint(
-            f"status IN ({_values(ARTIFACT_STATUSES)})", name="valid_status"
-        ),
+        CheckConstraint(f"partition IN ({_values(ARTIFACT_PARTITIONS)})", name="valid_partition"),
+        CheckConstraint(f"status IN ({_values(ARTIFACT_STATUSES)})", name="valid_status"),
         CheckConstraint("size_bytes >= 0", name="size_nonnegative"),
         Index("ix_artifacts_org_created", "organization_id", "created_at"),
     )
@@ -639,12 +622,8 @@ class Source(Base):
             name="fk_sources_input_artifact_org",
         ),
         CheckConstraint(f"status IN ({_values(SOURCE_STATUSES)})", name="valid_status"),
-        CheckConstraint(
-            f"scan_status IN ({_values(SCAN_STATUSES)})", name="valid_scan_status"
-        ),
-        CheckConstraint(
-            f"parse_status IN ({_values(PARSE_STATUSES)})", name="valid_parse_status"
-        ),
+        CheckConstraint(f"scan_status IN ({_values(SCAN_STATUSES)})", name="valid_scan_status"),
+        CheckConstraint(f"parse_status IN ({_values(PARSE_STATUSES)})", name="valid_parse_status"),
         CheckConstraint("size_bytes >= 0", name="size_nonnegative"),
         CheckConstraint("scan_attempt BETWEEN 0 AND 5", name="scan_attempt_bounded"),
         CheckConstraint("parse_attempt BETWEEN 0 AND 5", name="parse_attempt_bounded"),
@@ -698,9 +677,7 @@ class UploadSession(Base):
         ),
         UniqueConstraint("source_id", name="uq_upload_sessions_source"),
         UniqueConstraint("object_key", name="uq_upload_sessions_object_key"),
-        CheckConstraint(
-            f"status IN ({_values(UPLOAD_SESSION_STATUSES)})", name="valid_status"
-        ),
+        CheckConstraint(f"status IN ({_values(UPLOAD_SESSION_STATUSES)})", name="valid_status"),
         CheckConstraint("expected_size_bytes >= 1", name="expected_size_positive"),
         CheckConstraint("max_bytes >= expected_size_bytes", name="max_covers_expected"),
         Index("ix_upload_sessions_org_expires", "organization_id", "expires_at"),
@@ -742,9 +719,7 @@ class SourceArtifact(Base):
             name="fk_source_artifacts_artifact_org",
         ),
         UniqueConstraint("artifact_id", name="uq_source_artifacts_artifact"),
-        CheckConstraint(
-            f"kind IN ({_values(SOURCE_ARTIFACT_KINDS)})", name="valid_kind"
-        ),
+        CheckConstraint(f"kind IN ({_values(SOURCE_ARTIFACT_KINDS)})", name="valid_kind"),
         Index("ix_source_artifacts_source_kind", "source_id", "kind"),
     )
 
@@ -759,4 +734,258 @@ class SourceArtifact(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Template(Base):
+    __tablename__ = "templates"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_templates_slug"),
+        Index("ix_templates_catalog", "is_active", "category", "sort_order"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TemplateVersion(Base):
+    __tablename__ = "template_versions"
+    __table_args__ = (
+        UniqueConstraint("id", "template_id", name="uq_template_versions_id_template"),
+        UniqueConstraint("template_id", "version", name="uq_template_versions_template_version"),
+        CheckConstraint("version >= 1", name="version_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    template_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("templates.id", ondelete="RESTRICT"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, default="native")
+    theme_spec: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    page_roles: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    editable_elements: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    engine_compatibility: Mapped[str] = mapped_column(String(120), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Draft(Base):
+    __tablename__ = "drafts"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_drafts_id_organization"),
+        ForeignKeyConstraint(
+            ["source_id", "organization_id"],
+            ["sources.id", "sources.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_drafts_source_org",
+        ),
+        CheckConstraint(f"status IN ({_values(DRAFT_STATUSES)})", name="valid_status"),
+        CheckConstraint("mode = 'native'", name="native_mode_only"),
+        CheckConstraint("lock_version >= 1", name="lock_version_positive"),
+        Index("ix_drafts_org_updated", "organization_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    owner_user_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    topic: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    source_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    mode: Mapped[str] = mapped_column(String(32), nullable=False, default="native")
+    template_version_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("template_versions.id", ondelete="RESTRICT"), nullable=False
+    )
+    current_intent_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    current_outline_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    approved_outline_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
+    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ProviderCall(Base):
+    __tablename__ = "provider_calls"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_provider_calls_draft_org",
+        ),
+        CheckConstraint(f"status IN ({_values(PROVIDER_CALL_STATUSES)})", name="valid_status"),
+        CheckConstraint("input_tokens >= 0", name="input_tokens_nonnegative"),
+        CheckConstraint("output_tokens >= 0", name="output_tokens_nonnegative"),
+        CheckConstraint("repair_count BETWEEN 0 AND 2", name="repair_count_bounded"),
+        Index("ix_provider_calls_org_started", "organization_id", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(80), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    repair_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class IntentRevision(Base):
+    __tablename__ = "intent_revisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_intent_revisions_draft_org",
+        ),
+        CheckConstraint(f"actor_kind IN ({_values(REVISION_ACTORS)})", name="valid_actor"),
+        Index("ix_intent_revisions_draft_created", "draft_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    based_on_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    actor_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_call_id: Mapped[str | None] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("provider_calls.id", ondelete="SET NULL")
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OutlineRevision(Base):
+    __tablename__ = "outline_revisions"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_outline_revisions_id_organization"),
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_outline_revisions_draft_org",
+        ),
+        CheckConstraint(f"actor_kind IN ({_values(REVISION_ACTORS)})", name="valid_actor"),
+        CheckConstraint("target_slide_count BETWEEN 4 AND 30", name="target_slide_count_bounded"),
+        Index("ix_outline_revisions_draft_created", "draft_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    based_on_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    actor_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_call_id: Mapped[str | None] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("provider_calls.id", ondelete="SET NULL")
+    )
+    operation: Mapped[str] = mapped_column(String(40), nullable=False, default="edit")
+    story_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    target_slide_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OutlineSlide(Base):
+    __tablename__ = "outline_slides"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["outline_revision_id", "organization_id"],
+            ["outline_revisions.id", "outline_revisions.organization_id"],
+            ondelete="CASCADE",
+            name="fk_outline_slides_revision_org",
+        ),
+        UniqueConstraint(
+            "outline_revision_id", "outline_slide_id", name="uq_outline_slides_revision_slide"
+        ),
+        UniqueConstraint(
+            "outline_revision_id", "position", name="uq_outline_slides_revision_position"
+        ),
+        CheckConstraint("position >= 1", name="position_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    outline_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    outline_slide_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    slide_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    key_points: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    source_citations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OutlineApproval(Base):
+    __tablename__ = "outline_approvals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_outline_approvals_draft_org",
+        ),
+        ForeignKeyConstraint(
+            ["outline_revision_id", "organization_id"],
+            ["outline_revisions.id", "outline_revisions.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_outline_approvals_revision_org",
+        ),
+        UniqueConstraint("outline_revision_id", name="uq_outline_approvals_outline_revision"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    outline_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    intent_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    template_version_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    snapshot_input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_by: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

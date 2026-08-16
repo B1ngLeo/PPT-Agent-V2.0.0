@@ -5,7 +5,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "即刻AI-PPT — 让想法即刻成片",
-  description: "安全上传参考文档，持续查看扫描与解析状态。",
+  description:
+    "从主题或来源文档生成可恢复、可比较、可批准的原生 PPT 创作意图与大纲。",
 };
 
 export default function RootLayout({

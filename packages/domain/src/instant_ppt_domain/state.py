@@ -6,9 +6,7 @@ from instant_ppt_domain.models import TERMINAL_JOB_STATUSES
 
 JOB_TRANSITIONS: dict[str, frozenset[str]] = {
     "queued": frozenset({"running", "cancel_requested"}),
-    "running": frozenset(
-        {"cancel_requested", "succeeded", "partially_succeeded", "failed"}
-    ),
+    "running": frozenset({"cancel_requested", "succeeded", "partially_succeeded", "failed"}),
     "cancel_requested": frozenset({"cancelled"}),
     "cancelled": frozenset(),
     "succeeded": frozenset(),

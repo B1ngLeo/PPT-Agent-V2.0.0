@@ -48,9 +48,7 @@ class DownloadAuthorization:
     expires_at: datetime
 
 
-def tenant_object_key(
-    organization_id: str, partition: str, artifact_id: str
-) -> str:
+def tenant_object_key(organization_id: str, partition: str, artifact_id: str) -> str:
     if partition not in ALLOWED_PARTITIONS:
         raise ValueError("invalid object partition")
     for value in (organization_id, artifact_id):
@@ -86,18 +84,14 @@ def authorize_download(
     )
     if artifact is None:
         raise ArtifactNotFound("artifact does not exist or is not accessible")
-    expected_key = tenant_object_key(
-        context.organization_id, artifact.partition, artifact.id
-    )
+    expected_key = tenant_object_key(context.organization_id, artifact.partition, artifact.id)
     if artifact.object_key != expected_key:
         raise ArtifactUnavailable("artifact object key violates the tenant partition")
     stat = object_store.stat(artifact.object_key)
     if stat.size_bytes != artifact.size_bytes:
         raise ArtifactUnavailable("artifact metadata does not match object storage")
     expires_at = now + timedelta(seconds=ttl_seconds)
-    url = object_store.presign_get(
-        artifact.object_key, expires=timedelta(seconds=ttl_seconds)
-    )
+    url = object_store.presign_get(artifact.object_key, expires=timedelta(seconds=ttl_seconds))
     session.add(
         ArtifactDownloadGrant(
             id=new_ulid(),
@@ -118,9 +112,7 @@ def authorize_download(
         outcome="succeeded",
         details={"ttlSeconds": ttl_seconds, "partition": artifact.partition},
     )
-    return DownloadAuthorization(
-        artifact_id=artifact.id, url=url, expires_at=expires_at
-    )
+    return DownloadAuthorization(artifact_id=artifact.id, url=url, expires_at=expires_at)
 
 
 def replay_download_authorization(
@@ -149,9 +141,7 @@ def replay_download_authorization(
     )
     if artifact is None:
         raise ArtifactNotFound("artifact does not exist or is not accessible")
-    expected_key = tenant_object_key(
-        context.organization_id, artifact.partition, artifact.id
-    )
+    expected_key = tenant_object_key(context.organization_id, artifact.partition, artifact.id)
     if artifact.object_key != expected_key:
         raise ArtifactUnavailable("artifact object key violates the tenant partition")
     stat = object_store.stat(artifact.object_key)

@@ -33,9 +33,7 @@ def current(database_url: str | None = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage the Instant PPT PostgreSQL schema")
-    parser.add_argument(
-        "action", choices=("upgrade", "downgrade", "current", "revision", "check")
-    )
+    parser.add_argument("action", choices=("upgrade", "downgrade", "current", "revision", "check"))
     parser.add_argument("revision", nargs="?", default=None)
     parser.add_argument("--database-url", default=None)
     parser.add_argument("--message", default="schema change")
