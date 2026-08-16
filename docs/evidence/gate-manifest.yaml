@@ -1,5 +1,5 @@
 schemaVersion: 1
-updatedAt: 2026-08-16T10:38:18+08:00
+updatedAt: 2026-08-16T11:27:25+08:00
 gates:
   - id: GATE-G00-CONTRACT-BASELINE
     goal: G00
@@ -73,13 +73,18 @@ gates:
   - id: GATE-G02-RECOVERY
     goal: G02
     required: true
-    status: pending
+    status: passed
     ownerRole: engineering
-    approver: null
-    checkedAt: null
-    targetVersions: []
-    evidence: []
-    notes: Recovery and race cases must pass ten consecutive runs.
+    approver: automated:verify-integration
+    checkedAt: 2026-08-16T03:26:37Z
+    targetVersions: [postgresql-17.6, redis-7.4.2, celery-5.6.3]
+    evidence:
+      [
+        "docs/evidence/g02-persistent-orchestrator.md",
+        "docs/evidence/recovery/g02-recovery-results.json",
+        "docs/design/g02-persistent-orchestrator.md",
+      ]
+    notes: All 73 cases passed; every required process-kill, race, Redis, outbox, and SSE recovery group passed ten consecutive iterations.
     waiver: null
   - id: GATE-G03-TENANCY
     goal: G03
@@ -110,7 +115,7 @@ gates:
     ownerRole: product
     approver: null
     checkedAt: null
-    targetVersions: [deepseek-v4-pro]
+    targetVersions: [kimi-k3, gpt-image-2]
     evidence: []
     notes: Fake Provider remains the regression baseline until production terms are approved.
     waiver: null

@@ -19,17 +19,13 @@ COPY pyproject.toml uv.lock .python-version ./
 COPY packages/domain/pyproject.toml packages/domain/pyproject.toml
 COPY services/api/pyproject.toml services/api/pyproject.toml
 COPY services/worker/pyproject.toml services/worker/pyproject.toml
-RUN uv sync --frozen --no-dev --package instant-ppt-worker --no-install-workspace
+RUN uv sync --frozen --no-dev --package instant-ppt-api --no-install-workspace
 
-COPY services/worker/src services/worker/src
 COPY packages/domain/src packages/domain/src
-COPY vendor/ppt-master vendor/ppt-master
-RUN uv sync --frozen --no-dev --package instant-ppt-worker --no-editable \
-    && .venv/bin/python vendor/ppt-master/scripts/attribution_guard.py \
-    && mkdir -p /workspace \
-    && chown 10001:10001 /workspace
+COPY services/api/src services/api/src
+RUN uv sync --frozen --no-dev --package instant-ppt-api --no-editable
 
 USER 10001:10001
-WORKDIR /workspace
-ENTRYPOINT ["engine-adapter"]
-CMD ["--help"]
+EXPOSE 8000
+ENTRYPOINT ["uvicorn"]
+CMD ["instant_ppt_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

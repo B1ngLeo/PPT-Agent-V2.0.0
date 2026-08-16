@@ -1,0 +1,233 @@
+"""Minimal G02 HTTP surface backed by durable orchestration state."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Header, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from instant_ppt_domain.config import DomainSettings
+from instant_ppt_domain.ids import new_ulid
+from instant_ppt_domain.service import (
+    SYNTHETIC_ACTOR_ID,
+    SYNTHETIC_ORGANIZATION_ID,
+    CreateJobCommand,
+    IdempotencyConflict,
+    InvalidTransition,
+    ResourceNotFound,
+    create_generation_job,
+    get_job,
+    request_cancel,
+    retry_slide,
+    serialize_job_snapshot,
+)
+from sqlalchemy.orm import Session, sessionmaker
+
+from instant_ppt_api.events import stream_events
+from instant_ppt_api.problems import problem_response
+from instant_ppt_api.schemas import CreateGenerationJobRequest, MutationRequest
+
+router = APIRouter(prefix="/v1")
+
+
+def _factory(request: Request) -> sessionmaker[Session]:
+    return request.app.state.session_factory
+
+
+def _settings(request: Request) -> DomainSettings:
+    return request.app.state.settings
+
+
+@router.post("/drafts/{draft_id}/generation-jobs", status_code=202)
+def create_job(
+    draft_id: str,
+    payload: CreateGenerationJobRequest,
+    request: Request,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    organization_id: Annotated[
+        str, Header(alias="X-Organization-ID")
+    ] = SYNTHETIC_ORGANIZATION_ID,
+    actor_id: Annotated[str, Header(alias="X-Actor-ID")] = SYNTHETIC_ACTOR_ID,
+) -> JSONResponse:
+    data = payload.data
+    body = payload.model_dump(by_alias=True, mode="json")
+    try:
+        with _factory(request).begin() as session:
+            result = create_generation_job(
+                session,
+                CreateJobCommand(
+                    organization_id=organization_id,
+                    actor_id=actor_id,
+                    draft_id=draft_id,
+                    idempotency_key=idempotency_key,
+                    request_body=body,
+                    intent_revision_id=data.intent_revision_id or new_ulid(),
+                    outline_revision_id=data.outline_revision_id or new_ulid(),
+                    template_version_id=data.template_version_id or new_ulid(),
+                    slide_count=data.slide_count,
+                    source_hashes=tuple(data.source_hashes),
+                    failure_modes=dict(data.failure_modes),
+                    step_delay_ms=data.step_delay_ms,
+                    crash_once_at_position=data.crash_once_at_position,
+                ),
+            )
+        headers = {**result.headers, "Idempotency-Replayed": str(result.replayed).lower()}
+        return JSONResponse(result.body, status_code=result.status_code, headers=headers)
+    except IdempotencyConflict as error:
+        return problem_response(
+            status=409,
+            code="idempotency_key_reused",
+            title="幂等键已被不同请求使用",
+            detail=str(error),
+            instance=str(request.url.path),
+        )
+
+
+@router.get("/jobs/{job_id}")
+def get_generation_job(
+    job_id: str,
+    request: Request,
+    organization_id: Annotated[
+        str, Header(alias="X-Organization-ID")
+    ] = SYNTHETIC_ORGANIZATION_ID,
+) -> JSONResponse:
+    try:
+        with _factory(request)() as session:
+            job = get_job(session, job_id, organization_id)
+            snapshot = serialize_job_snapshot(session, job)
+        return JSONResponse(
+            {
+                "schemaVersion": 1,
+                "resourceId": job_id,
+                "resourceType": "generationJob",
+                "data": snapshot,
+                "nextCursor": None,
+            }
+        )
+    except ResourceNotFound:
+        return problem_response(
+            status=404,
+            code="not_found",
+            title="资源不存在",
+            detail="任务不存在或无权访问",
+            instance=str(request.url.path),
+        )
+
+
+@router.post("/jobs/{job_id}:cancel", status_code=202)
+def cancel_generation_job(
+    job_id: str,
+    payload: MutationRequest,
+    request: Request,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    organization_id: Annotated[
+        str, Header(alias="X-Organization-ID")
+    ] = SYNTHETIC_ORGANIZATION_ID,
+) -> JSONResponse:
+    del payload, idempotency_key
+    try:
+        with _factory(request).begin() as session:
+            job = request_cancel(session, job_id, organization_id)
+            snapshot = serialize_job_snapshot(session, job)
+        return JSONResponse(
+            {
+                "schemaVersion": 1,
+                "resourceId": job_id,
+                "resourceType": "cancelGenerationJob",
+                "data": snapshot,
+                "nextCursor": None,
+            },
+            status_code=202,
+            headers={"Location": f"/v1/jobs/{job_id}"},
+        )
+    except ResourceNotFound:
+        return problem_response(
+            status=404,
+            code="not_found",
+            title="资源不存在",
+            detail="任务不存在或无权访问",
+            instance=str(request.url.path),
+        )
+
+
+@router.post("/jobs/{job_id}/slides/{slide_id}:retry", status_code=202)
+def retry_generation_slide(
+    job_id: str,
+    slide_id: str,
+    payload: MutationRequest,
+    request: Request,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    organization_id: Annotated[
+        str, Header(alias="X-Organization-ID")
+    ] = SYNTHETIC_ORGANIZATION_ID,
+) -> JSONResponse:
+    del payload, idempotency_key
+    try:
+        with _factory(request).begin() as session:
+            slide = retry_slide(session, job_id, slide_id, organization_id)
+        return JSONResponse(
+            {
+                "schemaVersion": 1,
+                "resourceId": slide.slide_id,
+                "resourceType": "generationJobSlide",
+                "data": {"status": slide.status, "attempt": slide.attempt},
+                "nextCursor": None,
+            },
+            status_code=202,
+            headers={"Location": f"/v1/jobs/{job_id}"},
+        )
+    except ResourceNotFound:
+        return problem_response(
+            status=404,
+            code="not_found",
+            title="资源不存在",
+            detail="任务或页面不存在",
+            instance=str(request.url.path),
+        )
+    except InvalidTransition as error:
+        return problem_response(
+            status=409,
+            code="invalid_state_transition",
+            title="当前状态不能重试",
+            detail=str(error),
+            instance=str(request.url.path),
+        )
+
+
+@router.get("/jobs/{job_id}/events", response_model=None)
+async def generation_job_events(
+    job_id: str,
+    request: Request,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+    organization_id: Annotated[
+        str, Header(alias="X-Organization-ID")
+    ] = SYNTHETIC_ORGANIZATION_ID,
+) -> StreamingResponse | JSONResponse:
+    try:
+        with _factory(request)() as session:
+            get_job(session, job_id, organization_id)
+    except ResourceNotFound:
+        return problem_response(
+            status=404,
+            code="not_found",
+            title="资源不存在",
+            detail="任务不存在或无权访问",
+            instance=str(request.url.path),
+        )
+    settings = _settings(request)
+    return StreamingResponse(
+        stream_events(
+            request,
+            _factory(request),
+            redis_url=settings.redis_events_url,
+            job_id=job_id,
+            organization_id=organization_id,
+            last_event_id=last_event_id,
+            heartbeat_seconds=settings.sse_heartbeat_seconds,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -64,6 +64,71 @@ services:
       start_period: 90s
     restart: unless-stopped
 
+  api:
+    profiles: ["runtime"]
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment: &runtime-environment
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-instant_ppt}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-instant_ppt}
+      REDIS_EVENTS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      SSE_HEARTBEAT_SECONDS: ${SSE_HEARTBEAT_SECONDS:-20}
+      OUTBOX_POLL_SECONDS: ${OUTBOX_POLL_SECONDS:-0.25}
+      WORKER_LEASE_SECONDS: ${WORKER_LEASE_SECONDS:-30}
+      CELERY_VISIBILITY_TIMEOUT_SECONDS: ${CELERY_VISIBILITY_TIMEOUT_SECONDS:-30}
+    command:
+      - instant_ppt_api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    profiles: ["runtime"]
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    environment: *runtime-environment
+    entrypoint: ["celery"]
+    command:
+      - -A
+      - instant_ppt_worker.celery_app:celery_app
+      - worker
+      - --loglevel=INFO
+      - --concurrency=1
+      - --without-gossip
+      - --without-mingle
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  outbox:
+    profiles: ["runtime"]
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    environment: *runtime-environment
+    entrypoint: ["python", "-m", "instant_ppt_worker.outbox_runner"]
+    command: []
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   redis-data:

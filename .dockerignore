@@ -7,7 +7,7 @@ apps
 designs
 docs
 infra
-packages
+packages/contracts
 tests
 **/__pycache__
 **/.pytest_cache

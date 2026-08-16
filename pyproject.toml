@@ -4,11 +4,13 @@ version = "0.0.0"
 requires-python = ">=3.12.4,<3.13"
 dependencies = [
   "instant-ppt-api",
+  "instant-ppt-domain",
   "instant-ppt-worker",
 ]
 
 [dependency-groups]
 dev = [
+  "httpx==0.28.1",
   "jsonschema==4.26.0",
   "pytest==9.1.1",
   "ruff==0.16.3",
@@ -20,14 +22,15 @@ link-mode = "copy"
 
 [tool.uv.sources]
 instant-ppt-api = { workspace = true }
+instant-ppt-domain = { workspace = true }
 instant-ppt-worker = { workspace = true }
 
 [tool.uv.workspace]
-members = ["services/api", "services/worker"]
+members = ["packages/domain", "services/api", "services/worker"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
-testpaths = ["services/api/tests", "services/worker/tests"]
+addopts = "-q --import-mode=importlib"
+testpaths = ["packages/domain/tests", "services/api/tests", "services/worker/tests"]
 
 [tool.ruff]
 target-version = "py312"

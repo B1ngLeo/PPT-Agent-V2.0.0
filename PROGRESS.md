@@ -4,18 +4,18 @@
 
 ## 当前 Goal
 
-- Goal：G02 / 持久任务、幂等、SSE 与恢复 Spike
+- Goal：G03 / 身份、租户与存储底座
 - 状态：in_progress
-- 当前检查点：CP-02A 状态真相与最小 PostgreSQL schema
-- 已验证：G00 complete；G01 complete，三项 required Gate 3/3 passed；G02 合同前置已在 G00 冻结
-- 剩余工作：CP-02A 数据库真相、CP-02B 幂等/竞态、CP-02C SSE/恢复、10 次连续集成回归与 G02 Gate
-- 决策/偏离：G02 使用确定性 Fake Worker，不接真实 PPT 引擎、登录、产品 UI 或真实 Provider；无 SPEC 偏离
+- 当前检查点：G03 身份 schema、授权上下文与 G02 数据无损迁移设计
+- 已验证：G00–G02 complete；P0 Gate passed；G01 required Gate 3/3、G02 required Gate 1/1 均通过且无 waiver；根 `pnpm verify` 通过
+- 剩余工作：身份提供方 ADR、users/memberships/entitlements/audit/artifact schema、local-only auth、tenant/API/SSE/object/download 隔离、MinIO 与安全验证、G03 Gate
+- 决策/偏离：P0 允许进入 G03；G03 必须保留现有 synthetic organization/job 数据并将开发身份绕过限定为非生产；无 SPEC 偏离
 - 阻塞：无
-- 恢复记录：项目所有者完成全部 G01 签署，`pnpm verify:gates --goal G01` 3/3 通过，持久目标从 blocked 恢复
+- 恢复记录：无当前恢复项；全部重复问题均在 3 次以内解决
 
 ## 已完成事项
 
-- 初始化 Git `main` 分支（未创建提交、未推送）。
+- 初始化 Git `main` 分支，并以 `5e930bf` 固化 G00–G01 已验证基线（未推送）。
 - 建立 monorepo 目录、固定工具链文件、Next.js/FastAPI/Celery 最小边界和根 Compose 服务拓扑。
 - 建立 ADR、系统设计、合同设计、开发说明、Gate Schema/manifest 与严重级别政策。
 - 完成 CP-00B：物化并验证 26 个版本化 Schema、38 个 P1 endpoint、166 个 fixtures、四套状态机、事件映射、稳定错误模型和 TypeScript 类型。
@@ -31,10 +31,16 @@
 - G01 完成度审计：逐项映射 PLAN 4.3–4.9 与 SPEC 12.3 的工程证据；两项合规 Gate 已由项目所有者签署，当前只剩 PowerPoint/WPS 可视 QA Gate，G02 恢复门槛仍按顺序待后续 Goal。
 - G01 Gate 证据：ADR-003/004/008、适配器/安全设计、综合证据与具名人工清单已完成；三项 Gate 已从 `pending` 推进至 `ready_for_review`。
 - G01 Gate 完成：Xiaobing Li 签署两项合规 Gate 并完成 10 份金样本的 PowerPoint/WPS 可视验收；ADR-003/008 转为 accepted，`pnpm verify:gates --goal G01` 3/3 通过。
+- G02 CP-02A 状态真相：新增 `packages/domain`、9 组 PostgreSQL 持久模型、租户复合外键/唯一/检查约束、显式状态转换与 Alembic 首版迁移；upgrade→downgrade→upgrade、schema drift、Ruff 及 16 项 API/Worker/领域单测通过。
+- G02 CP-02B 幂等与竞态：创建任务在同一事务提交 immutable snapshot、job、slides、usage reservation、initial event/outbox/task 与响应记录；8 线程同 key 并发只创建一份副作用，异 body 冲突、重复投递、partial、cancel/publish 竞态均通过。
+- G02 CP-02C SSE 与恢复：实现 snapshot→DB replay→Redis live handoff、Last-Event-ID、reset、seq 去重、heartbeat 与终态关闭；实现 late ack Celery Fake Worker、单页事务边界、lease 与 PostgreSQL expired-lease 对账恢复。
+- G02 恢复矩阵：真实 Worker 进程强杀、模拟崩溃、单页 partial、cancel/publish、Redis 清空、outbox fanout 与 SSE resume 各连续 10/10 通过；总计 73/73、0 skipped，最终证据 SHA-256 `4A516422…`。
+- G02 Gate 完成：设计、工程证据和机器可读恢复矩阵已固化；`pnpm verify:gates --goal G02` 1/1 与 Markdown 链接验证通过。
+- P0 Gate 完成：当前 worktree 重新通过合同、Web 生产构建、G01 13/13 安全与 10/10 双链金样本、G02 73/73 恢复矩阵；API/Worker/outbox 非 root 镜像构建和三页容器 E2E 通过，综合报告结论为 passed，可进入 G03。
 
 ## 进行中事项
 
-- CP-02A：设计并实现 organization/service actor、generation snapshot/job/job slide/event/outbox/idempotency 持久模型与迁移。
+- G03：读取身份/数据/安全/对象存储合同，冻结身份提供方与 token exchange ADR，设计向正式 identity 外键的无损迁移。
 
 ## 问题及解决方案
 
@@ -64,6 +70,10 @@
 | WPS COM 在全链路冷启动时偶发 `0x800706BE` RPC 失败                                    |        1 | Office 验证增加最多 3 次的有界进程重试；最新完整链路在第 3/3 次 WPS 尝试成功，未超过 5 次防循环上限，且 10/10 兼容与 30/30 视觉检查通过。                                                        |
 | Prettier 初始扫描生成物、金样本、冻结计划与 vendor 输入，产生 120 个非源码格式告警    |        1 | 新增 `.prettierignore` 明确区分首方可维护文件与冻结/生成输入；格式化首方文件后 `pnpm format:check` 通过，契约、金样本和全仓验证再次通过。                                                        |
 | Package QA 仅列出媒体清单且只间接证明文本，缺少悬空关系、原生图形和整页位图的直接断言 |        1 | 增加 OPC 内部目标解析、缺失/越界关系、孤立媒体、逐页计划文本计数、原生图形计数和整页图片回退门禁；新增破损媒体关系回归测试，10/10 金样本重新通过。                                               |
+| G02 ORM 未声明 snapshot/job relationship，flush 时先插入依赖 job                      |        1 | 在同一事务内先显式 flush immutable snapshot，再插入带 organization 复合外键的 job；最小烟测与完整矩阵通过。                                                                                      |
+| Redis Pub/Sub 测试在 `SUBSCRIBE` 确认帧消费前发布，偶发收不到 fanout                  |        1 | 测试先消费订阅确认再触发 outbox；10/10 fanout 通过，生产分发代码无错误。                                                                                                                         |
+| Windows Celery solo 强杀后 Kombu 未按 3 秒配置自动恢复未确认消息                      |        3 | 保留 late ack/受限预取并对齐 visibility 配置；最终以 PostgreSQL lease 为真相，由 outbox 对账过期 lease 并按 lease token 去重重投，真实进程强杀 10/10 通过。                                      |
+| Docker Compose 并行构建在中文仓库路径产生 BuildKit gRPC session header 错误           |        2 | 错误发生在 Dockerfile 执行前；关闭 Compose Bake 后逐服务顺序构建，API、Worker、outbox 三镜像全部成功，运行时 E2E 通过。                                                                          |
 
 ## Goal 历史
 
@@ -80,3 +90,16 @@
 - 验证：`pnpm verify:g01:automated`、两次稳定容器构建、10/10 source/render、13/13 threat rejection、30/30 跨应用视觉比较和 `pnpm verify:gates --goal G01` 通过。
 - Gate：上游/第三方分发、PDF/EPUB 依赖姿态与 PowerPoint/WPS 可视验收均由项目所有者具名批准。
 - 证据：`docs/evidence/g01-engine-license-golden.md`、`docs/evidence/g01-approval-record.md`、`docs/evidence/g01-completion-audit.md`。
+
+### G02 / 持久任务、幂等、SSE 与恢复 Spike — complete
+
+- 产物：首版 PostgreSQL tenant-scoped orchestration schema/Alembic、事务幂等与 outbox、Fake Worker/Celery、lease 对账恢复、snapshot/replay/live SSE、API/Worker runtime Compose。
+- 验证：migration roundtrip/drift、16 项单测、73/73 集成测试；七组关键恢复/竞态各连续 10 次通过；`pnpm verify:gates --goal G02` 1/1 通过。
+- 不变量：PostgreSQL 是任务/事件/lease/副作用真相；Redis 可清空；attempt 不进入逻辑幂等键；重复投递不重复 manifest、usage reservation 或终态。
+- 证据：`docs/design/g02-persistent-orchestrator.md`、`docs/evidence/g02-persistent-orchestrator.md`、`docs/evidence/recovery/g02-recovery-results.json`。
+
+### P0 Gate — complete
+
+- 决策：passed，G03 可开始；G01 3/3 与 G02 1/1 required Gate 均 passed，无 waiver、failed 或 skipped recovery case。
+- 复核：根 `pnpm verify`、13/13 threat rejection、10/10 source/render、73/73 recovery、三运行时镜像与容器三页 HTTP E2E 全部通过。
+- 证据：`docs/p0-gate-report.md`、`docs/evidence/gate-manifest.yaml`。

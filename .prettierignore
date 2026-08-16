@@ -16,6 +16,7 @@ packages/contracts/openapi.yaml
 packages/contracts/state-machines.json
 services/worker/contracts/
 docs/evidence/*.json
+docs/evidence/recovery/*.json
 tests/golden/
 tests/security-fixtures/
 designs/
