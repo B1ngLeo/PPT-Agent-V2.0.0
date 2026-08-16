@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "010M2GA1850M2GA1850M2GA185",
+  "title": "季度增长趋势",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "010M2GA1850M2GA1850M2GA185",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "010M00A005002G01800M00A005",
+      "outlineSlideId": "010M00A005002G01800M00A005",
+      "order": 0,
+      "role": "cover",
+      "title": "季度增长趋势",
+      "body": [
+        "Q1 增长 12%"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010M0GA085042G21810M0GA085",
+      "outlineSlideId": "010M0GA085042G21810M0GA085",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "Q1 增长 12%",
+        "Q2 增长 16%",
+        "Q4 达到 27%"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010M10A0G5082G41820M10A0G5",
+      "outlineSlideId": "010M10A0G5082G41820M10A0G5",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

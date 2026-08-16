@@ -1,0 +1,53 @@
+{
+  "operationId": "exportDraftData",
+  "request": {
+    "method": "POST",
+    "path": "/v1/drafts/{draftId}:export-data",
+    "pathParams": {
+      "draftId": "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+    },
+    "query": {},
+    "headers": {
+      "Idempotency-Key": "fixture-exportDraftData"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "data": {
+        "fixture": "exportDraftData"
+      },
+      "baseRevisionId": null
+    }
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "Location": "/v1/operations/01ARZ3NDEKTSV4RRFFQ69G5FB1"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "resourceId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      "resourceType": "exportDraftData",
+      "data": {
+        "fixture": true
+      },
+      "nextCursor": null
+    }
+  },
+  "error": {
+    "schemaVersion": 1,
+    "type": "https://errors.instant-ppt.example/validation_error",
+    "title": "请求参数无效",
+    "status": 422,
+    "detail": "一个或多个字段不符合合同",
+    "instance": "/v1/drafts/01ARZ3NDEKTSV4RRFFQ69G5FAX:export-data",
+    "code": "validation_error",
+    "retryable": false,
+    "requestId": "request-exportDraftData",
+    "fieldErrors": [
+      {
+        "field": "title",
+        "message": "不能为空"
+      }
+    ]
+  }
+}

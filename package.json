@@ -1,0 +1,41 @@
+{
+  "name": "instant-ppt-ai",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.18.1 <25",
+    "pnpm": "11.19.0"
+  },
+  "scripts": {
+    "contracts:materialize": "node scripts/contracts/materialize.mjs",
+    "contracts:types": "openapi-typescript packages/contracts/openapi.yaml -o packages/contracts/generated/openapi.ts",
+    "verify:contracts": "node scripts/contracts/materialize.mjs --check && node scripts/contracts/verify-contracts.mjs && pnpm contracts:types",
+    "verify:web": "pnpm --filter @instant-ppt/web verify",
+    "verify:api": "python -m uv run --package instant-ppt-api ruff check services/api && python -m uv run --package instant-ppt-api pytest services/api/tests",
+    "verify:worker": "python scripts/verify_vendor.py && python scripts/g01/verify_engine_boundary.py && python -m uv run --package instant-ppt-worker ruff check services/worker scripts/g01 scripts/generate_worker_contracts.py scripts/verify_vendor.py && python -m uv run --package instant-ppt-worker pytest services/worker/tests --basetemp .tmp/pytest-worker",
+    "verify:integration": "node scripts/not-configured.mjs integration G02",
+    "verify:golden": "python -m uv run --package instant-ppt-worker python scripts/g01/verify_golden.py && node scripts/g01/verify-golden-contracts.mjs",
+    "verify:e2e": "node scripts/not-configured.mjs e2e G05",
+    "verify:security": "python -m uv run --package instant-ppt-worker python scripts/g01/verify_security.py",
+    "verify:supply-chain": "python -m uv run --package instant-ppt-worker python scripts/g01/generate_supply_chain.py",
+    "verify:container": "docker build --pull=false --provenance=false --tag instant-ppt-worker:g01 --file services/worker/Dockerfile . && python -m uv run --package instant-ppt-worker python scripts/g01/verify_container.py",
+    "verify:powerpoint": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/g01/verify-office-with-retry.ps1 -ApplicationName PowerPoint",
+    "verify:wps": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/g01/verify-office-with-retry.ps1 -ApplicationName WPS",
+    "verify:visual": "python -m uv run --package instant-ppt-worker python scripts/g01/verify_visual_exports.py",
+    "verify:g01:automated": "pnpm verify:contracts && pnpm verify:worker && pnpm verify:security && pnpm verify:golden && pnpm verify:supply-chain && pnpm verify:container && pnpm verify:powerpoint && pnpm verify:wps && pnpm verify:visual && pnpm verify:links",
+    "verify:gates": "node scripts/verify-gates.mjs",
+    "verify:links": "node scripts/verify-links.mjs",
+    "verify": "pnpm verify:contracts && pnpm verify:web && pnpm verify:api && pnpm verify:worker && pnpm verify:integration && pnpm verify:golden && pnpm verify:e2e && pnpm verify:security && pnpm verify:links && pnpm verify:gates --goal G00",
+    "format:check": "prettier --check .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "12.1.0",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.6",
+    "yaml": "2.9.0"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/ThemeSpec.schema.json",
+  "title": "ThemeSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "themeId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "colorTokens": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^#[0-9A-Fa-f]{6}$"
+      },
+      "minProperties": 2
+    },
+    "fontFamilies": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "aspectRatio": {
+      "enum": [
+        "16:9"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "themeId",
+    "colorTokens",
+    "fontFamilies",
+    "aspectRatio"
+  ]
+}

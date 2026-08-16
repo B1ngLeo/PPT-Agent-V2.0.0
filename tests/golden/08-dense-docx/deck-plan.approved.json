@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "011040G2081040G2081040G208",
+  "title": "密集要点信息压测",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "011040G2081040G2081040G208",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "011000G008004002001000G008",
+      "outlineSlideId": "011000G008004002001000G008",
+      "order": 0,
+      "role": "cover",
+      "title": "密集要点信息压测",
+      "body": [
+        "目标一：稳定交付"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "01100GG08804402201100GG088",
+      "outlineSlideId": "01100GG08804402201100GG088",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "目标一：稳定交付",
+        "目标二：提升效率",
+        "目标三：控制成本",
+        "风险一：资源波动",
+        "风险二：依赖变化",
+        "行动：周度复盘"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "011010G0G8084042021010G0G8",
+      "outlineSlideId": "011010G0G8084042021010G0G8",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

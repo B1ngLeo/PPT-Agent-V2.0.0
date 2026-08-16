@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "type": "https://errors.instant-ppt.example/validation_error",
+  "title": "请求参数无效",
+  "status": 422,
+  "detail": "一个或多个字段不符合合同",
+  "instance": "/v1/drafts",
+  "code": "validation_error",
+  "retryable": false,
+  "requestId": "request-001",
+  "fieldErrors": [
+    {
+      "field": "title",
+      "message": "不能为空"
+    }
+  ]
+}

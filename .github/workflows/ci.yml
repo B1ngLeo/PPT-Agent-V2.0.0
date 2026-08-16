@@ -1,0 +1,48 @@
+name: baseline
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  bootstrap-contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - name: Install pinned package managers
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.19.0 --activate
+          python -m pip install uv==0.12.5
+      - name: Restore locked workspaces
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+          python -m uv sync --frozen
+      - name: Verify engineering baseline
+        shell: bash
+        run: |
+          pnpm verify:contracts
+          pnpm verify:web
+          pnpm verify:api
+          pnpm verify:worker
+          pnpm verify:links
+          pnpm verify:gates --goal G00
+
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config

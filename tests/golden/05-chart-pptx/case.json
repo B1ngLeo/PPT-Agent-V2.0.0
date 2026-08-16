@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "05-chart-pptx",
+  "sourceKey": "source/input.pptx",
+  "sourceId": "014MJJA9954MJJA9954MJJA995",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "chart",
+    "pptx-source"
+  ]
+}

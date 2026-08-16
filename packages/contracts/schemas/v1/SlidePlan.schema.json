@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/SlidePlan.schema.json",
+  "title": "SlidePlan",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "slideId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "outlineSlideId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "order": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "body": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "editable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "slideId",
+    "outlineSlideId",
+    "order",
+    "role",
+    "title",
+    "body",
+    "editable"
+  ]
+}

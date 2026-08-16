@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/UsageLedger.schema.json",
+  "title": "UsageLedger",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "ledgerId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "organizationId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "slideCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "modelTokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "imageCount": {
+      "type": "integer",
+      "const": 0
+    },
+    "workerSeconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "exportCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "ledgerId",
+    "organizationId",
+    "jobId",
+    "slideCount",
+    "modelTokens",
+    "imageCount",
+    "workerSeconds",
+    "exportCount",
+    "recordedAt"
+  ]
+}

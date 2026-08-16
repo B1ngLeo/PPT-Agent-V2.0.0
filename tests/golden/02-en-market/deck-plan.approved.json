@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "01081040G2081040G2081040G2",
+  "title": "Market Expansion Brief",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "01081040G2081040G2081040G2",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "0108004002001000G008004002",
+      "outlineSlideId": "0108004002001000G008004002",
+      "order": 0,
+      "role": "cover",
+      "title": "Market Expansion Brief",
+      "body": [
+        "North America grew 24%"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "01080G4082041020G1080G4082",
+      "outlineSlideId": "01080G4082041020G1080G4082",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "North America grew 24%",
+        "Retention reached 91%",
+        "Enterprise leads increased"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "01081040G2081040G2081040G2",
+      "outlineSlideId": "01081040G2081040G2081040G2",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

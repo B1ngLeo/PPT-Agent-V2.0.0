@@ -1,0 +1,160 @@
+schemaVersion: 1
+updatedAt: 2026-08-16T10:38:18+08:00
+gates:
+  - id: GATE-G00-CONTRACT-BASELINE
+    goal: G00
+    required: true
+    status: passed
+    ownerRole: engineering
+    approver: automated:verify-contracts
+    checkedAt: 2026-08-16T08:00:00Z
+    targetVersions: [contracts-v1, openapi-1.0.0]
+    evidence:
+      [
+        "docs/evidence/g00-engineering-baseline.md",
+        "pnpm verify:contracts",
+        "pnpm verify:gates --goal G00",
+      ]
+    notes: Automated engineering gate; no human approval is represented.
+    waiver: null
+  - id: GATE-G01-UPSTREAM-LICENSE
+    goal: G01
+    required: true
+    status: passed
+    ownerRole: legal
+    approver: Xiaobing Li (project owner / OSS compliance owner)
+    checkedAt: 2026-08-16T10:29:09+08:00
+    targetVersions:
+      [ppt-master-v4.7.0, e8323bfaee249cffe1301ec40fca5875eb544d46]
+    evidence:
+      [
+        "vendor/ppt-master.vendor.json",
+        "docs/adr/ADR-004-engine-vendoring.md",
+        "docs/evidence/g01-supply-chain.json",
+        "docs/evidence/g01-approval-record.md",
+      ]
+    notes: Project owner explicitly accepted the MIT and bundled third-party attribution/distribution posture.
+    waiver: null
+  - id: GATE-G01-PDF-LICENSE
+    goal: G01
+    required: true
+    status: passed
+    ownerRole: legal
+    approver: Xiaobing Li (project owner / OSS compliance owner)
+    checkedAt: 2026-08-16T10:29:09+08:00
+    targetVersions: [pypdf-6.16.1, BSD-3-Clause]
+    evidence:
+      [
+        "docs/adr/ADR-003-pdf-parser-license.md",
+        "docs/evidence/sbom-python.cdx.json",
+        "docs/evidence/g01-golden-results.json",
+        "docs/evidence/g01-security-results.json",
+        "docs/evidence/g01-approval-record.md",
+      ]
+    notes: Project owner explicitly accepted pypdf BSD-3-Clause, PyMuPDF exclusion and disabled EPUB scope.
+    waiver: null
+  - id: GATE-G01-POWERPOINT-WPS
+    goal: G01
+    required: true
+    status: passed
+    ownerRole: qa
+    approver: Xiaobing Li (project owner / QA reviewer)
+    checkedAt: 2026-08-16T10:38:18+08:00
+    targetVersions: [powerpoint-16.0-build-20228, wps-presentation-12.1.0.28043]
+    evidence:
+      [
+        "docs/evidence/g01-powerpoint-compatibility.json",
+        "docs/evidence/g01-wps-compatibility.json",
+        "docs/evidence/g01-visual-diff.json",
+        "docs/evidence/g01-approval-record.md",
+      ]
+    notes: Named project-owner QA review confirmed all ten decks pass in both target applications, with no repair prompt and successful edit/save/reopen behavior.
+    waiver: null
+  - id: GATE-G02-RECOVERY
+    goal: G02
+    required: true
+    status: pending
+    ownerRole: engineering
+    approver: null
+    checkedAt: null
+    targetVersions: []
+    evidence: []
+    notes: Recovery and race cases must pass ten consecutive runs.
+    waiver: null
+  - id: GATE-G03-TENANCY
+    goal: G03
+    required: true
+    status: pending
+    ownerRole: security
+    approver: null
+    checkedAt: null
+    targetVersions: []
+    evidence: []
+    notes: Cross-organization API, object, SSE, and download denial.
+    waiver: null
+  - id: GATE-G04-SOURCE-SECURITY
+    goal: G04
+    required: true
+    status: pending
+    ownerRole: security
+    approver: null
+    checkedAt: null
+    targetVersions: []
+    evidence: []
+    notes: Scanner fails closed and malicious samples never reach clean/parse.
+    waiver: null
+  - id: GATE-G05-PROVIDER-DATA
+    goal: G05
+    required: true
+    status: pending
+    ownerRole: product
+    approver: null
+    checkedAt: null
+    targetVersions: [deepseek-v4-pro]
+    evidence: []
+    notes: Fake Provider remains the regression baseline until production terms are approved.
+    waiver: null
+  - id: GATE-G06-GENERATION
+    goal: G06
+    required: true
+    status: pending
+    ownerRole: engineering
+    approver: null
+    checkedAt: null
+    targetVersions: []
+    evidence: []
+    notes: Generation, publish, partial, retry, cancellation and recovery evidence.
+    waiver: null
+  - id: GATE-G07-USER-CLOSURE
+    goal: G07
+    required: true
+    status: pending
+    ownerRole: qa
+    approver: null
+    checkedAt: null
+    targetVersions: []
+    evidence: []
+    notes: Revision-bound export, history recovery, deletion, and download expiry.
+    waiver: null
+  - id: GATE-G08-RELEASE
+    goal: G08
+    required: true
+    status: pending
+    ownerRole: product
+    approver: null
+    checkedAt: null
+    targetVersions: []
+    evidence: []
+    notes: Final release gate aggregates security, accessibility, recovery, compatibility and operations evidence.
+    waiver: null
+  - id: GATE-G09-PRIVATE-TEMPLATE
+    goal: G09
+    required: true
+    status: pending
+    ownerRole: product
+    approver: null
+    checkedAt: null
+    targetVersions: []
+    evidence: []
+    notes: Optional and only available after an approved ADR-009.
+    waiver: null

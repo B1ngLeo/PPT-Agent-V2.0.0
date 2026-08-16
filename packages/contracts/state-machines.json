@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "machines": {
+    "source": {
+      "initial": "upload_pending",
+      "terminal": [
+        "parsed",
+        "rejected",
+        "parse_failed",
+        "cancelled"
+      ],
+      "transitions": {
+        "upload_pending": [
+          "uploading",
+          "cancelled"
+        ],
+        "uploading": [
+          "uploaded",
+          "rejected",
+          "cancelled"
+        ],
+        "uploaded": [
+          "scanning",
+          "rejected"
+        ],
+        "scanning": [
+          "clean",
+          "rejected"
+        ],
+        "clean": [
+          "parsing"
+        ],
+        "parsing": [
+          "parsed",
+          "parse_failed"
+        ],
+        "parse_failed": [],
+        "parsed": [],
+        "rejected": [],
+        "cancelled": []
+      }
+    },
+    "job": {
+      "initial": "queued",
+      "terminal": [
+        "succeeded",
+        "partially_succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "transitions": {
+        "queued": [
+          "running",
+          "cancel_requested"
+        ],
+        "running": [
+          "succeeded",
+          "partially_succeeded",
+          "failed",
+          "cancel_requested"
+        ],
+        "cancel_requested": [
+          "cancelled",
+          "succeeded",
+          "partially_succeeded",
+          "failed"
+        ],
+        "succeeded": [],
+        "partially_succeeded": [],
+        "failed": [],
+        "cancelled": []
+      }
+    },
+    "slide": {
+      "initial": "pending",
+      "terminal": [
+        "ready",
+        "cancelled"
+      ],
+      "conditionallyTerminal": [
+        "failed"
+      ],
+      "transitions": {
+        "pending": [
+          "running",
+          "cancelled"
+        ],
+        "running": [
+          "ready",
+          "failed",
+          "cancelled"
+        ],
+        "failed": [
+          "retrying"
+        ],
+        "retrying": [
+          "running",
+          "failed",
+          "cancelled"
+        ],
+        "ready": [],
+        "cancelled": []
+      }
+    },
+    "export": {
+      "initial": "queued",
+      "terminal": [
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "transitions": {
+        "queued": [
+          "running",
+          "cancelled"
+        ],
+        "running": [
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "succeeded": [],
+        "failed": [],
+        "cancelled": []
+      }
+    }
+  },
+  "jobEventStatusMap": {
+    "job.queued": "queued",
+    "job.started": "running",
+    "job.cancel.requested": "cancel_requested",
+    "job.completed": "succeeded",
+    "job.partially_completed": "partially_succeeded",
+    "job.failed": "failed",
+    "job.cancelled": "cancelled"
+  },
+  "terminalRules": {
+    "succeeded": "all required slides ready and package/publish succeeded",
+    "partially_succeeded": "at least one required slide ready and at least one exhausted failure",
+    "failed": "no required slide ready or unrecoverable deck/package/publish failure",
+    "cancelled": "cancel transaction committed before another terminal transaction"
+  },
+  "logicalTaskKey": [
+    "organizationId",
+    "snapshotId",
+    "stage",
+    "slideId?"
+  ],
+  "executionMetadataExcludedFromLogicalKey": [
+    "attempt"
+  ]
+}

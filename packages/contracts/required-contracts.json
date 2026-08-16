@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "goals": {
+    "G01": {
+      "schemas": [
+        "SourcePackage",
+        "DeckPlan",
+        "SlidePlan",
+        "QaReport",
+        "ArtifactManifest",
+        "ProblemDetails"
+      ],
+      "endpoints": []
+    },
+    "G02": {
+      "schemas": [
+        "GenerationSnapshot",
+        "JobEvent",
+        "SseReset",
+        "SseSnapshot",
+        "UsageReservation",
+        "UsageLedger",
+        "ProblemDetails"
+      ],
+      "endpoints": [
+        "createGenerationJob",
+        "getGenerationJob",
+        "streamJobEvents",
+        "cancelGenerationJob",
+        "retryGenerationSlide"
+      ]
+    },
+    "G03": {
+      "schemas": [
+        "Entitlement",
+        "AuditEvent",
+        "ArtifactManifest",
+        "ProblemDetails"
+      ],
+      "endpoints": [
+        "getMyEntitlements",
+        "getMyUsage",
+        "authorizeArtifactDownload"
+      ]
+    },
+    "G04": {
+      "schemas": [
+        "UploadSession",
+        "SourcePackage",
+        "SourceArtifact",
+        "ProblemDetails"
+      ],
+      "endpoints": [
+        "createUploadSession",
+        "completeUploadSession",
+        "attachDraftSource",
+        "getSource",
+        "retrySourceParse"
+      ]
+    },
+    "G05": {
+      "schemas": [
+        "IntentSpec",
+        "OutlineSpec",
+        "TemplateVersion",
+        "ProviderCall",
+        "ProblemDetails"
+      ],
+      "endpoints": [
+        "createDraft",
+        "getDraft",
+        "updateDraft",
+        "inferIntent",
+        "createIntentRevision",
+        "generateOutline",
+        "createOutlineRevision",
+        "approveOutlineRevision",
+        "listTemplates",
+        "getTemplateVersion"
+      ]
+    },
+    "G06": {
+      "schemas": [
+        "GenerationSnapshot",
+        "DeckPlan",
+        "SlidePlan",
+        "JobEvent",
+        "QaReport",
+        "ArtifactManifest",
+        "UsageReservation",
+        "UsageLedger"
+      ],
+      "endpoints": [
+        "createGenerationJob",
+        "getGenerationJob",
+        "streamJobEvents",
+        "cancelGenerationJob",
+        "retryGenerationSlide"
+      ]
+    },
+    "G07": {
+      "schemas": [
+        "PresentationRevision",
+        "SlideVersion",
+        "ExportJob",
+        "ExportManifest",
+        "ArtifactManifest"
+      ],
+      "endpoints": [
+        "getPresentation",
+        "createPresentationRevision",
+        "regeneratePresentationSlide",
+        "createPresentationExport",
+        "getExport",
+        "listHistory",
+        "exportDraftData"
+      ]
+    },
+    "G08": {
+      "schemas": [
+        "UploadSession",
+        "SourceArtifact",
+        "SourcePackage",
+        "IntentSpec",
+        "OutlineSpec",
+        "ThemeSpec",
+        "TemplateBinding",
+        "TemplateVersion",
+        "GenerationSnapshot",
+        "SlidePlan",
+        "DeckPlan",
+        "JobEvent",
+        "SseReset",
+        "SseSnapshot",
+        "QaReport",
+        "ArtifactManifest",
+        "SlideVersion",
+        "PresentationRevision",
+        "ExportJob",
+        "ExportManifest",
+        "Entitlement",
+        "UsageReservation",
+        "UsageLedger",
+        "ProviderCall",
+        "AuditEvent",
+        "ProblemDetails"
+      ],
+      "endpoints": [
+        "createDraft",
+        "getDraft",
+        "updateDraft",
+        "deleteDraft",
+        "exportDraftData",
+        "getDataExport",
+        "createUploadSession",
+        "completeUploadSession",
+        "attachDraftSource",
+        "getSource",
+        "retrySourceParse",
+        "inferIntent",
+        "createIntentRevision",
+        "listIntentRevisions",
+        "getIntentRevision",
+        "generateOutline",
+        "createOutlineRevision",
+        "listOutlineRevisions",
+        "getOutlineRevision",
+        "approveOutlineRevision",
+        "listTemplates",
+        "getTemplateVersion",
+        "createGenerationJob",
+        "getGenerationJob",
+        "streamJobEvents",
+        "cancelGenerationJob",
+        "retryGenerationSlide",
+        "getPresentation",
+        "createPresentationRevision",
+        "listPresentationRevisions",
+        "getPresentationRevision",
+        "regeneratePresentationSlide",
+        "createPresentationExport",
+        "getExport",
+        "authorizeArtifactDownload",
+        "listHistory",
+        "getMyEntitlements",
+        "getMyUsage"
+      ]
+    }
+  }
+}

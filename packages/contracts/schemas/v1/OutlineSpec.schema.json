@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/OutlineSpec.schema.json",
+  "title": "OutlineSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "outlineRevisionId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "storySummary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetSlideCount": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 30
+    },
+    "slides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "outlineSlideId",
+          "type",
+          "title",
+          "keyPoints",
+          "sourceCitations"
+        ],
+        "properties": {
+          "outlineSlideId": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "keyPoints": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "sourceCitations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "outlineRevisionId",
+    "storySummary",
+    "targetSlideCount",
+    "slides"
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "SecurityFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "SecurityFinding",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "decision": {
+      "enum": [
+        "clean",
+        "rejected"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "sourceKey": {
+      "title": "Sourcekey",
+      "type": "string"
+    },
+    "sourceSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Sourcesha256",
+      "type": "string"
+    },
+    "detectedType": {
+      "title": "Detectedtype",
+      "type": "string"
+    },
+    "scanner": {
+      "default": "intake-harness@1",
+      "title": "Scanner",
+      "type": "string"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/SecurityFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "checkedAt": {
+      "default": "2026-08-16T00:00:00Z",
+      "title": "Checkedat",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision",
+    "sourceKey",
+    "sourceSha256",
+    "detectedType"
+  ],
+  "title": "SecurityDecision",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v1/security-decision.schema.json"
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "reservationId": "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "jobId": "01ARZ3NDEKTSV4RRFFQ69G5FB1",
+  "idempotencyKey": "idem-001",
+  "reservedSlides": 12,
+  "status": "reserved",
+  "createdAt": "2026-08-16T08:00:00Z"
+}

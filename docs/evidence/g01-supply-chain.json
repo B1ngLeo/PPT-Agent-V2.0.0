@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-16T00:00:00Z",
+  "hostPlatform": "Windows",
+  "python": {
+    "lockfile": "uv.lock",
+    "sbom": "docs/evidence/sbom-python.cdx.json",
+    "componentCount": 53,
+    "sha256": "ba57015521675877b9dbcb53a00b1aaaaae2333479ee81670dc4d349d62eaa6d"
+  },
+  "node": {
+    "lockfile": "pnpm-lock.yaml",
+    "sbom": "docs/evidence/sbom-node.cdx.json",
+    "componentCount": 213,
+    "sha256": "6b22775ab0de410eb742c83d6005eb227eef13418921b309e9de98c558d84e6b"
+  },
+  "fonts": {
+    "fontPackVersion": "system-safe-fonts@1",
+    "bundledFontFiles": [],
+    "bundledFontCount": 0,
+    "runtimeFamilies": [
+      {
+        "family": "Arial",
+        "distribution": "not-bundled",
+        "source": "client operating system",
+        "licenseBoundary": "Microsoft/Windows-provided font; referenced by family name and never redistributed",
+        "path": "C:\\Windows\\Fonts\\arial.ttf",
+        "presentOnEvidenceHost": true,
+        "sha256": "baa251526d6862712a58e613ef451d8a2b60482142ec6aab1d47fb8e23e21a7c",
+        "sizeBytes": 1045960
+      },
+      {
+        "family": "Microsoft YaHei",
+        "distribution": "not-bundled",
+        "source": "client operating system",
+        "licenseBoundary": "Microsoft/Windows-provided font; referenced by family name and never redistributed",
+        "path": "C:\\Windows\\Fonts\\msyh.ttc",
+        "presentOnEvidenceHost": true,
+        "sha256": "d79c55e68b1131eea0cc1c47be4f572d964f28c682e143db2ad09c1e4cb07a3f",
+        "sizeBytes": 19704352
+      },
+      {
+        "family": "sans-serif",
+        "distribution": "generic-family",
+        "source": "rendering environment",
+        "licenseBoundary": "resolved by the host; no font bytes distributed"
+      }
+    ]
+  },
+  "licenseSensitiveExclusions": [
+    {
+      "component": "PyMuPDF",
+      "status": "not-installed",
+      "replacement": "pypdf==6.16.1"
+    },
+    {
+      "component": "ebooklib",
+      "status": "not-installed",
+      "feature": "EPUB disabled"
+    }
+  ]
+}

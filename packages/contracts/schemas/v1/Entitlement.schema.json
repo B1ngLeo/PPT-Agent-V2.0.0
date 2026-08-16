@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/Entitlement.schema.json",
+  "title": "Entitlement",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "organizationId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "used": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "resetsAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "organizationId",
+    "capability",
+    "limit",
+    "used",
+    "resetsAt"
+  ]
+}

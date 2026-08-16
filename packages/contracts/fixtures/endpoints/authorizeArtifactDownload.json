@@ -1,0 +1,51 @@
+{
+  "operationId": "authorizeArtifactDownload",
+  "request": {
+    "method": "POST",
+    "path": "/v1/artifacts/{artifactId}:authorize-download",
+    "pathParams": {
+      "artifactId": "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+    },
+    "query": {},
+    "headers": {
+      "Idempotency-Key": "fixture-authorizeArtifactDownload"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "data": {
+        "fixture": "authorizeArtifactDownload"
+      },
+      "baseRevisionId": null
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "schemaVersion": 1,
+      "resourceId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      "resourceType": "authorizeArtifactDownload",
+      "data": {
+        "fixture": true
+      },
+      "nextCursor": null
+    }
+  },
+  "error": {
+    "schemaVersion": 1,
+    "type": "https://errors.instant-ppt.example/validation_error",
+    "title": "请求参数无效",
+    "status": 422,
+    "detail": "一个或多个字段不符合合同",
+    "instance": "/v1/artifacts/01ARZ3NDEKTSV4RRFFQ69G5FAX:authorize-download",
+    "code": "validation_error",
+    "retryable": false,
+    "requestId": "request-authorizeArtifactDownload",
+    "fieldErrors": [
+      {
+        "field": "title",
+        "message": "不能为空"
+      }
+    ]
+  }
+}

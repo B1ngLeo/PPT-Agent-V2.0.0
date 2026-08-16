@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "010R30C1G60R30C1G60R30C1G6",
+  "title": "字体回退 Font Fallback",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "010R30C1G60R30C1G60R30C1G6",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "010R00C006003001G00R00C006",
+      "outlineSlideId": "010R00C006003001G00R00C006",
+      "order": 0,
+      "role": "cover",
+      "title": "字体回退 Font Fallback",
+      "body": [
+        "Microsoft YaHei 中文回退"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010R0GC086043021G10R0GC086",
+      "outlineSlideId": "010R0GC086043021G10R0GC086",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "Microsoft YaHei 中文回退",
+        "Arial Latin fallback",
+        "数字与符号保持可编辑"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010R10C0G6083041G20R10C0G6",
+      "outlineSlideId": "010R10C0G6083041G20R10C0G6",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

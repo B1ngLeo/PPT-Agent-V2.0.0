@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/GenerationSnapshot.schema.json",
+  "title": "GenerationSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "snapshotId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "organizationId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "draftId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "intentRevisionId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "outlineRevisionId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "templateVersionId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "modeId": {
+      "const": "native"
+    },
+    "sourceHashes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "uniqueItems": true
+    },
+    "promptVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "engineVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "containerVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fontPackVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providerConfigVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshotSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "snapshotId",
+    "organizationId",
+    "draftId",
+    "intentRevisionId",
+    "outlineRevisionId",
+    "templateVersionId",
+    "modeId",
+    "sourceHashes",
+    "promptVersion",
+    "engineVersion",
+    "containerVersion",
+    "fontPackVersion",
+    "providerConfigVersion",
+    "snapshotSha256",
+    "createdAt"
+  ]
+}

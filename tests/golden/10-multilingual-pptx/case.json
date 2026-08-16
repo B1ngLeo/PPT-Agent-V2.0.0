@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "10-multilingual-pptx",
+  "sourceKey": "source/input.pptx",
+  "sourceId": "0158N2MAHA58N2MAHA58N2MAHA",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "multilingual",
+    "pptx-source"
+  ]
+}

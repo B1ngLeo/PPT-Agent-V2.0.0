@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "01-zh-overview",
+  "sourceKey": "source/input.md",
+  "sourceId": "0144GJ289144GJ289144GJ2891",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "zh-CN",
+    "overview"
+  ]
+}

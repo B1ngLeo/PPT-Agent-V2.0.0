@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "010C1G60R30C1G60R30C1G60R3",
+  "title": "面向跨区域复杂业务协同场景的下一代智能运营平台阶段性成果总结",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "010C1G60R30C1G60R30C1G60R3",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "010C006003001G00R00C006003",
+      "outlineSlideId": "010C006003001G00R00C006003",
+      "order": 0,
+      "role": "cover",
+      "title": "面向跨区域复杂业务协同场景的下一代智能运营平台阶段性成果总结",
+      "body": [
+        "长标题自动采用紧凑字号"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010C0G6083041G20R10C0G6083",
+      "outlineSlideId": "010C0G6083041G20R10C0G6083",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "长标题自动采用紧凑字号",
+        "信息层级保持清晰",
+        "输出仍为原生可编辑文本"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010C1060G3081G40R20C1060G3",
+      "outlineSlideId": "010C1060G3081G40R20C1060G3",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

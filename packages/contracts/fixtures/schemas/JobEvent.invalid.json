@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "eventId": "01ARZ3NDEKTSV4RRFFQ69G5FB6",
+  "jobId": "01ARZ3NDEKTSV4RRFFQ69G5FB1",
+  "seq": 1,
+  "type": "job.queued",
+  "occurredAt": "2026-08-16T08:00:00Z",
+  "snapshotId": "01ARZ3NDEKTSV4RRFFQ69G5FB0",
+  "slideId": null,
+  "attempt": 0,
+  "stage": "deck_planning",
+  "status": "queued",
+  "progress": {
+    "completed": 0,
+    "total": 4
+  },
+  "data": {},
+  "traceId": "trace-001"
+}

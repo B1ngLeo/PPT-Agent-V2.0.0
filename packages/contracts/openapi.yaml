@@ -1,0 +1,2589 @@
+openapi: 3.1.0
+info:
+  title: 即刻AI-PPT API
+  version: 1.0.0
+  description: P1 contract baseline. Implementations are delivered by later Goals.
+servers:
+  - url: http://localhost:8000
+    description: Local development
+security:
+  - bearerAuth: []
+paths:
+  /v1/drafts:
+    post:
+      operationId: createDraft
+      tags:
+        - drafts
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}:
+    get:
+      operationId: getDraft
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    patch:
+      operationId: updateDraft
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    delete:
+      operationId: deleteDraft
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}:export-data:
+    post:
+      operationId: exportDraftData
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/data-exports/{dataExportId}:
+    get:
+      operationId: getDataExport
+      tags:
+        - data-exports
+      parameters:
+        - name: dataExportId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/upload-sessions:
+    post:
+      operationId: createUploadSession
+      tags:
+        - upload-sessions
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/upload-sessions/{uploadSessionId}:complete:
+    post:
+      operationId: completeUploadSession
+      tags:
+        - upload-sessions
+      parameters:
+        - name: uploadSessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}/sources:
+    post:
+      operationId: attachDraftSource
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/sources/{sourceId}:
+    get:
+      operationId: getSource
+      tags:
+        - sources
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/sources/{sourceId}:retry-parse:
+    post:
+      operationId: retrySourceParse
+      tags:
+        - sources
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}/intent:infer:
+    post:
+      operationId: inferIntent
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}/intent-revisions:
+    post:
+      operationId: createIntentRevision
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    get:
+      operationId: listIntentRevisions
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/intent-revisions/{intentRevisionId}:
+    get:
+      operationId: getIntentRevision
+      tags:
+        - intent-revisions
+      parameters:
+        - name: intentRevisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}/outline:generate:
+    post:
+      operationId: generateOutline
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}/outline-revisions:
+    post:
+      operationId: createOutlineRevision
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    get:
+      operationId: listOutlineRevisions
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/outline-revisions/{outlineRevisionId}:
+    get:
+      operationId: getOutlineRevision
+      tags:
+        - outline-revisions
+      parameters:
+        - name: outlineRevisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/outline-revisions/{outlineRevisionId}:approve:
+    post:
+      operationId: approveOutlineRevision
+      tags:
+        - outline-revisions
+      parameters:
+        - name: outlineRevisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/templates:
+    get:
+      operationId: listTemplates
+      tags:
+        - templates
+      parameters: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/templates/{templateId}/versions/{templateVersionId}:
+    get:
+      operationId: getTemplateVersion
+      tags:
+        - templates
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: templateVersionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}/generation-jobs:
+    post:
+      operationId: createGenerationJob
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/jobs/{jobId}:
+    get:
+      operationId: getGenerationJob
+      tags:
+        - jobs
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/jobs/{jobId}/events:
+    get:
+      operationId: streamJobEvents
+      tags:
+        - jobs
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/jobs/{jobId}:cancel:
+    post:
+      operationId: cancelGenerationJob
+      tags:
+        - jobs
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/jobs/{jobId}/slides/{slideId}:retry:
+    post:
+      operationId: retryGenerationSlide
+      tags:
+        - jobs
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: slideId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/presentations/{presentationId}:
+    get:
+      operationId: getPresentation
+      tags:
+        - presentations
+      parameters:
+        - name: presentationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/presentations/{presentationId}/revisions:
+    post:
+      operationId: createPresentationRevision
+      tags:
+        - presentations
+      parameters:
+        - name: presentationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "201":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    get:
+      operationId: listPresentationRevisions
+      tags:
+        - presentations
+      parameters:
+        - name: presentationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/presentations/{presentationId}/revisions/{presentationRevisionId}:
+    get:
+      operationId: getPresentationRevision
+      tags:
+        - presentations
+      parameters:
+        - name: presentationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: presentationRevisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/presentations/{presentationId}/slides/{slideId}:regenerate:
+    post:
+      operationId: regeneratePresentationSlide
+      tags:
+        - presentations
+      parameters:
+        - name: presentationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: slideId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/presentations/{presentationId}/exports:
+    post:
+      operationId: createPresentationExport
+      tags:
+        - presentations
+      parameters:
+        - name: presentationId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/exports/{exportId}:
+    get:
+      operationId: getExport
+      tags:
+        - exports
+      parameters:
+        - name: exportId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/artifacts/{artifactId}:authorize-download:
+    post:
+      operationId: authorizeArtifactDownload
+      tags:
+        - artifacts
+      parameters:
+        - name: artifactId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/history:
+    get:
+      operationId: listHistory
+      tags:
+        - history
+      parameters: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/me/entitlements:
+    get:
+      operationId: getMyEntitlements
+      tags:
+        - me
+      parameters: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+  /v1/me/usage:
+    get:
+      operationId: getMyUsage
+      tags:
+        - me
+      parameters: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    UploadSession:
+      title: UploadSession
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        uploadSessionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        objectKey:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9/_\-.]{0,511}$
+        declaredMimeType:
+          enum:
+            - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+            - application/pdf
+            - application/vnd.openxmlformats-officedocument.presentationml.presentation
+            - text/html
+        expectedSha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        maxBytes:
+          type: integer
+          minimum: 1
+          maximum: 52428800
+        expiresAt:
+          type: string
+          format: date-time
+        status:
+          enum:
+            - pending
+            - uploaded
+            - completed
+            - expired
+            - rejected
+      required:
+        - schemaVersion
+        - uploadSessionId
+        - organizationId
+        - objectKey
+        - declaredMimeType
+        - expectedSha256
+        - maxBytes
+        - expiresAt
+        - status
+    SourceArtifact:
+      title: SourceArtifact
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        artifactId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        sourceId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        kind:
+          enum:
+            - markdown
+            - asset
+            - conversion_profile
+        objectKey:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9/_\-.]{0,511}$
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        mimeType:
+          type: string
+          minLength: 1
+        sizeBytes:
+          type: integer
+          minimum: 0
+        parserVersion:
+          type: string
+          minLength: 1
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - artifactId
+        - sourceId
+        - organizationId
+        - kind
+        - objectKey
+        - sha256
+        - mimeType
+        - sizeBytes
+        - parserVersion
+        - createdAt
+    SourcePackage:
+      title: SourcePackage
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        sourceId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        sourceSha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        language:
+          enum:
+            - zh-CN
+            - en-US
+            - mixed
+        markdownArtifactId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        assetArtifactIds:
+          type: array
+          items:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+          uniqueItems: true
+        conversionProfileArtifactId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        parserVersion:
+          type: string
+          minLength: 1
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - sourceId
+        - organizationId
+        - sourceSha256
+        - language
+        - markdownArtifactId
+        - assetArtifactIds
+        - conversionProfileArtifactId
+        - parserVersion
+        - createdAt
+    IntentSpec:
+      title: IntentSpec
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        intentRevisionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        title:
+          type: string
+          minLength: 1
+        audience:
+          type: string
+          minLength: 1
+        goal:
+          type: string
+          minLength: 1
+        targetSlideCount:
+          type: integer
+          minimum: 4
+          maximum: 30
+        language:
+          enum:
+            - zh-CN
+            - en-US
+        contentDepth:
+          enum:
+            - conclusion_first
+            - balanced
+            - research
+        visualPreference:
+          enum:
+            - data_first
+            - photo_illustration
+            - minimal_visual
+        notes:
+          type: string
+          maxLength: 4000
+        sourceRefs:
+          type: array
+          items:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+          uniqueItems: true
+      required:
+        - schemaVersion
+        - intentRevisionId
+        - title
+        - audience
+        - goal
+        - targetSlideCount
+        - language
+        - contentDepth
+        - visualPreference
+        - notes
+        - sourceRefs
+    OutlineSpec:
+      title: OutlineSpec
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        outlineRevisionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        storySummary:
+          type: string
+          minLength: 1
+        targetSlideCount:
+          type: integer
+          minimum: 4
+          maximum: 30
+        slides:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - outlineSlideId
+              - type
+              - title
+              - keyPoints
+              - sourceCitations
+            properties:
+              outlineSlideId:
+                type: string
+                pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+              type:
+                type: string
+                minLength: 1
+              title:
+                type: string
+                minLength: 1
+              keyPoints:
+                type: array
+                minItems: 1
+                items:
+                  type: string
+                  minLength: 1
+              sourceCitations:
+                type: array
+                items:
+                  type: string
+                  pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+                uniqueItems: true
+      required:
+        - schemaVersion
+        - outlineRevisionId
+        - storySummary
+        - targetSlideCount
+        - slides
+    ThemeSpec:
+      title: ThemeSpec
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        themeId:
+          type: string
+          minLength: 1
+        colorTokens:
+          type: object
+          additionalProperties:
+            type: string
+            pattern: ^#[0-9A-Fa-f]{6}$
+          minProperties: 2
+        fontFamilies:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        aspectRatio:
+          enum:
+            - 16:9
+      required:
+        - schemaVersion
+        - themeId
+        - colorTokens
+        - fontFamilies
+        - aspectRatio
+    TemplateBinding:
+      title: TemplateBinding
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        templateId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        templateVersionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        compatibilityVersion:
+          type: string
+          minLength: 1
+        roleBindings:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+      required:
+        - schemaVersion
+        - templateId
+        - templateVersionId
+        - compatibilityVersion
+        - roleBindings
+    TemplateVersion:
+      title: TemplateVersion
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        templateId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        templateVersionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        name:
+          type: string
+          minLength: 1
+        category:
+          type: string
+          minLength: 1
+        mode:
+          const: native
+        themeSpec:
+          $ref: "#/components/schemas/ThemeSpec"
+        pageRoles:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+        editableElements:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          uniqueItems: true
+        engineCompatibility:
+          type: string
+          minLength: 1
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - templateId
+        - templateVersionId
+        - name
+        - category
+        - mode
+        - themeSpec
+        - pageRoles
+        - editableElements
+        - engineCompatibility
+        - createdAt
+    GenerationSnapshot:
+      title: GenerationSnapshot
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        snapshotId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        draftId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        intentRevisionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        outlineRevisionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        templateVersionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        modeId:
+          const: native
+        sourceHashes:
+          type: array
+          items:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          uniqueItems: true
+        promptVersion:
+          type: string
+          minLength: 1
+        engineVersion:
+          type: string
+          minLength: 1
+        containerVersion:
+          type: string
+          minLength: 1
+        fontPackVersion:
+          type: string
+          minLength: 1
+        providerConfigVersion:
+          type: string
+          minLength: 1
+        snapshotSha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - snapshotId
+        - organizationId
+        - draftId
+        - intentRevisionId
+        - outlineRevisionId
+        - templateVersionId
+        - modeId
+        - sourceHashes
+        - promptVersion
+        - engineVersion
+        - containerVersion
+        - fontPackVersion
+        - providerConfigVersion
+        - snapshotSha256
+        - createdAt
+    SlidePlan:
+      title: SlidePlan
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        slideId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        outlineSlideId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        order:
+          type: integer
+          minimum: 0
+        role:
+          type: string
+          minLength: 1
+        title:
+          type: string
+          minLength: 1
+        body:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        editable:
+          type: boolean
+      required:
+        - schemaVersion
+        - slideId
+        - outlineSlideId
+        - order
+        - role
+        - title
+        - body
+        - editable
+    DeckPlan:
+      title: DeckPlan
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        snapshotId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        title:
+          type: string
+          minLength: 1
+        modeId:
+          const: native
+        templateBinding:
+          $ref: "#/components/schemas/TemplateBinding"
+        slides:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/SlidePlan"
+      required:
+        - schemaVersion
+        - snapshotId
+        - title
+        - modeId
+        - templateBinding
+        - slides
+    JobEvent:
+      title: JobEvent
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        eventId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        jobId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        seq:
+          type: integer
+          minimum: 1
+        type:
+          enum:
+            - job.queued
+            - job.started
+            - job.stage.changed
+            - job.cancel.requested
+            - job.cancelled
+            - job.completed
+            - job.partially_completed
+            - job.failed
+            - slide.started
+            - slide.stage.changed
+            - slide.ready
+            - slide.failed
+            - slide.retrying
+            - qa.completed
+            - artifact.published
+        occurredAt:
+          type: string
+          format: date-time
+        snapshotId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        slideId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        attempt:
+          type: integer
+          minimum: 0
+        stage:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          minLength: 1
+        progress:
+          type: object
+          additionalProperties: false
+          required:
+            - completed
+            - total
+          properties:
+            completed:
+              type: integer
+              minimum: 0
+            total:
+              type: integer
+              minimum: 0
+        data:
+          type: object
+          additionalProperties: true
+        traceId:
+          type: string
+          minLength: 1
+      required:
+        - schemaVersion
+        - eventId
+        - jobId
+        - seq
+        - type
+        - occurredAt
+        - snapshotId
+        - slideId
+        - attempt
+        - stage
+        - status
+        - progress
+        - data
+        - traceId
+    SseReset:
+      title: SseReset
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        jobId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        reason:
+          enum:
+            - retention_window_exceeded
+            - sequence_unavailable
+        snapshotUrl:
+          type: string
+          pattern: ^/v1/jobs/
+        latestSeq:
+          type: integer
+          minimum: 0
+      required:
+        - schemaVersion
+        - jobId
+        - reason
+        - snapshotUrl
+        - latestSeq
+    SseSnapshot:
+      title: SseSnapshot
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        jobId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        status:
+          enum:
+            - queued
+            - running
+            - cancel_requested
+            - cancelled
+            - succeeded
+            - partially_succeeded
+            - failed
+        stage:
+          type: string
+          minLength: 1
+        latestSeq:
+          type: integer
+          minimum: 0
+        terminal:
+          type: boolean
+      required:
+        - schemaVersion
+        - jobId
+        - status
+        - stage
+        - latestSeq
+        - terminal
+    QaReport:
+      title: QaReport
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        reportId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        subjectType:
+          enum:
+            - slide
+            - deck
+            - package
+        subjectId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        passed:
+          type: boolean
+        findings:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - code
+              - severity
+              - message
+            properties:
+              code:
+                type: string
+                minLength: 1
+              severity:
+                enum:
+                  - info
+                  - warning
+                  - sev2
+                  - sev1
+              message:
+                type: string
+                minLength: 1
+        checkedAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - reportId
+        - subjectType
+        - subjectId
+        - passed
+        - findings
+        - checkedAt
+    ArtifactManifest:
+      title: ArtifactManifest
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        artifactId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        artifactType:
+          enum:
+            - generation_source_bundle
+            - generation_baseline_pptx
+            - presentation_revision_manifest
+            - export_pptx
+        objectKey:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9/_\-.]{0,511}$
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        mimeType:
+          type: string
+          minLength: 1
+        sizeBytes:
+          type: integer
+          minimum: 0
+        engineVersion:
+          type: string
+          minLength: 1
+        fontPackVersion:
+          type: string
+          minLength: 1
+        snapshotId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        presentationRevisionId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - artifactId
+        - organizationId
+        - artifactType
+        - objectKey
+        - sha256
+        - mimeType
+        - sizeBytes
+        - engineVersion
+        - fontPackVersion
+        - snapshotId
+        - presentationRevisionId
+        - createdAt
+    SlideVersion:
+      title: SlideVersion
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        slideVersionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        slideId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        sourceSnapshotId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        status:
+          enum:
+            - ready
+            - failed
+            - deleted
+        title:
+          type: string
+          minLength: 1
+        body:
+          type: array
+          items:
+            type: string
+            minLength: 1
+        artifactId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - slideVersionId
+        - slideId
+        - sourceSnapshotId
+        - status
+        - title
+        - body
+        - artifactId
+        - createdAt
+    PresentationRevision:
+      title: PresentationRevision
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        presentationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        presentationRevisionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        basedOnRevisionId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        slideVersionIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+          uniqueItems: true
+        acceptedMissingSlideIds:
+          type: array
+          items:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+          uniqueItems: true
+        createdBy:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - presentationId
+        - presentationRevisionId
+        - basedOnRevisionId
+        - organizationId
+        - slideVersionIds
+        - acceptedMissingSlideIds
+        - createdBy
+        - createdAt
+    ExportJob:
+      title: ExportJob
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        exportId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        presentationRevisionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        status:
+          enum:
+            - queued
+            - running
+            - succeeded
+            - failed
+            - cancelled
+        artifactId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - exportId
+        - organizationId
+        - presentationRevisionId
+        - status
+        - artifactId
+        - createdAt
+        - updatedAt
+    ExportManifest:
+      title: ExportManifest
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        exportId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        presentationRevisionId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        artifact:
+          $ref: "#/components/schemas/ArtifactManifest"
+        reusedFromArtifactId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        compilerVersion:
+          type: string
+          minLength: 1
+        packageQaReportId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - exportId
+        - presentationRevisionId
+        - artifact
+        - reusedFromArtifactId
+        - compilerVersion
+        - packageQaReportId
+        - createdAt
+    Entitlement:
+      title: Entitlement
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        capability:
+          type: string
+          minLength: 1
+        limit:
+          type: integer
+          minimum: 0
+        used:
+          type: integer
+          minimum: 0
+        resetsAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - organizationId
+        - capability
+        - limit
+        - used
+        - resetsAt
+    UsageReservation:
+      title: UsageReservation
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        reservationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        jobId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        idempotencyKey:
+          type: string
+          minLength: 1
+        reservedSlides:
+          type: integer
+          minimum: 1
+          maximum: 30
+        status:
+          enum:
+            - reserved
+            - settled
+            - released
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - reservationId
+        - organizationId
+        - jobId
+        - idempotencyKey
+        - reservedSlides
+        - status
+        - createdAt
+    UsageLedger:
+      title: UsageLedger
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        ledgerId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        jobId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        slideCount:
+          type: integer
+          minimum: 0
+        modelTokens:
+          type: integer
+          minimum: 0
+        imageCount:
+          type: integer
+          const: 0
+        workerSeconds:
+          type: number
+          minimum: 0
+        exportCount:
+          type: integer
+          minimum: 0
+        recordedAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - ledgerId
+        - organizationId
+        - jobId
+        - slideCount
+        - modelTokens
+        - imageCount
+        - workerSeconds
+        - exportCount
+        - recordedAt
+    ProviderCall:
+      title: ProviderCall
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        providerCallId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        provider:
+          type: string
+          minLength: 1
+        model:
+          type: string
+          minLength: 1
+        purpose:
+          type: string
+          minLength: 1
+        requestHash:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        status:
+          enum:
+            - succeeded
+            - failed
+            - rate_limited
+            - timed_out
+        inputTokens:
+          type: integer
+          minimum: 0
+        outputTokens:
+          type: integer
+          minimum: 0
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - providerCallId
+        - organizationId
+        - provider
+        - model
+        - purpose
+        - requestHash
+        - status
+        - inputTokens
+        - outputTokens
+        - startedAt
+        - finishedAt
+    AuditEvent:
+      title: AuditEvent
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        auditEventId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        organizationId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        actorId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        resourceType:
+          type: string
+          minLength: 1
+        resourceId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        action:
+          type: string
+          minLength: 1
+        requestId:
+          type: string
+          minLength: 1
+        outcome:
+          enum:
+            - allowed
+            - denied
+            - failed
+        occurredAt:
+          type: string
+          format: date-time
+      required:
+        - schemaVersion
+        - auditEventId
+        - organizationId
+        - actorId
+        - resourceType
+        - resourceId
+        - action
+        - requestId
+        - outcome
+        - occurredAt
+    ProblemDetails:
+      title: ProblemDetails
+      type: object
+      additionalProperties: false
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+          minLength: 1
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+          minLength: 1
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          enum:
+            - validation_error
+            - authorization_error
+            - quota_exceeded
+            - unsafe_file
+            - parse_failed
+            - provider_rate_limited
+            - provider_timeout
+            - engine_contract_failed
+            - slide_render_failed
+            - slide_qa_failed
+            - compile_failed
+            - package_qa_failed
+            - cancelled_by_user
+            - idempotency_key_reused
+            - revision_conflict
+            - internal_error
+        retryable:
+          type: boolean
+        requestId:
+          type: string
+          minLength: 1
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - field
+              - message
+            properties:
+              field:
+                type: string
+                minLength: 1
+              message:
+                type: string
+                minLength: 1
+      required:
+        - schemaVersion
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - code
+        - retryable
+        - requestId
+        - fieldErrors
+    MutationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - data
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        data:
+          type: object
+          additionalProperties: true
+        baseRevisionId:
+          anyOf:
+            - type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+    ResourceResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - resourceId
+        - resourceType
+        - data
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        resourceId:
+          type: string
+          pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        resourceType:
+          type: string
+          minLength: 1
+        data:
+          type: object
+          additionalProperties: true
+        nextCursor:
+          anyOf:
+            - type: string
+            - type: "null"

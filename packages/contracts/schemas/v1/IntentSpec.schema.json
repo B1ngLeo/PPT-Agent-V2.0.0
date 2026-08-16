@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/IntentSpec.schema.json",
+  "title": "IntentSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "intentRevisionId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "targetSlideCount": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 30
+    },
+    "language": {
+      "enum": [
+        "zh-CN",
+        "en-US"
+      ]
+    },
+    "contentDepth": {
+      "enum": [
+        "conclusion_first",
+        "balanced",
+        "research"
+      ]
+    },
+    "visualPreference": {
+      "enum": [
+        "data_first",
+        "photo_illustration",
+        "minimal_visual"
+      ]
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "sourceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "intentRevisionId",
+    "title",
+    "audience",
+    "goal",
+    "targetSlideCount",
+    "language",
+    "contentDepth",
+    "visualPreference",
+    "notes",
+    "sourceRefs"
+  ]
+}

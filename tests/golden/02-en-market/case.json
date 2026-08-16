@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "02-en-market",
+  "sourceKey": "source/input.txt",
+  "sourceId": "0148H248H248H248H248H248H2",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "en-US",
+    "plain-text"
+  ]
+}

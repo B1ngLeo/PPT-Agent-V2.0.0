@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/SourceArtifact.schema.json",
+  "title": "SourceArtifact",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "artifactId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "sourceId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "organizationId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "kind": {
+      "enum": [
+        "markdown",
+        "asset",
+        "conversion_profile"
+      ]
+    },
+    "objectKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9/_\\-.]{0,511}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "mimeType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sizeBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "parserVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "artifactId",
+    "sourceId",
+    "organizationId",
+    "kind",
+    "objectKey",
+    "sha256",
+    "mimeType",
+    "sizeBytes",
+    "parserVersion",
+    "createdAt"
+  ]
+}

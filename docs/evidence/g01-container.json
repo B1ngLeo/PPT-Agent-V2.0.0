@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-16T00:00:00Z",
+  "image": "instant-ppt-worker:g01",
+  "imageId": "sha256:d3d52adf5867fca74e8125d72a4f7e6e13ce07ed367c9f06db6abe7a9c4e8d65",
+  "platform": "amd64",
+  "runtimeUser": "10001:10001",
+  "runtimeIdentity": "10001:10001",
+  "adapterHelp": "passed",
+  "attributionGuard": "passed",
+  "forbiddenCredentialEnvCount": 0,
+  "baseImages": [
+    {
+      "name": "python:3.12.4-slim-bookworm",
+      "indexDigest": "sha256:a3e58f9399353be051735f09be0316bfdeab571a5c6a24fd78b92df85bcb2d85",
+      "linuxAmd64Digest": "sha256:a074fac67aa01841fee592d00bae14d25dcaf98ef6e12a683ecceb7e0147e2d1"
+    },
+    {
+      "name": "ghcr.io/astral-sh/uv:0.12.5",
+      "indexDigest": "sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1",
+      "linuxAmd64Digest": "sha256:db2d5999728c5837e1bf9ba278ee6b05cef1e95e82a20e27b0c915cb4478b9d7"
+    }
+  ]
+}

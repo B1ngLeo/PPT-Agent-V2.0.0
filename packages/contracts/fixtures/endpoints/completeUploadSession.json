@@ -1,0 +1,53 @@
+{
+  "operationId": "completeUploadSession",
+  "request": {
+    "method": "POST",
+    "path": "/v1/upload-sessions/{uploadSessionId}:complete",
+    "pathParams": {
+      "uploadSessionId": "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+    },
+    "query": {},
+    "headers": {
+      "Idempotency-Key": "fixture-completeUploadSession"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "data": {
+        "fixture": "completeUploadSession"
+      },
+      "baseRevisionId": null
+    }
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "Location": "/v1/operations/01ARZ3NDEKTSV4RRFFQ69G5FB1"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "resourceId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      "resourceType": "completeUploadSession",
+      "data": {
+        "fixture": true
+      },
+      "nextCursor": null
+    }
+  },
+  "error": {
+    "schemaVersion": 1,
+    "type": "https://errors.instant-ppt.example/validation_error",
+    "title": "请求参数无效",
+    "status": 422,
+    "detail": "一个或多个字段不符合合同",
+    "instance": "/v1/upload-sessions/01ARZ3NDEKTSV4RRFFQ69G5FAX:complete",
+    "code": "validation_error",
+    "retryable": false,
+    "requestId": "request-completeUploadSession",
+    "fieldErrors": [
+      {
+        "field": "title",
+        "message": "不能为空"
+      }
+    ]
+  }
+}

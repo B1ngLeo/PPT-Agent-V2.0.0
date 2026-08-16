@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "010W3GE1R70W3GE1R70W3GE1R7",
+  "title": "品牌模板一致性",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "010W3GE1R70W3GE1R70W3GE1R7",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "010W00E007003G01R00W00E007",
+      "outlineSlideId": "010W00E007003G01R00W00E007",
+      "order": 0,
+      "role": "cover",
+      "title": "品牌模板一致性",
+      "body": [
+        "主色使用品牌蓝"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010W0GE087043G21R10W0GE087",
+      "outlineSlideId": "010W0GE087043G21R10W0GE087",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "主色使用品牌蓝",
+        "背景使用中性灰",
+        "模板绑定版本固定"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010W10E0G7083G41R20W10E0G7",
+      "outlineSlideId": "010W10E0G7083G41R20W10E0G7",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

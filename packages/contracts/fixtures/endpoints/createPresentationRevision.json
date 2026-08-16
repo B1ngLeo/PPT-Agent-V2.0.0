@@ -1,0 +1,51 @@
+{
+  "operationId": "createPresentationRevision",
+  "request": {
+    "method": "POST",
+    "path": "/v1/presentations/{presentationId}/revisions",
+    "pathParams": {
+      "presentationId": "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+    },
+    "query": {},
+    "headers": {
+      "Idempotency-Key": "fixture-createPresentationRevision"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "data": {
+        "fixture": "createPresentationRevision"
+      },
+      "baseRevisionId": null
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {},
+    "body": {
+      "schemaVersion": 1,
+      "resourceId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      "resourceType": "createPresentationRevision",
+      "data": {
+        "fixture": true
+      },
+      "nextCursor": null
+    }
+  },
+  "error": {
+    "schemaVersion": 1,
+    "type": "https://errors.instant-ppt.example/validation_error",
+    "title": "请求参数无效",
+    "status": 422,
+    "detail": "一个或多个字段不符合合同",
+    "instance": "/v1/presentations/01ARZ3NDEKTSV4RRFFQ69G5FAX/revisions",
+    "code": "validation_error",
+    "retryable": false,
+    "requestId": "request-createPresentationRevision",
+    "fieldErrors": [
+      {
+        "field": "title",
+        "message": "不能为空"
+      }
+    ]
+  }
+}

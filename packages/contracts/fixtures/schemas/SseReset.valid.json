@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "jobId": "01ARZ3NDEKTSV4RRFFQ69G5FB1",
+  "reason": "retention_window_exceeded",
+  "snapshotUrl": "/v1/jobs/01ARZ3NDEKTSV4RRFFQ69G5FB1",
+  "latestSeq": 42
+}

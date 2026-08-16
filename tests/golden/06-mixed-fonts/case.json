@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "06-mixed-fonts",
+  "sourceKey": "source/input.md",
+  "sourceId": "014RK2C9H64RK2C9H64RK2C9H6",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "mixed-language",
+    "font-fallback"
+  ]
+}

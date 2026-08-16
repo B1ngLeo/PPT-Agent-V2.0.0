@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/SseSnapshot.schema.json",
+  "title": "SseSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "jobId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "cancel_requested",
+        "cancelled",
+        "succeeded",
+        "partially_succeeded",
+        "failed"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "minLength": 1
+    },
+    "latestSeq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "terminal": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "jobId",
+    "status",
+    "stage",
+    "latestSeq",
+    "terminal"
+  ]
+}

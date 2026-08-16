@@ -1,0 +1,11 @@
+{
+  "name": "@instant-ppt/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "generated",
+    "schemas",
+    "openapi.yaml"
+  ]
+}

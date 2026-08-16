@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/ProblemDetails.schema.json",
+  "title": "ProblemDetails",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "type": {
+      "type": "string",
+      "format": "uri-reference"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "integer",
+      "minimum": 400,
+      "maximum": 599
+    },
+    "detail": {
+      "type": "string",
+      "minLength": 1
+    },
+    "instance": {
+      "type": "string",
+      "format": "uri-reference"
+    },
+    "code": {
+      "enum": [
+        "validation_error",
+        "authorization_error",
+        "quota_exceeded",
+        "unsafe_file",
+        "parse_failed",
+        "provider_rate_limited",
+        "provider_timeout",
+        "engine_contract_failed",
+        "slide_render_failed",
+        "slide_qa_failed",
+        "compile_failed",
+        "package_qa_failed",
+        "cancelled_by_user",
+        "idempotency_key_reused",
+        "revision_conflict",
+        "internal_error"
+      ]
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fieldErrors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "field",
+          "message"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "type",
+    "title",
+    "status",
+    "detail",
+    "instance",
+    "code",
+    "retryable",
+    "requestId",
+    "fieldErrors"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "templateId": "01ARZ3NDEKTSV4RRFFQ69G5FB4",
+  "templateVersionId": "01ARZ3NDEKTSV4RRFFQ69G5FB5",
+  "compatibilityVersion": "engine-v4.7",
+  "roleBindings": {
+    "cover": "layout-cover"
+  }
+}

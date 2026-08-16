@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "uploadSessionId": "01ARZ3NDEKTSV4RRFFQ69G5FAY",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "objectKey": "org/01/quarantine/source.docx",
+  "declaredMimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "expectedSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "maxBytes": 52428800,
+  "expiresAt": "2026-08-16T08:00:00Z",
+  "status": "pending"
+}

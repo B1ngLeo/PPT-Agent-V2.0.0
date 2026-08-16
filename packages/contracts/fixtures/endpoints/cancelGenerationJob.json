@@ -1,0 +1,53 @@
+{
+  "operationId": "cancelGenerationJob",
+  "request": {
+    "method": "POST",
+    "path": "/v1/jobs/{jobId}:cancel",
+    "pathParams": {
+      "jobId": "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+    },
+    "query": {},
+    "headers": {
+      "Idempotency-Key": "fixture-cancelGenerationJob"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "data": {
+        "fixture": "cancelGenerationJob"
+      },
+      "baseRevisionId": null
+    }
+  },
+  "response": {
+    "status": 202,
+    "headers": {
+      "Location": "/v1/operations/01ARZ3NDEKTSV4RRFFQ69G5FB1"
+    },
+    "body": {
+      "schemaVersion": 1,
+      "resourceId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      "resourceType": "cancelGenerationJob",
+      "data": {
+        "fixture": true
+      },
+      "nextCursor": null
+    }
+  },
+  "error": {
+    "schemaVersion": 1,
+    "type": "https://errors.instant-ppt.example/validation_error",
+    "title": "请求参数无效",
+    "status": 422,
+    "detail": "一个或多个字段不符合合同",
+    "instance": "/v1/jobs/01ARZ3NDEKTSV4RRFFQ69G5FAX:cancel",
+    "code": "validation_error",
+    "retryable": false,
+    "requestId": "request-cancelGenerationJob",
+    "fieldErrors": [
+      {
+        "field": "title",
+        "message": "不能为空"
+      }
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/evidence/gate-manifest.schema.json",
+  "title": "GateManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "updatedAt", "gates"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "goal", "required", "status", "ownerRole", "approver", "checkedAt", "targetVersions", "evidence", "notes", "waiver"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^GATE-[A-Z0-9-]+$" },
+          "goal": { "type": "string", "pattern": "^G(0[0-9])$" },
+          "required": { "type": "boolean" },
+          "status": { "enum": ["pending", "ready_for_review", "passed", "failed", "waived"] },
+          "ownerRole": { "enum": ["product", "legal", "security", "qa", "engineering"] },
+          "approver": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+          "checkedAt": { "anyOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+          "targetVersions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "notes": { "type": "string" },
+          "waiver": {
+            "anyOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["adr", "approver", "expiresAt", "compensatingControls"],
+                "properties": {
+                  "adr": { "type": "string", "minLength": 1 },
+                  "approver": { "type": "string", "minLength": 1 },
+                  "expiresAt": { "type": "string", "format": "date-time" },
+                  "compensatingControls": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+

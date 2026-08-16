@@ -1,0 +1,109 @@
+﻿{
+    "schemaVersion":  1,
+    "checkedAt":  "2026-08-16T00:00:00Z",
+    "application":  {
+                        "requestedApplication":  "PowerPoint",
+                        "progId":  "PowerPoint.Application",
+                        "reportedName":  "Microsoft PowerPoint",
+                        "version":  "16.0",
+                        "build":  "20228",
+                        "executableRoot":  "C:\\Program Files\\Microsoft Office\\Root\\Office16",
+                        "displayAlerts":  "suppressed-for-automation"
+                    },
+    "deckCount":  10,
+    "automatedOpenPassCount":  10,
+    "repairPromptObservation":  "not-observable-in-suppressed-COM-run; human visible-window gate remains required",
+    "visualReviewStatus":  "ready_for_human_review",
+    "results":  [
+                    {
+                        "case":  "01-zh-overview",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "02-en-market",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "03-long-title",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "04-table-docx",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "05-chart-pptx",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "06-mixed-fonts",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "07-template-brand",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "08-dense-docx",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  20,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "09-pdf-baseline",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    },
+                    {
+                        "case":  "10-multilingual-pptx",
+                        "opened":  true,
+                        "slideCount":  3,
+                        "editableTextShapeCount":  17,
+                        "pngExportCount":  3,
+                        "repairsCollectionSupported":  false,
+                        "repairCount":  null
+                    }
+                ]
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "jobId": "01ARZ3NDEKTSV4RRFFQ69G5FB1",
+  "status": "running",
+  "stage": "slide_generation",
+  "latestSeq": 42,
+  "terminal": false
+}

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "sourceKey": "magic-mismatch.pdf",
+      "expectedCode": "SOURCE_EXTENSION_MAGIC_MISMATCH"
+    },
+    {
+      "sourceKey": "corrupt.docx",
+      "expectedCode": "SOURCE_ARCHIVE_CORRUPT"
+    },
+    {
+      "sourceKey": "corrupt.pdf",
+      "expectedCode": "SOURCE_PDF_CORRUPT"
+    },
+    {
+      "sourceKey": "active.html",
+      "expectedCode": "SOURCE_HTML_ACTIVE_CONTENT"
+    },
+    {
+      "sourceKey": "external.html",
+      "expectedCode": "SOURCE_HTML_EXTERNAL_REFERENCE"
+    },
+    {
+      "sourceKey": "virus-canary.txt",
+      "expectedCode": "SOURCE_MALWARE_TEST_SIGNATURE"
+    },
+    {
+      "sourceKey": "encrypted.pdf",
+      "expectedCode": "SOURCE_PDF_ENCRYPTED"
+    },
+    {
+      "sourceKey": "traversal.docx",
+      "expectedCode": "SOURCE_ZIP_PATH_TRAVERSAL"
+    },
+    {
+      "sourceKey": "deep.docx",
+      "expectedCode": "SOURCE_ZIP_DEPTH_LIMIT"
+    },
+    {
+      "sourceKey": "ratio.docx",
+      "expectedCode": "SOURCE_ZIP_RATIO_LIMIT"
+    },
+    {
+      "sourceKey": "symlink.docx",
+      "expectedCode": "SOURCE_ZIP_SYMLINK"
+    },
+    {
+      "sourceKey": "external-rel.pptx",
+      "expectedCode": "SOURCE_OFFICE_EXTERNAL_RELATIONSHIP"
+    },
+    {
+      "sourceKey": "entry-count.docx",
+      "expectedCode": "SOURCE_ZIP_ENTRY_LIMIT"
+    }
+  ]
+}

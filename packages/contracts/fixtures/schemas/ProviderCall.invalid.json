@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "providerCallId": "01ARZ3NDEKTSV4RRFFQ69G5FB8",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "provider": "fake",
+  "model": "deterministic-v1",
+  "purpose": "outline.generate",
+  "requestHash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "status": "succeeded",
+  "inputTokens": 120,
+  "outputTokens": 240,
+  "startedAt": "2026-08-16T08:00:00Z",
+  "finishedAt": "2026-08-16T08:00:00Z"
+}

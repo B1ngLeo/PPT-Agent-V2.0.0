@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "08-dense-docx",
+  "sourceKey": "source/input.docx",
+  "sourceId": "0150M2GA1850M2GA1850M2GA18",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "dense-content",
+    "six-bullets"
+  ]
+}

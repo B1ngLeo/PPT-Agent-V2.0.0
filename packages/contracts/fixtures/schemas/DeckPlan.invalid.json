@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "snapshotId": "01ARZ3NDEKTSV4RRFFQ69G5FB0",
+  "title": "年度经营复盘",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01ARZ3NDEKTSV4RRFFQ69G5FB4",
+    "templateVersionId": "01ARZ3NDEKTSV4RRFFQ69G5FB5",
+    "compatibilityVersion": "engine-v4.7",
+    "roleBindings": {
+      "cover": "layout-cover"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "01ARZ3NDEKTSV4RRFFQ69G5FB2",
+      "outlineSlideId": "01ARZ3NDEKTSV4RRFFQ69G5FB2",
+      "order": 0,
+      "role": "cover",
+      "title": "年度经营复盘",
+      "body": [
+        "结论先行"
+      ],
+      "editable": true
+    }
+  ]
+}

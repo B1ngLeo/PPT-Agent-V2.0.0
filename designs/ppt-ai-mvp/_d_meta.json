@@ -1,0 +1,36 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "prototype": {
+      "versions": [
+        {
+          "path": "prototype.html",
+          "createdAt": "2026-08-15T15:17:42.452Z",
+          "status": "needs-review"
+        }
+      ]
+    },
+    "technical-solution.md": {
+      "versions": [
+        {
+          "path": "technical-solution.md",
+          "createdAt": "2026-08-15T15:17:47.887Z",
+          "status": "needs-review"
+        }
+      ]
+    },
+    "prototype-spec.md": {
+      "versions": [
+        {
+          "path": "prototype-spec.md",
+          "createdAt": "2026-08-15T15:17:48.485Z",
+          "status": "needs-review"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-08-15T15:17:42.454Z",
+  "updatedAt": "2026-08-15T15:47:45.951Z"
+}

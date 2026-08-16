@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "011850M2GA1850M2GA1850M2GA",
+  "title": "全球发布 Global Launch",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "011850M2GA1850M2GA1850M2GA",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "011800M00A005002G01800M00A",
+      "outlineSlideId": "011800M00A005002G01800M00A",
+      "order": 0,
+      "role": "cover",
+      "title": "全球发布 Global Launch",
+      "body": [
+        "上海：产品发布"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "01180GM08A045022G1180GM08A",
+      "outlineSlideId": "01180GM08A045022G1180GM08A",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "上海：产品发布",
+        "Tokyo: partner event",
+        "New York: customer forum"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "011810M0GA085042G21810M0GA",
+      "outlineSlideId": "011810M0GA085042G21810M0GA",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+.git
+.github
+.tmp
+.venv
+node_modules
+apps
+designs
+docs
+infra
+packages
+tests
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+*.log

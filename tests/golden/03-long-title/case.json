@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "03-long-title",
+  "sourceKey": "source/input.html",
+  "sourceId": "014CHJ68S34CHJ68S34CHJ68S3",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "long-title",
+    "html"
+  ]
+}

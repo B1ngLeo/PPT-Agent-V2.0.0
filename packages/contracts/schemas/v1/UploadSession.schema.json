@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/UploadSession.schema.json",
+  "title": "UploadSession",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "uploadSessionId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "organizationId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "objectKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9/_\\-.]{0,511}$"
+    },
+    "declaredMimeType": {
+      "enum": [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "text/html"
+      ]
+    },
+    "expectedSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "maxBytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 52428800
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "uploaded",
+        "completed",
+        "expired",
+        "rejected"
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "uploadSessionId",
+    "organizationId",
+    "objectKey",
+    "declaredMimeType",
+    "expectedSha256",
+    "maxBytes",
+    "expiresAt",
+    "status"
+  ]
+}

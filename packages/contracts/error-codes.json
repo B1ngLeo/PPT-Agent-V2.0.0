@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "codes": [
+    {
+      "code": "validation_error",
+      "retryable": false
+    },
+    {
+      "code": "authorization_error",
+      "retryable": false
+    },
+    {
+      "code": "quota_exceeded",
+      "retryable": false
+    },
+    {
+      "code": "unsafe_file",
+      "retryable": false
+    },
+    {
+      "code": "parse_failed",
+      "retryable": false
+    },
+    {
+      "code": "provider_rate_limited",
+      "retryable": true
+    },
+    {
+      "code": "provider_timeout",
+      "retryable": true
+    },
+    {
+      "code": "engine_contract_failed",
+      "retryable": false
+    },
+    {
+      "code": "slide_render_failed",
+      "retryable": false
+    },
+    {
+      "code": "slide_qa_failed",
+      "retryable": false
+    },
+    {
+      "code": "compile_failed",
+      "retryable": false
+    },
+    {
+      "code": "package_qa_failed",
+      "retryable": false
+    },
+    {
+      "code": "cancelled_by_user",
+      "retryable": false
+    },
+    {
+      "code": "idempotency_key_reused",
+      "retryable": false
+    },
+    {
+      "code": "revision_conflict",
+      "retryable": false
+    },
+    {
+      "code": "internal_error",
+      "retryable": true
+    }
+  ]
+}

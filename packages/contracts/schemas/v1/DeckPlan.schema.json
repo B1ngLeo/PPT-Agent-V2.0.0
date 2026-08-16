@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/DeckPlan.schema.json",
+  "title": "DeckPlan",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "snapshotId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "modeId": {
+      "const": "native"
+    },
+    "templateBinding": {
+      "$ref": "https://contracts.instant-ppt.example/v1/TemplateBinding.schema.json"
+    },
+    "slides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "items": {
+        "$ref": "https://contracts.instant-ppt.example/v1/SlidePlan.schema.json"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "snapshotId",
+    "title",
+    "modeId",
+    "templateBinding",
+    "slides"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "operationId": "getIntentRevision",
+  "request": {
+    "method": "GET",
+    "path": "/v1/intent-revisions/{intentRevisionId}",
+    "pathParams": {
+      "intentRevisionId": "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+    },
+    "query": {
+      "cursor": null,
+      "limit": 20
+    },
+    "headers": {},
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {},
+    "body": {
+      "schemaVersion": 1,
+      "resourceId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+      "resourceType": "getIntentRevision",
+      "data": {
+        "fixture": true
+      },
+      "nextCursor": null
+    }
+  },
+  "error": {
+    "schemaVersion": 1,
+    "type": "https://errors.instant-ppt.example/validation_error",
+    "title": "请求参数无效",
+    "status": 422,
+    "detail": "一个或多个字段不符合合同",
+    "instance": "/v1/intent-revisions/01ARZ3NDEKTSV4RRFFQ69G5FAX",
+    "code": "validation_error",
+    "retryable": false,
+    "requestId": "request-getIntentRevision",
+    "fieldErrors": [
+      {
+        "field": "title",
+        "message": "不能为空"
+      }
+    ]
+  }
+}

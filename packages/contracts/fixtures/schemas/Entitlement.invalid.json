@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 2,
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "capability": "generation_slides_monthly",
+  "limit": 100,
+  "used": 0,
+  "resetsAt": "2026-09-01T00:00:00Z"
+}

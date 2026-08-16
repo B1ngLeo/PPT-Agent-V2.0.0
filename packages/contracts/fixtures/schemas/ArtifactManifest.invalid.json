@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 2,
+  "artifactId": "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "artifactType": "generation_baseline_pptx",
+  "objectKey": "org/01/published/deck.pptx",
+  "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "sizeBytes": 2048,
+  "engineVersion": "ppt-master-v4.7.0",
+  "fontPackVersion": "fonts-v1",
+  "snapshotId": "01ARZ3NDEKTSV4RRFFQ69G5FB0",
+  "presentationRevisionId": null,
+  "createdAt": "2026-08-16T08:00:00Z"
+}

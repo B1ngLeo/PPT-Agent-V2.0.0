@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "01144GJ289144GJ289144GJ289",
+  "title": "Permissive PDF Baseline",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "01144GJ289144GJ289144GJ289",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "011400J009004G02801400J009",
+      "outlineSlideId": "011400J009004G02801400J009",
+      "order": 0,
+      "role": "cover",
+      "title": "Permissive PDF Baseline",
+      "body": [
+        "Permissive parser: pypdf"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "01140GJ089044G2281140GJ089",
+      "outlineSlideId": "01140GJ089044G2281140GJ089",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "Permissive parser: pypdf",
+        "Encrypted files are rejected",
+        "EPUB remains disabled"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "011410J0G9084G42821410J0G9",
+      "outlineSlideId": "011410J0G9084G42821410J0G9",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

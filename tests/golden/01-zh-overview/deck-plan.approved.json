@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "01040G2081040G2081040G2081",
+  "title": "年度经营复盘",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "01040G2081040G2081040G2081",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "0104002001000G008004002001",
+      "outlineSlideId": "0104002001000G008004002001",
+      "order": 0,
+      "role": "cover",
+      "title": "年度经营复盘",
+      "body": [
+        "收入同比增长 18%"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "01040G2081040G2081040G2081",
+      "outlineSlideId": "01040G2081040G2081040G2081",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "收入同比增长 18%",
+        "核心产品贡献主要增量",
+        "客户留存率持续改善"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "01041020G1080G4082041020G1",
+      "outlineSlideId": "01041020G1080G4082041020G1",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

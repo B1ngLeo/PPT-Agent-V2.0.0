@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "snapshotId": "01ARZ3NDEKTSV4RRFFQ69G5FB0",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "draftId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+  "intentRevisionId": "01ARZ3NDEKTSV4RRFFQ69G5FB3",
+  "outlineRevisionId": "01ARZ3NDEKTSV4RRFFQ69G5FB3",
+  "templateVersionId": "01ARZ3NDEKTSV4RRFFQ69G5FB5",
+  "modeId": "native",
+  "sourceHashes": [
+    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  ],
+  "promptVersion": "prompt-v1",
+  "engineVersion": "ppt-master-v4.7.0",
+  "containerVersion": "sha256:pending-g01",
+  "fontPackVersion": "fonts-v1",
+  "providerConfigVersion": "fake-v1",
+  "snapshotSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "createdAt": "2026-08-16T08:00:00Z"
+}

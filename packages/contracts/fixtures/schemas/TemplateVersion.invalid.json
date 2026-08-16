@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 2,
+  "templateId": "01ARZ3NDEKTSV4RRFFQ69G5FB4",
+  "templateVersionId": "01ARZ3NDEKTSV4RRFFQ69G5FB5",
+  "name": "编辑部蓝",
+  "category": "business",
+  "mode": "native",
+  "themeSpec": {
+    "schemaVersion": 1,
+    "themeId": "editorial-cobalt",
+    "colorTokens": {
+      "primary": "#1746D1",
+      "background": "#F7F3E8"
+    },
+    "fontFamilies": [
+      "Noto Sans CJK SC"
+    ],
+    "aspectRatio": "16:9"
+  },
+  "pageRoles": [
+    "cover",
+    "content"
+  ],
+  "editableElements": [
+    "text",
+    "shape"
+  ],
+  "engineCompatibility": "ppt-master-v4.7.0",
+  "createdAt": "2026-08-16T08:00:00Z"
+}

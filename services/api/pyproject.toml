@@ -1,0 +1,16 @@
+[project]
+name = "instant-ppt-api"
+version = "0.0.0"
+requires-python = ">=3.12.4,<3.13"
+dependencies = [
+  "fastapi==0.141.1",
+  "pydantic==2.13.4",
+]
+
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/instant_ppt_api"]
+

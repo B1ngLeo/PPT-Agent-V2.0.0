@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/hugohe3/ppt-master",
+  "tag": "v4.7.0",
+  "commit": "e8323bfaee249cffe1301ec40fca5875eb544d46",
+  "acquiredAt": "2026-08-16T09:00:00Z",
+  "acquisitionMethod": "Git partial clone with blob filtering and sparse checkout of skills/ppt-master at the fixed tag",
+  "vendoredPath": "vendor/ppt-master",
+  "upstreamSubtree": "skills/ppt-master",
+  "license": "MIT",
+  "canonicalTreeSha256": "3ff44cc339831bc8e13c388835d476ab6f07c85a8098b187abaaad1ad3e687e0",
+  "protectedFiles": {
+    "LICENSE": "cd9cf27f52d3c336dd42e13f4a1df453da118e25e15520bbe02f91d75531e91b",
+    "SPONSORS.md": "81416ba80f34ddbaf9a47f3d4415a8d79c372e7312eed0fa8556e9ff8c651641",
+    "SPONSORS_CN.md": "b6ce4d05addc3e71cdd1a4f7a0f1587c3cb5a6643f25b3ed46255a45cf775041",
+    "SKILL.md": "311b6996ebbe6cdfe01a3a837a0bae1f76d773fcd62174c96dee5943c5571ef4",
+    "scripts/attribution_guard.py": "fb2f3b7394b4a8de8c1733ff992546540ac0e09cf8a891b3fe9bf53b64cee6d2",
+    "templates/icons/THIRD_PARTY_NOTICES.md": "3ebee5443665936ec90c9dc32641e7b5def0465ac8d215df901a96b6e202f11d"
+  }
+}
+

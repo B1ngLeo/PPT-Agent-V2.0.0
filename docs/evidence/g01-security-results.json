@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "fixtureCount": 13,
+  "rejectedCount": 13,
+  "parseReachedCount": 0,
+  "results": [
+    {
+      "sourceKey": "magic-mismatch.pdf",
+      "expectedCode": "SOURCE_EXTENSION_MAGIC_MISMATCH",
+      "findingCodes": [
+        "SOURCE_EXTENSION_MAGIC_MISMATCH"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "corrupt.docx",
+      "expectedCode": "SOURCE_ARCHIVE_CORRUPT",
+      "findingCodes": [
+        "SOURCE_ARCHIVE_CORRUPT"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "corrupt.pdf",
+      "expectedCode": "SOURCE_PDF_CORRUPT",
+      "findingCodes": [
+        "SOURCE_PDF_CORRUPT"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "active.html",
+      "expectedCode": "SOURCE_HTML_ACTIVE_CONTENT",
+      "findingCodes": [
+        "SOURCE_HTML_ACTIVE_CONTENT"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "external.html",
+      "expectedCode": "SOURCE_HTML_EXTERNAL_REFERENCE",
+      "findingCodes": [
+        "SOURCE_HTML_EXTERNAL_REFERENCE"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "virus-canary.txt",
+      "expectedCode": "SOURCE_MALWARE_TEST_SIGNATURE",
+      "findingCodes": [
+        "SOURCE_MALWARE_TEST_SIGNATURE"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "encrypted.pdf",
+      "expectedCode": "SOURCE_PDF_ENCRYPTED",
+      "findingCodes": [
+        "SOURCE_PDF_ENCRYPTED"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "traversal.docx",
+      "expectedCode": "SOURCE_ZIP_PATH_TRAVERSAL",
+      "findingCodes": [
+        "SOURCE_ZIP_PATH_TRAVERSAL"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "deep.docx",
+      "expectedCode": "SOURCE_ZIP_DEPTH_LIMIT",
+      "findingCodes": [
+        "SOURCE_ZIP_DEPTH_LIMIT"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "ratio.docx",
+      "expectedCode": "SOURCE_ZIP_RATIO_LIMIT",
+      "findingCodes": [
+        "SOURCE_ZIP_RATIO_LIMIT"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "symlink.docx",
+      "expectedCode": "SOURCE_ZIP_SYMLINK",
+      "findingCodes": [
+        "SOURCE_ZIP_SYMLINK"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "external-rel.pptx",
+      "expectedCode": "SOURCE_OFFICE_EXTERNAL_RELATIONSHIP",
+      "findingCodes": [
+        "SOURCE_OFFICE_EXTERNAL_RELATIONSHIP"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    },
+    {
+      "sourceKey": "entry-count.docx",
+      "expectedCode": "SOURCE_ZIP_ENTRY_LIMIT",
+      "findingCodes": [
+        "SOURCE_ZIP_ENTRY_LIMIT"
+      ],
+      "decision": "rejected",
+      "parseReached": false
+    }
+  ]
+}

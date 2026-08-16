@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/v1/ArtifactManifest.schema.json",
+  "title": "ArtifactManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "artifactId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "organizationId": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "artifactType": {
+      "enum": [
+        "generation_source_bundle",
+        "generation_baseline_pptx",
+        "presentation_revision_manifest",
+        "export_pptx"
+      ]
+    },
+    "objectKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9/_\\-.]{0,511}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "mimeType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sizeBytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "engineVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fontPackVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshotId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "presentationRevisionId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "artifactId",
+    "organizationId",
+    "artifactType",
+    "objectKey",
+    "sha256",
+    "mimeType",
+    "sizeBytes",
+    "engineVersion",
+    "fontPackVersion",
+    "snapshotId",
+    "presentationRevisionId",
+    "createdAt"
+  ]
+}

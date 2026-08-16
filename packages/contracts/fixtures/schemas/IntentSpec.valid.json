@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "intentRevisionId": "01ARZ3NDEKTSV4RRFFQ69G5FB3",
+  "title": "年度经营复盘",
+  "audience": "管理层",
+  "goal": "经营复盘",
+  "targetSlideCount": 12,
+  "language": "zh-CN",
+  "contentDepth": "conclusion_first",
+  "visualPreference": "data_first",
+  "notes": "突出结论与行动",
+  "sourceRefs": [
+    "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
+  ]
+}

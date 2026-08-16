@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "ParseSourceRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "operation": {
+          "const": "parseSource",
+          "title": "Operation",
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "minLength": 1,
+          "title": "Workspaceroot",
+          "type": "string"
+        },
+        "inputKey": {
+          "minLength": 1,
+          "title": "Inputkey",
+          "type": "string"
+        },
+        "securityDecisionKey": {
+          "minLength": 1,
+          "title": "Securitydecisionkey",
+          "type": "string"
+        },
+        "outputKey": {
+          "minLength": 1,
+          "title": "Outputkey",
+          "type": "string"
+        },
+        "sourceId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Sourceid",
+          "type": "string"
+        },
+        "organizationId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "createdAt": {
+          "default": "2026-08-16T00:00:00Z",
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "requestId",
+        "operation",
+        "workspaceRoot",
+        "inputKey",
+        "securityDecisionKey",
+        "outputKey",
+        "sourceId",
+        "organizationId"
+      ],
+      "title": "ParseSourceRequest",
+      "type": "object"
+    },
+    "RenderDeckRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "operation": {
+          "const": "renderDeck",
+          "title": "Operation",
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "minLength": 1,
+          "title": "Workspaceroot",
+          "type": "string"
+        },
+        "deckPlanKey": {
+          "minLength": 1,
+          "title": "Deckplankey",
+          "type": "string"
+        },
+        "outputKey": {
+          "minLength": 1,
+          "title": "Outputkey",
+          "type": "string"
+        },
+        "organizationId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "createdAt": {
+          "default": "2026-08-16T00:00:00Z",
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "requestId",
+        "operation",
+        "workspaceRoot",
+        "deckPlanKey",
+        "outputKey",
+        "organizationId"
+      ],
+      "title": "RenderDeckRequest",
+      "type": "object"
+    },
+    "ScanSourceRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "operation": {
+          "const": "scanSource",
+          "title": "Operation",
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "minLength": 1,
+          "title": "Workspaceroot",
+          "type": "string"
+        },
+        "inputKey": {
+          "minLength": 1,
+          "title": "Inputkey",
+          "type": "string"
+        },
+        "outputKey": {
+          "minLength": 1,
+          "title": "Outputkey",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "requestId",
+        "operation",
+        "workspaceRoot",
+        "inputKey",
+        "outputKey"
+      ],
+      "title": "ScanSourceRequest",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "parseSource": "#/$defs/ParseSourceRequest",
+      "renderDeck": "#/$defs/RenderDeckRequest",
+      "scanSource": "#/$defs/ScanSourceRequest"
+    },
+    "propertyName": "operation"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ScanSourceRequest"
+    },
+    {
+      "$ref": "#/$defs/ParseSourceRequest"
+    },
+    {
+      "$ref": "#/$defs/RenderDeckRequest"
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v1/engine-adapter.request.schema.json"
+}

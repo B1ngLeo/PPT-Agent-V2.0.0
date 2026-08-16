@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "010G2081040G2081040G208104",
+  "title": "区域经营数据表",
+  "modeId": "native",
+  "templateBinding": {
+    "schemaVersion": 1,
+    "templateId": "01NENTQAXBNENTQAXBNENTQAXB",
+    "templateVersionId": "010G2081040G2081040G208104",
+    "compatibilityVersion": "ppt-master-v4.7.0",
+    "roleBindings": {
+      "cover": "layout-cover",
+      "content": "layout-content",
+      "summary": "layout-summary"
+    }
+  },
+  "slides": [
+    {
+      "schemaVersion": 1,
+      "slideId": "010G008004002001000G008004",
+      "outlineSlideId": "010G008004002001000G008004",
+      "order": 0,
+      "role": "cover",
+      "title": "区域经营数据表",
+      "body": [
+        "华东收入 3,200 万"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010G0G8084042021010G0G8084",
+      "outlineSlideId": "010G0G8084042021010G0G8084",
+      "order": 1,
+      "role": "content",
+      "title": "Key findings / 核心结论",
+      "body": [
+        "华东收入 3,200 万",
+        "华南收入 2,400 万",
+        "表格结构完成解析"
+      ],
+      "editable": true
+    },
+    {
+      "schemaVersion": 1,
+      "slideId": "010G1080G4082041020G1080G4",
+      "outlineSlideId": "010G1080G4082041020G1080G4",
+      "order": 2,
+      "role": "summary",
+      "title": "Next step / 下一步",
+      "body": [
+        "Validate editability",
+        "Review visual baseline",
+        "Record compatibility evidence"
+      ],
+      "editable": true
+    }
+  ]
+}

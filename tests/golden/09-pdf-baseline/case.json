@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "slug": "09-pdf-baseline",
+  "sourceKey": "source/input.pdf",
+  "sourceId": "0154MJJA9954MJJA9954MJJA99",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "createdAt": "2026-08-16T00:00:00Z",
+  "coverage": [
+    "pdf",
+    "license-boundary"
+  ]
+}

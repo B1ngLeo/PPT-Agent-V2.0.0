@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "themeId": "editorial-cobalt",
+  "colorTokens": {
+    "primary": "#1746D1",
+    "background": "#F7F3E8"
+  },
+  "fontFamilies": [
+    "Noto Sans CJK SC"
+  ],
+  "aspectRatio": "16:9"
+}

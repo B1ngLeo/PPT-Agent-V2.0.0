@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "auditEventId": "01ARZ3NDEKTSV4RRFFQ69G5FB6",
+  "organizationId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "actorId": "01ARZ3NDEKTSV4RRFFQ69G5FAW",
+  "resourceType": "draft",
+  "resourceId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+  "action": "draft.create",
+  "requestId": "request-001",
+  "outcome": "allowed",
+  "occurredAt": "2026-08-16T08:00:00Z"
+}
