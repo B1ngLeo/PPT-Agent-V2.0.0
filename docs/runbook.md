@@ -16,8 +16,9 @@ python -m uv run --package instant-ppt-api alembic -c packages/domain/src/instan
 docker compose --profile runtime up -d api worker outbox
 ```
 
-Confirm health, `/internal/metrics`, outbox age, and the current Alembic revision before
-admitting traffic. Never put the metrics endpoint on a public ingress.
+Confirm `/healthz`, database-backed `/readyz`, `/internal/metrics`, outbox age, and the
+current Alembic revision before admitting traffic. Never put the metrics endpoint on a
+public ingress; container readiness must use `/readyz`, not an arbitrary business route.
 
 ## API errors or latency
 
@@ -77,6 +78,12 @@ alerted; expired/orphan objects are removed. Review the durable
 `object_reconciliation_runs` record before clearing the alert. Never run an unscoped
 bucket delete.
 
+On startup/recreation, confirm the private bucket reports default server-side encryption,
+the `instant-ppt-expired-delete-markers` lifecycle rule, and no public bucket policy.
+MinIO must run with stale multipart expiry `24h` and cleanup interval `1h`. The local static
+KMS key is prohibited outside local verification; production must use the approved KES/KMS
+and fail readiness/admission if encryption governance cannot be applied.
+
 ## Backup and restore
 
 The reproducible local rehearsal is:
@@ -97,4 +104,3 @@ Idempotency/events default to seven days, temporary artifacts to 24 hours, and d
 grants to 15 minutes. Project deletion first revokes access and cancels work, then runs
 auditable cleanup. Verify API/SSE/download 404 behavior and object removal. Never shorten
 retention or delete Provider caches without the approved policy and tenant scope.
-

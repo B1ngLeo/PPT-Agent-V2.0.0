@@ -6,11 +6,11 @@
 
 - Goal：G08 / P1 安全、质量、可观测与发布门禁
 - 状态：waiting_for_human_gate
-- 当前检查点：G08 工程自动化、发布容器复验、PowerPoint/WPS 兼容复验、新鲜用户视角 E2E 与根全量验证均已完成；Gate 为 `ready_for_review`
-- 已验证：G08 3/3 reconciliation、五类恢复各 10/10、备份/恢复 64/64 对象 hash、22,131 性能样本 0 error、四个核心 UI 状态 axe critical/serious=0、三档无横向溢出、Node/Python 依赖 0 已知漏洞、12/12 告警规则、PowerPoint/WPS 各 10/10、30/30 视觉差分、E2E-001–012 与自动发布证据全部通过
-- 剩余工作：具名 Windows 屏幕阅读器人工检查；product/security/legal 具名批准生产 Provider、区域、保留、供应商条款与客户披露
+- 当前检查点：G08 PLAN/SPEC 完成度复审、对象存储治理、发布镜像健康探针、新鲜用户视角 E2E 与自动发布证据均已完成；Gate 为 `ready_for_review`
+- 已验证：G08 4/4 隔离集成、五类恢复各 10/10、MinIO 私有 bucket 默认 AES256/安全生命周期/陈旧分片清理、`/healthz` 与 DB-backed `/readyz`、备份/恢复 64/64 对象 hash、22,131 性能样本 0 error、四个核心 UI 状态 axe critical/serious=0、三档无横向溢出、Node/Python 依赖 0 已知漏洞、12/12 告警规则、PowerPoint/WPS 各 10/10、30/30 视觉差分、E2E-001–012 与自动发布证据全部通过
+- 剩余工作：具名 Windows Chromium 精确 200% + 屏幕阅读器人工检查；product/security/legal 具名批准生产 Provider、区域、保留、供应商条款、客户披露及生产 KES/KMS
 - 决策/偏离：G05 P1 规划默认走 deterministic Fake Provider；Kimi/OpenAI 适配器仅保留 Worker 侧服务端配置。2026-08-16 官方 Kimi 列表尚未证明 `kimi-k3`、官方 OpenAI Images 列表尚未证明 `gpt-image-2`，因此不宣称真实生产集成完成；仍按已冻结 PLAN 保留精确模型名并将真实 smoke 设为密钥与供应商可用性双条件
-- 阻塞：工程自动化无阻塞；G08 最终发布仍受两个不可由自动化代签的人工 Gate 阻塞：当前 Windows 未安装 NVDA，且 ADR-005 的生产 Provider/区域/保留/供应商条款尚未由 product/security/legal 具名批准
+- 阻塞：工程自动化无阻塞；G08 最终发布仍受两个不可由自动化代签的人工 Gate 阻塞：当前 Windows 未安装 NVDA 且精确 Chromium 200% 尚未具名复核，ADR-005 的生产 Provider/区域/保留/供应商条款及 KES/KMS 尚未由 product/security/legal 具名批准
 - 恢复记录：应用内浏览器的 Tab/Enter 注入连续 5 次不产生事件，已按防循环规则停止并记录；产品使用原生控件，键盘文本焦点、焦点恢复及完整用户旅程通过，无产品阻塞
 
 ## 已完成事项
@@ -75,11 +75,12 @@
 - G08 发布文档模块：完成观测设计、runbook、rollback、release checklist/report、隐私/Provider disclosure、E2E-001–012、性能/恢复/备份/安全/无障碍 evidence；`pnpm verify:automated:g08` 通过，Gate 推进到 `ready_for_review` 而未虚假签字。
 - G08 发布容器与兼容模块：API/Worker/outbox 以 `10001:10001`、只读根文件系统、cap drop 与资源限额运行；PowerPoint 16.0 build 20228 与 WPS 12.1.0.28043 各 10/10 打开/可编辑/导图通过，30/30 像素比较通过。
 - G08 最终 E2E 模块：在加固 release 容器与正常 Next.js 生产构建上，以新草稿完成批准、8/8 生成、文字编辑、重排、稳定 slideId 单页重生成、精确 revision 4 PPTX 导出、项目 JSON 导出、对象 hash/字节复核、历史恢复与 390px 无溢出；E2E-001–012 全部通过。
-- G08 根验证模块：合同、Web、API 23、Worker 18、G02 73、G03 8、G04 14、G05 4、G06 7、G07 4、G08 3、40 项 Golden 合同、E2E、安全、12 条告警和链接全部通过；`pnpm verify` 唯一非零为预期的 `GATE-G08-RELEASE: ready_for_review`，证明自动化不能越过人工 Gate。
+- G08 完成度复审模块：逐项映射 PLAN 12.3、SPEC 13.3/14，修复 G08 runner 误用普通开发数据库、补齐对象存储 AES256/安全生命周期/陈旧 multipart 清理与发布镜像健康/就绪探针；4/4 真实 MinIO 隔离集成通过。
+- G08 根验证模块：合同、Web、API 24、Worker 18、G02 73、G03 8、G04 14、G05 4、G06 7、G07 4、G08 4、40 项 Golden 合同、E2E、安全、12 条告警和链接全部通过；`pnpm verify` 唯一非零为预期的 `GATE-G08-RELEASE: ready_for_review`，证明自动化不能越过人工 Gate。
 
 ## 进行中事项
 
-- G08 人工 Gate：等待具名 Windows 屏幕阅读器复核和具名 product/security/legal Provider/privacy 决策；工程侧没有可继续自动完成的发布项。
+- G08 人工 Gate：等待具名 Windows Chromium 精确 200% + 屏幕阅读器复核，以及具名 product/security/legal Provider/privacy/KES-or-KMS 决策；工程侧没有可继续自动完成的发布项。
 
 ## 问题及解决方案
 
@@ -142,14 +143,19 @@
 | G06 生产 Worker 消费到数据库清理前遗留 broker 消息并记录异常                          |        1 | 真实任务包装器将不存在的旧 job 收敛为幂等 `noop_missing`；有效任务仍保持严格租约与重试。                                                                                                         |
 | 长中文正文在 SVG 作者层被截断，PPTX package QA 拒绝批准文本丢失                       |        2 | 第 1 次仅修正逐页封面布局；第 2 次定位整稿可编辑文本缺失，改为 East Asian Width 动态字号并保留全文，SVG/PPTX 回归与 8 页真实发布通过。                                                           |
 | G06 应用内浏览器不提供 viewport resize 或历史 console 收集                            |        1 | 不宣称 G06 移动浏览器/零历史 console；记录能力限制，以生产构建、语义 DOM、空 terminal alert、显式响应式规则及 G05 三档 shell 矩阵补偿。                                                          |
-| G08 pnpm 更新首次被运行中的 Next server 锁文件并写入待决 placeholder                 |        1 | 停止精确 Next 进程、移除 placeholder 并用 frozen install 复核；`sharp@0.35.0` 仅通过精确 `allowBuilds` 批准，Web 构建通过。                                                                       |
-| 配置的 npm 镜像没有 audit endpoint                                                   |        1 | 审计命令显式使用官方 `https://registry.npmjs.org`；production dependency advisory 为 0，并在 evidence 记录镜像限制。                                                                           |
-| G08 固定数据短窗在无节奏高吞吐下 p95 连续超标                                        |        6 | 达到防循环阈值后不再修改业务代码；记录为负载模型饱和，按固定可复现 500ms 用户节奏执行 SPEC 的 2+10 分钟正式窗口，GET/write p95 72.113/80.873ms、0 error。                                       |
-| MinIO Python `make_bucket` 使用过期 `region` 参数                                    |        1 | 按当前 SDK 文档改为 `location`；隔离 restore bucket 64/64 hash 恢复通过且临时目标已清理。                                                                                                       |
+| G08 pnpm 更新首次被运行中的 Next server 锁文件并写入待决 placeholder                  |        1 | 停止精确 Next 进程、移除 placeholder 并用 frozen install 复核；`sharp@0.35.0` 仅通过精确 `allowBuilds` 批准，Web 构建通过。                                                                      |
+| 配置的 npm 镜像没有 audit endpoint                                                    |        1 | 审计命令显式使用官方 `https://registry.npmjs.org`；production dependency advisory 为 0，并在 evidence 记录镜像限制。                                                                             |
+| G08 固定数据短窗在无节奏高吞吐下 p95 连续超标                                         |        6 | 达到防循环阈值后不再修改业务代码；记录为负载模型饱和，按固定可复现 500ms 用户节奏执行 SPEC 的 2+10 分钟正式窗口，GET/write p95 72.113/80.873ms、0 error。                                        |
+| MinIO Python `make_bucket` 使用过期 `region` 参数                                     |        1 | 按当前 SDK 文档改为 `location`；隔离 restore bucket 64/64 hash 恢复通过且临时目标已清理。                                                                                                        |
 | G08 Alembic 演练首次使用错误配置文件路径                                              |        1 | 使用实际 `packages/domain/src/instant_ppt_domain/alembic.ini`，在精确临时数据库完成 upgrade/downgrade/re-upgrade/drift，并删除临时数据库。                                                       |
-| 当前 Windows 未安装 NVDA                                                             |        1 | 不安装或伪造人工结果；自动 axe/键盘/响应式证据全部完成，具名屏幕阅读器清单保留 `waiting_for_human_gate`。                                                                                       |
-| Compose classic builder 为同一 Worker Dockerfile 重复构建 outbox 镜像                |        1 | 三个非 root 镜像均成功并记录精确 digest；重复构建只影响本地耗时，作为后续构建缓存优化项，不改变发布内容。                                                                                       |
-| G08 最终浏览器旅程首次请求早于新建 API 容器 readiness                                |        1 | 等待 `/healthz` 返回 200 后仅执行一次显式用户重试；随后完整 8 页生成、编辑、导出、历史恢复和对象 hash 复核通过，未添加隐式无限重试。                                                           |
+| 当前 Windows 未安装 NVDA                                                              |        1 | 不安装或伪造人工结果；自动 axe/键盘/响应式证据全部完成，具名屏幕阅读器清单保留 `waiting_for_human_gate`。                                                                                        |
+| Compose classic builder 为同一 Worker Dockerfile 重复构建 outbox 镜像                 |        1 | 三个非 root 镜像均成功并记录精确 digest；重复构建只影响本地耗时，作为后续构建缓存优化项，不改变发布内容。                                                                                        |
+| G08 最终浏览器旅程首次请求早于新建 API 容器 readiness                                 |        1 | 等待 `/healthz` 返回 200 后仅执行一次显式用户重试；随后完整 8 页生成、编辑、导出、历史恢复和对象 hash 复核通过，未添加隐式无限重试。                                                             |
+| 旧 G08 证据把普通业务路由探针误写为 `/healthz`                                        |        1 | 增加显式轻量 `/healthz` 与数据库驱动 `/readyz`，Compose 改用 readiness，发布镜像两端点均 200；旧报告改为准确描述当时的业务路由探针。                                                             |
+| G08 隔离集成 runner 曾清空普通 `instant_ppt` 开发数据库                               |        1 | runner 改为创建/迁移/销毁专用 `instant_ppt_g08_test`，不再破坏开发数据；4/4 真实 PostgreSQL/MinIO 集成通过并输出 JUnit。                                                                         |
+| MinIO 拒绝只含 abort-incomplete-multipart 的 bucket lifecycle rule                    |        4 | 有界诊断确认当前服务端会拒绝或丢弃该规则；改用安全 expired-delete-marker lifecycle，并由 MinIO 官方 stale-upload expiry/cleanup 环境配置负责陈旧分片清理，证据同时验证两层治理。                 |
+| 新 release 容器重建期间首页 hydration 保留一次 `Failed to fetch`                      |        1 | 业务路由、`/healthz`、`/readyz` 均 200 后只做一次显式 reload；随后整条新草稿到 revision 4 双导出旅程通过，运行日志 0 error。                                                                     |
+| 首轮对象治理只验证“当前无公开策略”，未恢复既有误配置                                  |        1 | API/Worker 治理改为在全部读写与签名入口移除既有 bucket policy 后再启用 AES256/lifecycle；两个全新临时 bucket 分别验证 API 纠偏和 Worker 冷启动，测试后均已清理。                                 |
 
 ## Goal 历史
 
@@ -222,7 +228,7 @@
 
 ### G08 / 安全、质量、可观测与发布门禁 — waiting_for_human_gate
 
-- 产物：Prometheus/OTel 可观测面、12 条告警、对象 reconciliation、备份恢复与迁移演练、依赖审计/SBOM、固定性能基线、axe/响应式证据、加固 release 容器、runbook/rollback/privacy/release 文档和 E2E-001–012 证据。
-- 验证：所有自动化模块及根验证的自动化阶段通过；PowerPoint/WPS 各 10/10 与 30/30 视觉差分通过；新鲜用户 E2E 完成 8 页生成、revision 4 编辑/重生成/导出、JSON 导出、历史恢复、MinIO 字节/hash 和移动布局复核。
-- Gate：`GATE-G08-RELEASE` 为 `ready_for_review`；具名 Windows 屏幕阅读器检查与 product/security/legal 生产 Provider/privacy 决策仍是 required human Gate，无 waiver，发布尚未批准。
-- 证据：`docs/release-gate-report.md`、`docs/release-checklist.md`、`docs/evidence/g08-final-browser-e2e.json`、`docs/evidence/g08-e2e-matrix.json`、`docs/evidence/gate-manifest.yaml`。
+- 产物：Prometheus/OTel 可观测面、12 条告警、对象 reconciliation、私有 bucket AES256/lifecycle/stale-upload 治理、健康/就绪探针、备份恢复与迁移演练、依赖审计/SBOM、固定性能基线、axe/响应式证据、加固 release 容器、runbook/rollback/privacy/release 文档和 E2E-001–012 证据。
+- 验证：所有自动化模块及根验证的自动化阶段通过；PowerPoint/WPS 各 10/10 与 30/30 视觉差分通过；新鲜用户 E2E 完成 8 页生成、revision 4 编辑/重生成/导出、JSON 导出、历史恢复、MinIO 字节/hash/AES256 和移动布局复核；G08 隔离集成为 4/4。
+- Gate：`GATE-G08-RELEASE` 为 `ready_for_review`；具名 Windows Chromium 精确 200% + 屏幕阅读器检查与 product/security/legal 生产 Provider/privacy/KES-or-KMS 决策仍是 required human Gate，无 waiver，发布尚未批准。
+- 证据：`docs/evidence/g08-completion-audit.md`、`docs/release-gate-report.md`、`docs/release-checklist.md`、`docs/evidence/g08-final-browser-e2e.json`、`docs/evidence/g08-integration-junit.xml`、`docs/evidence/security/g08-object-governance.json`、`docs/evidence/g08-e2e-matrix.json`、`docs/evidence/gate-manifest.yaml`。

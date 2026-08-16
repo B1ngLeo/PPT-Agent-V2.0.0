@@ -1,29 +1,33 @@
 {
   "schemaVersion": 1,
   "goal": "G08",
-  "generatedAt": "2026-08-16T11:00:00.000000+00:00",
+  "generatedAt": "2026-08-16T11:39:17.9920338Z",
   "result": "passed",
   "runtime": {
     "web": "Next.js 16.2.11 production build",
-    "apiImage": "sha256:f090b5d13c1ed9ef97a8293908fb928ac340f2e4eec5ae15a100f0d10ac48657",
-    "workerImage": "sha256:100b9769fac962fda89583511ea67f65982d3a3696324c41b426cc9ff9aae41a",
-    "outboxImage": "sha256:6c48aeb7a83704a245339eaa7a7f519cfd6959d63a17cde0de64623c8baec862",
+    "apiImage": "sha256:7c1778fccf87d90c44a35f309aacbf87d33ef5dc29d8383dd5806f21ba4f8313",
+    "workerImage": "sha256:cfc6a2e139b21b6139bec10f908df1e29fea3f82c06b92f4f50846934e199bf9",
+    "outboxImage": "sha256:cfc6a2e139b21b6139bec10f908df1e29fea3f82c06b92f4f50846934e199bf9",
     "containerUser": "10001:10001",
     "apiWorkerCount": 4,
     "apiReadOnlyRoot": true,
     "workerReadOnlyRoot": true,
     "outboxReadOnlyRoot": true,
     "capabilitiesDropped": ["ALL"],
-    "noNewPrivileges": true
+    "noNewPrivileges": true,
+    "healthzStatus": 200,
+    "readyzStatus": 200,
+    "composeApiHealth": "healthy",
+    "errorLogLines": 0
   },
   "journey": {
-    "topic": "G08 发布就绪与韧性总结",
+    "topic": "G08 完成度审计与发布韧性复核",
     "template": "信号红",
-    "draftId": "01M053CHX5V4MWA3VMSW35A7WD",
-    "jobId": "01M053DQFYZY8WYA67K55A5108",
-    "presentationId": "01E9JM8A1XABFVG89W7PCZ8G6M",
+    "draftId": "01M055NBSHKDN55XRM346331JD",
+    "jobId": "01M055PBQTKQ826EF9W421JTFE",
+    "presentationId": "01QYF8G45JHPYKV6VQPYEDVF9G",
     "steps": [
-      "created topic draft and deterministic intent/outline",
+      "created a fresh topic draft and selected the immutable signal-red template",
       "edited story summary and first-page title before exact approval",
       "generated 8/8 ready slides through real outbox and Celery Worker",
       "edited text to immutable revision 2",
@@ -35,30 +39,35 @@
     ],
     "generationStatus": "succeeded",
     "presentationStatus": "ready",
-    "currentRevisionId": "01SWD7ZNH4QWD3R2JQSZFC900Z",
+    "currentRevisionId": "01JV2MP4ZYTEB5NJ3AV7V0BWBR",
     "currentRevisionNumber": 4,
     "currentRevisionOperation": "regenerate_slide",
     "slideCount": 8,
-    "editedTitlePersisted": "发布结论：最终 E2E 已通过",
+    "regeneratedStableSlideId": "01M055PBQPZDAS9MB8FP0V0T59",
+    "regeneratedSlidePosition": 2,
+    "editedTitlePersisted": "最终结论：自动化闭环已重新验证",
     "historyRestore": "passed",
     "visibleErrorsAtCompletion": []
   },
   "pptxExport": {
-    "jobId": "01M053G48568C5F7BR94HX1N11",
+    "jobId": "01M055S6M8RME86NH6HB9QX2EV",
     "status": "succeeded",
-    "boundRevisionId": "01SWD7ZNH4QWD3R2JQSZFC900Z",
-    "artifactId": "019Y0MHY5JG82S7QBNH6KPD14B",
-    "manifestArtifactId": "01675WJMQF8KESW7RTB41040WE",
-    "bytes": 25473,
-    "sha256": "5ab438ff6aa589f0cea3234eac8367531a56d83ad55fa9fb83725ed01420c61b",
-    "objectBytesAndHashMatched": true
+    "boundRevisionId": "01JV2MP4ZYTEB5NJ3AV7V0BWBR",
+    "artifactId": "01ZMXFNDN4H6D443AJJS9XE5NX",
+    "manifestArtifactId": "01G8MW0VSQQHVG6PH7BZG6ZNMG",
+    "bytes": 25585,
+    "sha256": "6890625f95079e94837cefc799e9bdf5e1d7bd2809b8b8400128508fca07ed78",
+    "objectBytesAndHashMatched": true,
+    "serverSideEncryption": "AES256"
   },
   "projectDataExport": {
-    "dataExportId": "01M053GJP1JQF7YNQ7N6DW4WZH",
+    "dataExportId": "01M055SMCZQ0BNKSEJSTAZY5C5",
     "status": "succeeded",
-    "artifactId": "01M053GJP1JQF7YNQ7N6DW4WZJ",
-    "bytes": 11330,
-    "sha256": "e4dd59a6dbce160e398d50c10e5a576a380de6f42556c6514f85c6b4b55963e1"
+    "artifactId": "01M055SMCZQ0BNKSEJSTAZY5C6",
+    "bytes": 9628,
+    "sha256": "8ebe84dbe3b0ec2105f6b98997add33cf68f3fa811f3ec942d6d8e6489441875",
+    "objectBytesAndHashMatched": true,
+    "serverSideEncryption": "AES256"
   },
   "responsive": {
     "requestedWidth": 390,
@@ -68,8 +77,7 @@
   },
   "closedTransient": {
     "attempts": 1,
-    "finding": "The first request began while the freshly recreated four-worker API was still starting and the browser displayed Failed to fetch.",
-    "resolution": "The readiness endpoint returned 200; one explicit user retry completed the entire journey without another error."
+    "finding": "The first home hydration retained a Failed to fetch alert while the release containers were being recreated.",
+    "resolution": "The API business route and explicit /healthz and /readyz probes returned 200; one explicit page reload then completed the full journey without another error."
   }
 }
-

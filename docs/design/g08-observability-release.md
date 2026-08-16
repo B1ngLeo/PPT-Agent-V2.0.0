@@ -48,6 +48,15 @@ has no object, and records every run durably. Backup restore uses an isolated da
 and restore bucket, compares the Alembic head and core table counts, and compares every
 object SHA-256 before deleting the temporary targets.
 
+The private bucket is provisioned fail-closed, removes any pre-existing public policy,
+enables default SSE-S3 and applies a safe lifecycle rule for expired delete markers under
+`tenants/`. PostgreSQL `retention_expires_at` plus
+tenant-scoped reconciliation remains the authority for current-object expiry; bucket
+lifecycle never guesses a user's retention window. MinIO separately expires stale
+multipart uploads after 24 hours and scans for them hourly. The Compose static KMS key is
+development-only verification material; a production deployment must use approved
+KES/KMS configuration.
+
 The fixed performance profile uses the release API image with four Uvicorn workers,
 100 organizations, 1,000 drafts, 10,000 events, 1,000 artifacts, 20 virtual users,
 120 seconds of warmup and 600 seconds of measurement. Results, exact image digests and
@@ -55,4 +64,3 @@ hardware are immutable evidence under `docs/evidence/performance/`.
 
 Automated evidence may move the final Gate to `ready_for_review`; it cannot approve the
 Windows screen-reader or production Provider/privacy decision.
-

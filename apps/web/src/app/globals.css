@@ -1952,6 +1952,8 @@ select {
   border-radius: 0.5rem;
   color: #ffffff;
   background: #101623;
-  font: 600 0.75rem/1.4 ui-monospace, monospace;
+  font:
+    600 0.75rem/1.4 ui-monospace,
+    monospace;
   overflow-wrap: anywhere;
 }

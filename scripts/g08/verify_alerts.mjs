@@ -8,7 +8,8 @@ const alerts = YAML.parse(
 );
 const runbook = await readFile(resolve(root, "docs/runbook.md"), "utf8");
 const rules = alerts.groups.flatMap((group) => group.rules);
-if (rules.length !== 12) throw new Error(`expected 12 alert rules, got ${rules.length}`);
+if (rules.length !== 12)
+  throw new Error(`expected 12 alert rules, got ${rules.length}`);
 const runbookAnchors = new Set(
   [...runbook.matchAll(/^## (.+)$/gm)].map((match) =>
     match[1]
@@ -20,10 +21,13 @@ const runbookAnchors = new Set(
 
 const names = new Set();
 for (const rule of rules) {
-  if (!rule.alert || names.has(rule.alert)) throw new Error("alert names must be unique");
+  if (!rule.alert || names.has(rule.alert))
+    throw new Error("alert names must be unique");
   names.add(rule.alert);
   if (!rule.expr || !["page", "ticket"].includes(rule.labels?.severity)) {
-    throw new Error(`${rule.alert}: expression and page/ticket severity are required`);
+    throw new Error(
+      `${rule.alert}: expression and page/ticket severity are required`,
+    );
   }
   const target = rule.annotations?.runbook;
   if (!target?.startsWith("docs/runbook.md#")) {

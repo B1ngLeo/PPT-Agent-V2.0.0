@@ -12,7 +12,8 @@ or cross-tenant access.
 2. Set API, Worker and outbox images to the last approved immutable digests.
 3. Recreate API first, then outbox and Worker. Confirm non-root users and read-only
    Worker filesystem controls are unchanged.
-4. Run authentication, history, job recovery, export download and metrics smoke checks.
+4. Require `/healthz` and `/readyz` 200, then run authentication, history, job recovery,
+   export download, private-bucket encryption/lifecycle and metrics smoke checks.
 5. Resume admission only after outbox age and running-job recovery stabilize.
 
 G08 adds only `object_reconciliation_runs`; the preceding G07 application ignores this
@@ -39,4 +40,3 @@ approve the exact database target and accept loss of G08 reconciliation-run audi
 Prefer a fixed roll-forward after service stability. Re-run the affected E2E, recovery,
 security and compatibility checks, reconcile objects, compare usage settlements, and
 record the incident timeline plus exact digests in the release report.
-

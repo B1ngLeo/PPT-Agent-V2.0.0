@@ -24,7 +24,7 @@ The reviewer must record:
 - [ ] Export a bound revision, open history and restore the completed project.
 - [ ] At browser zoom 200%, repeat the critical controls at 390, 768 and 1440 CSS px.
 - [ ] Confirm focus visibility, dialog Escape/return focus, error announcements and that
-  status is never conveyed by color alone.
+      status is never conveyed by color alone.
 
 ## Sign-off
 

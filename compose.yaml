@@ -39,6 +39,10 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-instant-ppt-local}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-local-development-only}
       MINIO_API_CORS_ALLOW_ORIGIN: ${MINIO_API_CORS_ALLOW_ORIGIN:-http://localhost:3000}
+      # Local verification only. Production must replace the static key with KES/KMS.
+      MINIO_KMS_SECRET_KEY: ${MINIO_KMS_SECRET_KEY:-instant-ppt-local:aW5zdGFudC1wcHQtbG9jYWwtc3NlLWtleS0zMmJ5dGU=}
+      MINIO_API_STALE_UPLOADS_EXPIRY: ${MINIO_API_STALE_UPLOADS_EXPIRY:-24h}
+      MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL: ${MINIO_API_STALE_UPLOADS_CLEANUP_INTERVAL:-1h}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -119,6 +123,18 @@ services:
       - "4"
     ports:
       - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy

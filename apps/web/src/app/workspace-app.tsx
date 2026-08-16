@@ -67,7 +67,8 @@ function AccessibilityAudit({ auditKey }: { auditKey: string }) {
           });
         })
         .catch(() => {
-          if (!cancelled) setResult((current) => ({ ...current, state: "failed" }));
+          if (!cancelled)
+            setResult((current) => ({ ...current, state: "failed" }));
         });
     }, 1200);
     return () => {
@@ -78,7 +79,10 @@ function AccessibilityAudit({ auditKey }: { auditKey: string }) {
 
   if (!enabled) return null;
   return (
-    <output className="a11y-audit-output" aria-label="axe accessibility audit results">
+    <output
+      className="a11y-audit-output"
+      aria-label="axe accessibility audit results"
+    >
       {JSON.stringify({ auditKey, ...result })}
     </output>
   );

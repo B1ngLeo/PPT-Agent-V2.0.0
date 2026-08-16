@@ -1,5 +1,5 @@
 schemaVersion: 1
-updatedAt: 2026-08-16T19:08:33+08:00
+updatedAt: 2026-08-16T20:03:03+08:00
 gates:
   - id: GATE-G00-CONTRACT-BASELINE
     goal: G00
@@ -193,14 +193,17 @@ gates:
     status: ready_for_review
     ownerRole: product
     approver: null
-    checkedAt: 2026-08-16T19:08:33+08:00
-    targetVersions: [nextjs-16.2.11, postgresql-17.6, axe-core-4.13.0, opentelemetry-1.44.0]
+    checkedAt: 2026-08-16T20:03:03+08:00
+    targetVersions:
+      [nextjs-16.2.11, postgresql-17.6, axe-core-4.13.0, opentelemetry-1.44.0]
     evidence:
       [
         "docs/release-gate-report.md",
         "docs/release-checklist.md",
+        "docs/evidence/g08-completion-audit.md",
         "docs/evidence/g08-e2e-matrix.json",
         "docs/evidence/g08-final-browser-e2e.json",
+        "docs/evidence/g08-integration-junit.xml",
         "docs/evidence/g01-powerpoint-compatibility.json",
         "docs/evidence/g01-wps-compatibility.json",
         "docs/evidence/g01-visual-diff.json",
@@ -210,9 +213,10 @@ gates:
         "docs/evidence/recovery/g08-recovery-matrix.json",
         "docs/evidence/operations/g08-backup-restore.json",
         "docs/evidence/security/g08-dependency-audit.json",
+        "docs/evidence/security/g08-object-governance.json",
         "docs/privacy-and-provider-disclosure.md",
       ]
-    notes: Automated engineering evidence is complete. Named Windows screen-reader review and product/security/legal production Provider/privacy approval remain required; automation must not mark this Gate passed.
+    notes: Automated engineering evidence, storage governance and release-image health are complete. Named exact Chromium 200% plus Windows screen-reader review and product/security/legal production Provider/privacy/KES-or-KMS approval remain required; automation must not mark this Gate passed.
     waiver: null
   - id: GATE-G09-PRIVATE-TEMPLATE
     goal: G09

@@ -12,9 +12,18 @@ from urllib.parse import urlsplit
 from instant_ppt_domain.artifacts import ArtifactUnavailable, ObjectStat
 from instant_ppt_domain.sources import ObjectDigest, UploadPolicy
 from minio import Minio
+from minio.commonconfig import ENABLED, Filter
 from minio.datatypes import PostPolicy
 from minio.error import S3Error
+from minio.lifecycleconfig import Expiration, LifecycleConfig
+from minio.lifecycleconfig import (
+    Rule as LifecycleRule,
+)
+from minio.sseconfig import Rule as EncryptionRule
+from minio.sseconfig import SSEConfig
 from urllib3.exceptions import HTTPError
+
+_LIFECYCLE_RULE_ID = "instant-ppt-expired-delete-markers"
 
 
 def _endpoint(value: str) -> tuple[str, bool]:
@@ -51,6 +60,7 @@ class MinioPrivateObjectStore:
         endpoint, secure = _endpoint(settings.endpoint)
         public_endpoint, public_secure = _endpoint(settings.public_endpoint)
         self._bucket = settings.bucket
+        self._governance_ready = False
         self._public_base = f"{'https' if public_secure else 'http'}://{public_endpoint}"
         self._client = Minio(
             endpoint,
@@ -72,11 +82,43 @@ class MinioPrivateObjectStore:
         return self._bucket
 
     def ensure_private_bucket(self) -> None:
-        if not self._client.bucket_exists(self._bucket):
-            self._client.make_bucket(self._bucket)
+        """Provision a private bucket and fail closed unless governance is active."""
+        if self._governance_ready:
+            return
+        try:
+            if not self._client.bucket_exists(self._bucket):
+                self._client.make_bucket(self._bucket)
+            try:
+                self._client.get_bucket_policy(self._bucket)
+            except S3Error as error:
+                if error.code != "NoSuchBucketPolicy":
+                    raise
+            else:
+                self._client.delete_bucket_policy(self._bucket)
+            encryption = self._client.get_bucket_encryption(self._bucket)
+            if encryption is None:
+                self._client.set_bucket_encryption(
+                    self._bucket,
+                    SSEConfig(EncryptionRule.new_sse_s3_rule()),
+                )
+            lifecycle = self._client.get_bucket_lifecycle(self._bucket)
+            rules = list(lifecycle.rules) if lifecycle is not None else []
+            desired = LifecycleRule(
+                ENABLED,
+                rule_filter=Filter(prefix="tenants/"),
+                rule_id=_LIFECYCLE_RULE_ID,
+                expiration=Expiration(expired_object_delete_marker=True),
+            )
+            rules = [rule for rule in rules if rule.rule_id != _LIFECYCLE_RULE_ID]
+            rules.append(desired)
+            self._client.set_bucket_lifecycle(self._bucket, LifecycleConfig(rules))
+            self._governance_ready = True
+        except (S3Error, HTTPError, OSError) as error:
+            raise ArtifactUnavailable("private object governance is unavailable") from error
 
     def stat(self, object_key: str) -> ObjectStat:
         try:
+            self.ensure_private_bucket()
             result = self._client.stat_object(self._bucket, object_key)
         except (S3Error, HTTPError) as error:
             raise ArtifactUnavailable("artifact object is unavailable") from error
@@ -84,6 +126,7 @@ class MinioPrivateObjectStore:
 
     def presign_get(self, object_key: str, *, expires: timedelta) -> str:
         try:
+            self.ensure_private_bucket()
             return self._signer.presigned_get_object(self._bucket, object_key, expires=expires)
         except (S3Error, HTTPError) as error:
             raise ArtifactUnavailable("artifact URL could not be signed") from error
@@ -105,6 +148,7 @@ class MinioPrivateObjectStore:
 
     def remove(self, object_key: str) -> None:
         try:
+            self.ensure_private_bucket()
             self._client.remove_object(self._bucket, object_key)
         except (S3Error, HTTPError) as error:
             raise ArtifactUnavailable("artifact object could not be removed") from error
@@ -124,7 +168,10 @@ class MinioPrivateObjectStore:
         policy.add_equals_condition("x-amz-meta-sha256", sha256)
         policy.add_content_length_range_condition(size_bytes, size_bytes)
         try:
+            self.ensure_private_bucket()
             fields = self._signer.presigned_post_policy(policy)
+        except ArtifactUnavailable:
+            raise
         except (S3Error, ValueError) as error:
             raise ArtifactUnavailable("upload policy could not be signed") from error
         fields.update(
@@ -142,6 +189,7 @@ class MinioPrivateObjectStore:
     def digest(self, object_key: str, *, max_bytes: int) -> ObjectDigest:
         response = None
         try:
+            self.ensure_private_bucket()
             stat = self._client.stat_object(self._bucket, object_key)
             if stat.size > max_bytes:
                 return ObjectDigest(

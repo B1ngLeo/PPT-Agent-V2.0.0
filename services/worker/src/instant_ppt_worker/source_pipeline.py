@@ -20,8 +20,14 @@ from instant_ppt_domain.models import Artifact, SourceArtifact
 from instant_ppt_domain.reconciliation import StoredObject
 from instant_ppt_domain.sources import SourceNotFound, get_source
 from minio import Minio
-from minio.commonconfig import CopySource
+from minio.commonconfig import ENABLED, CopySource, Filter
 from minio.error import S3Error
+from minio.lifecycleconfig import Expiration, LifecycleConfig
+from minio.lifecycleconfig import (
+    Rule as LifecycleRule,
+)
+from minio.sseconfig import Rule as EncryptionRule
+from minio.sseconfig import SSEConfig
 from sqlalchemy.orm import Session, sessionmaker
 from urllib3.exceptions import HTTPError
 
@@ -33,6 +39,7 @@ from instant_ppt_worker.source_parser import parse_source
 CHUNK_BYTES = 1024 * 1024
 MAX_SOURCE_BYTES = 25 * 1024 * 1024
 SOURCE_RETENTION_DAYS = 30
+_LIFECYCLE_RULE_ID = "instant-ppt-expired-delete-markers"
 
 
 class ScannerUnavailable(RuntimeError):
@@ -98,6 +105,7 @@ class WorkerObjectStore:
         if not parsed.netloc or parsed.path not in {"", "/"}:
             raise ValueError("S3 endpoint must contain only scheme, host, and port")
         self.bucket = settings.bucket
+        self._governance_ready = False
         self.client = Minio(
             parsed.netloc,
             access_key=settings.access_key,
@@ -106,11 +114,47 @@ class WorkerObjectStore:
             region=settings.region,
         )
 
+    def ensure_private_bucket(self) -> None:
+        """Ensure topic-only generation also has encrypted, governed storage."""
+        if self._governance_ready:
+            return
+        try:
+            if not self.client.bucket_exists(self.bucket):
+                self.client.make_bucket(self.bucket)
+            try:
+                self.client.get_bucket_policy(self.bucket)
+            except S3Error as error:
+                if error.code != "NoSuchBucketPolicy":
+                    raise
+            else:
+                self.client.delete_bucket_policy(self.bucket)
+            encryption = self.client.get_bucket_encryption(self.bucket)
+            if encryption is None:
+                self.client.set_bucket_encryption(
+                    self.bucket,
+                    SSEConfig(EncryptionRule.new_sse_s3_rule()),
+                )
+            lifecycle = self.client.get_bucket_lifecycle(self.bucket)
+            rules = list(lifecycle.rules) if lifecycle is not None else []
+            desired = LifecycleRule(
+                ENABLED,
+                rule_filter=Filter(prefix="tenants/"),
+                rule_id=_LIFECYCLE_RULE_ID,
+                expiration=Expiration(expired_object_delete_marker=True),
+            )
+            rules = [rule for rule in rules if rule.rule_id != _LIFECYCLE_RULE_ID]
+            rules.append(desired)
+            self.client.set_bucket_lifecycle(self.bucket, LifecycleConfig(rules))
+            self._governance_ready = True
+        except (S3Error, HTTPError, OSError) as error:
+            raise SourceObjectError("private object governance is unavailable") from error
+
     def download(self, object_key: str, target: Path, *, max_bytes: int) -> str:
         response = None
         digest = hashlib.sha256()
         size = 0
         try:
+            self.ensure_private_bucket()
             response = self.client.get_object(self.bucket, object_key)
             with target.open("xb") as stream:
                 for chunk in response.stream(CHUNK_BYTES):
@@ -131,6 +175,7 @@ class WorkerObjectStore:
 
     def promote(self, source_key: str, clean_key: str) -> None:
         try:
+            self.ensure_private_bucket()
             self.client.copy_object(
                 self.bucket, clean_key, CopySource(self.bucket, source_key)
             )
@@ -140,6 +185,7 @@ class WorkerObjectStore:
 
     def put_file(self, object_key: str, path: Path, media_type: str) -> None:
         try:
+            self.ensure_private_bucket()
             self.client.fput_object(
                 self.bucket,
                 object_key,
@@ -152,12 +198,14 @@ class WorkerObjectStore:
 
     def remove(self, object_key: str) -> None:
         try:
+            self.ensure_private_bucket()
             self.client.remove_object(self.bucket, object_key)
         except (S3Error, HTTPError) as error:
             raise SourceObjectError("artifact object could not be removed") from error
 
     def list_objects(self, prefix: str) -> list[StoredObject]:
         try:
+            self.ensure_private_bucket()
             return [
                 StoredObject(item.object_name, item.last_modified)
                 for item in self.client.list_objects(self.bucket, prefix=prefix, recursive=True)

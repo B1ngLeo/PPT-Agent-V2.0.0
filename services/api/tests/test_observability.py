@@ -48,3 +48,13 @@ def test_metrics_endpoint_is_not_self_counted() -> None:
         client.get("/internal/metrics")
         rendered = client.get("/internal/metrics").text
         assert 'route="/internal/metrics"' not in rendered
+
+
+def test_health_and_database_readiness_are_explicit_and_hidden_from_openapi() -> None:
+    app = create_app()
+    with TestClient(app) as client:
+        assert client.get("/healthz").json() == {"status": "ok"}
+        assert client.get("/readyz").json() == {"status": "ready"}
+        paths = client.get("/openapi.json").json()["paths"]
+        assert "/healthz" not in paths
+        assert "/readyz" not in paths

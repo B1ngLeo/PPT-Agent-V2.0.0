@@ -48,7 +48,7 @@
       "faultInjection": "one missing published object, one expired object, and one orphan object per isolated tenant",
       "invariants": ["missing publication fails closed", "expired and orphan objects removed", "durable alert and audit run recorded"],
       "status": "passed",
-      "evidence": "docs/evidence/g08-reconciliation-junit.xml"
+      "evidence": "docs/evidence/g08-integration-junit.xml"
     }
   ]
 }

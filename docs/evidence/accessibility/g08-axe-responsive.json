@@ -12,18 +12,57 @@
     "package": "axe-core 4.13.0",
     "tags": ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
     "states": [
-      {"state": "home", "violations": 0, "criticalSerious": 0, "incomplete": 2, "passes": 23},
-      {"state": "workspace", "violations": 0, "criticalSerious": 0, "incomplete": 2, "passes": 26},
-      {"state": "monitor", "violations": 0, "criticalSerious": 0, "incomplete": 1, "passes": 25},
-      {"state": "presentation", "violations": 0, "criticalSerious": 0, "incomplete": 2, "passes": 25}
+      {
+        "state": "home",
+        "violations": 0,
+        "criticalSerious": 0,
+        "incomplete": 2,
+        "passes": 23
+      },
+      {
+        "state": "workspace",
+        "violations": 0,
+        "criticalSerious": 0,
+        "incomplete": 2,
+        "passes": 26
+      },
+      {
+        "state": "monitor",
+        "violations": 0,
+        "criticalSerious": 0,
+        "incomplete": 1,
+        "passes": 25
+      },
+      {
+        "state": "presentation",
+        "violations": 0,
+        "criticalSerious": 0,
+        "incomplete": 2,
+        "passes": 25
+      }
     ],
     "manualReviewOfIncomplete": "Required with the named Windows screen-reader review; no critical or serious automated violation remains."
   },
   "responsive": {
     "viewportChecks": [
-      {"requestedWidth": 390, "innerWidth": 390, "documentScrollWidth": 375, "horizontalOverflow": false},
-      {"requestedWidth": 768, "innerWidth": 768, "documentScrollWidth": 753, "horizontalOverflow": false},
-      {"requestedWidth": 1440, "innerWidth": 1440, "documentScrollWidth": 1425, "horizontalOverflow": false}
+      {
+        "requestedWidth": 390,
+        "innerWidth": 390,
+        "documentScrollWidth": 375,
+        "horizontalOverflow": false
+      },
+      {
+        "requestedWidth": 768,
+        "innerWidth": 768,
+        "documentScrollWidth": 753,
+        "horizontalOverflow": false
+      },
+      {
+        "requestedWidth": 1440,
+        "innerWidth": 1440,
+        "documentScrollWidth": 1425,
+        "horizontalOverflow": false
+      }
     ],
     "zoom200": "Core breakpoint behavior was exercised at the equivalent constrained CSS widths; named manual Chromium 200% zoom review remains part of the human Gate."
   },
@@ -33,7 +72,14 @@
       "docs/evidence/g07-browser-e2e.json",
       "docs/evidence/g07-editor-export-history.md"
     ],
-    "coverage": ["skip link", "outline editing", "generation", "partial guard", "export", "history"]
+    "coverage": [
+      "skip link",
+      "outline editing",
+      "generation",
+      "partial guard",
+      "export",
+      "history"
+    ]
   },
   "screenReader": {
     "status": "not_run",
@@ -47,4 +93,3 @@
     "Raised assistant diagnostic text contrast to the WCAG AA baseline."
   ]
 }
-

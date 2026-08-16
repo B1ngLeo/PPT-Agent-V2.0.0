@@ -8,10 +8,13 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from instant_ppt_domain.config import DomainSettings
 from instant_ppt_domain.database import create_domain_engine, create_session_factory
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.tenancy import TenantNotFound
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from instant_ppt_api.auth import ApiAuthenticationError, OidcTokenVerifier
@@ -79,6 +82,19 @@ def create_app(
     )
     application.state.planning_gateway = planning_gateway or DeterministicPlanningGateway()
     application.state.observability = create_observability(resolved_factory)
+
+    @application.get("/healthz", include_in_schema=False)
+    async def healthz():
+        return {"status": "ok"}
+
+    @application.get("/readyz", include_in_schema=False)
+    def readyz():
+        try:
+            with resolved_factory() as session:
+                session.execute(text("SELECT 1"))
+        except SQLAlchemyError:
+            return JSONResponse({"status": "not_ready"}, status_code=503)
+        return {"status": "ready"}
 
     @application.get("/internal/metrics", include_in_schema=False)
     async def metrics():

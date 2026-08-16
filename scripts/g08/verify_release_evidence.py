@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,6 +28,13 @@ def main() -> int:
         "currentRevisionId"
     ]
     assert browser["pptxExport"]["objectBytesAndHashMatched"] is True
+    assert browser["pptxExport"]["serverSideEncryption"] == "AES256"
+    assert browser["projectDataExport"]["objectBytesAndHashMatched"] is True
+    assert browser["projectDataExport"]["serverSideEncryption"] == "AES256"
+    assert browser["runtime"]["healthzStatus"] == 200
+    assert browser["runtime"]["readyzStatus"] == 200
+    assert browser["runtime"]["composeApiHealth"] == "healthy"
+    assert browser["runtime"]["errorLogLines"] == 0
     assert all(
         browser["runtime"][field] is True
         for field in ("apiReadOnlyRoot", "workerReadOnlyRoot", "outboxReadOnlyRoot")
@@ -62,6 +70,21 @@ def main() -> int:
     assert restore["postgres"]["source"] == restore["postgres"]["restored"]
     assert restore["objects"]["hashesMatched"] is True
     assert restore["objects"]["objectCount"] > 0
+
+    governance = _json("docs/evidence/security/g08-object-governance.json")
+    assert governance["result"] == "passed"
+    assert governance["testDatabase"] == "instant_ppt_g08_test"
+    assert governance["junit"]["tests"] == 4
+    assert governance["junit"]["failures"] == 0
+    assert governance["junit"]["skipped"] == 0
+    assert governance["bucket"]["publicPolicy"] is False
+    assert governance["bucket"]["defaultEncryption"] == "AES256"
+    assert governance["bucket"]["lifecyclePrefix"] == "tenants/"
+    assert governance["bucket"]["expiredDeleteMarkerCleanup"] is True
+    assert governance["bucket"]["staleMultipartExpiry"] == "24h"
+    assert governance["bucket"]["staleMultipartCleanupInterval"] == "1h"
+    junit = ET.parse(ROOT / governance["junit"]["path"])
+    assert len(junit.findall(".//testcase")) == 4
 
     security = _json("docs/evidence/security/g08-dependency-audit.json")
     assert security["result"] == "passed"
