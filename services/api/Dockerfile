@@ -28,4 +28,4 @@ RUN uv sync --frozen --no-dev --package instant-ppt-api --no-editable
 USER 10001:10001
 EXPOSE 8000
 ENTRYPOINT ["uvicorn"]
-CMD ["instant_ppt_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["instant_ppt_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

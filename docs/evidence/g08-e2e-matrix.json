@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "goal": "G08",
+  "generatedAt": "2026-08-16T10:40:00.000000+00:00",
+  "result": "passed",
+  "scenarios": [
+    {"id":"E2E-001","status":"passed","evidence":["docs/evidence/g08-final-browser-e2e.json","docs/evidence/g07-editor-export-junit.xml"]},
+    {"id":"E2E-002","status":"passed","evidence":["docs/evidence/g04-browser-e2e.json","docs/evidence/security/g04-container-e2e.json"]},
+    {"id":"E2E-003","status":"passed","evidence":["docs/evidence/g05-browser-e2e.json","docs/evidence/g05-workspace-junit.xml"]},
+    {"id":"E2E-004","status":"passed","evidence":["docs/evidence/recovery/g02-recovery-results.json","docs/evidence/g06-generation-junit.xml"]},
+    {"id":"E2E-005","status":"passed","evidence":["docs/evidence/recovery/g02-recovery-results.json","docs/evidence/g06-generation-junit.xml"]},
+    {"id":"E2E-006","status":"passed","evidence":["docs/evidence/g06-browser-e2e.json","docs/evidence/g06-generation-junit.xml"]},
+    {"id":"E2E-007","status":"passed","evidence":["docs/evidence/recovery/g02-recovery-results.json","docs/evidence/g06-generation-junit.xml"]},
+    {"id":"E2E-008","status":"passed","evidence":["docs/evidence/g07-browser-e2e.json","docs/evidence/g07-editor-export-junit.xml"]},
+    {"id":"E2E-009","status":"passed","evidence":["docs/evidence/g07-editor-export-history.md","docs/evidence/g07-editor-export-junit.xml"]},
+    {"id":"E2E-010","status":"passed","evidence":["docs/evidence/security/g03-tenancy-results.json","docs/evidence/g07-browser-e2e.json"]},
+    {"id":"E2E-011","status":"passed","evidence":["docs/evidence/accessibility/g08-axe-responsive.json","docs/evidence/g08-final-browser-e2e.json"]},
+    {"id":"E2E-012","status":"passed","evidence":["docs/evidence/g08-final-browser-e2e.json","docs/evidence/g07-editor-export-history.md"]}
+  ]
+}

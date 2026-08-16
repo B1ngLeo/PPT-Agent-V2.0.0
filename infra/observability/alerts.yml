@@ -1,0 +1,122 @@
+groups:
+  - name: instant-ppt-api
+    rules:
+      - alert: InstantPptApiErrorRateHigh
+        expr: |
+          sum(rate(instant_ppt_http_requests_total{status_class="5xx"}[5m]))
+          /
+          clamp_min(sum(rate(instant_ppt_http_requests_total[5m])), 0.001)
+          > 0.05
+        for: 10m
+        labels: { severity: page, service: instant-ppt-api }
+        annotations:
+          summary: API 5xx rate exceeds 5%
+          runbook: docs/runbook.md#api-errors-or-latency
+
+      - alert: InstantPptApiReadP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(instant_ppt_http_request_duration_seconds_bucket{method="GET"}[10m])
+            )
+          ) > 0.3
+        for: 15m
+        labels: { severity: ticket, service: instant-ppt-api }
+        annotations:
+          summary: Ordinary JSON GET p95 exceeds 300 ms
+          runbook: docs/runbook.md#api-errors-or-latency
+
+      - alert: InstantPptApiWriteP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(instant_ppt_http_request_duration_seconds_bucket{method=~"POST|PUT|PATCH|DELETE"}[10m])
+            )
+          ) > 0.5
+        for: 15m
+        labels: { severity: ticket, service: instant-ppt-api }
+        annotations:
+          summary: Ordinary JSON write p95 exceeds 500 ms
+          runbook: docs/runbook.md#api-errors-or-latency
+
+      - alert: InstantPptSseResetRateHigh
+        expr: rate(instant_ppt_sse_resets_total[10m]) > 0.05
+        for: 10m
+        labels: { severity: ticket, service: instant-ppt-api }
+        annotations:
+          summary: SSE clients are frequently receiving sequence resets
+          runbook: docs/runbook.md#sse-replay-or-redis-degradation
+
+  - name: instant-ppt-durable-work
+    rules:
+      - alert: InstantPptOutboxStalled
+        expr: instant_ppt_oldest_outbox_pending_seconds > 30
+        for: 5m
+        labels: { severity: page, service: instant-ppt-outbox }
+        annotations:
+          summary: Transactional outbox has been pending for over 30 seconds
+          runbook: docs/runbook.md#queue-or-worker-stall
+
+      - alert: InstantPptGenerationTimedOut
+        expr: instant_ppt_oldest_generation_running_seconds > 1800
+        for: 2m
+        labels: { severity: page, service: instant-ppt-worker }
+        annotations:
+          summary: A generation job exceeded the 30-minute hard timeout
+          runbook: docs/runbook.md#queue-or-worker-stall
+
+      - alert: InstantPptSourceTimedOut
+        expr: instant_ppt_oldest_source_processing_seconds > 600
+        for: 2m
+        labels: { severity: page, service: instant-ppt-worker }
+        annotations:
+          summary: A source pipeline exceeded the 10-minute hard timeout
+          runbook: docs/runbook.md#source-scan-or-parse-failure
+
+      - alert: InstantPptProviderFailureRatioHigh
+        expr: |
+          sum(instant_ppt_provider_calls{status!="succeeded"})
+          /
+          clamp_min(sum(instant_ppt_provider_calls), 1)
+          > 0.1
+        for: 15m
+        labels: { severity: ticket, service: instant-ppt-provider }
+        annotations:
+          summary: Durable provider failure ratio exceeds 10%
+          runbook: docs/runbook.md#provider-degradation
+
+      - alert: InstantPptReconciliationNeedsAttention
+        expr: sum(instant_ppt_reconciliation_runs{status=~"failed|succeeded_with_alerts"}) > 0
+        for: 5m
+        labels: { severity: page, service: instant-ppt-storage }
+        annotations:
+          summary: Object reconciliation recorded missing or unremovable objects
+          runbook: docs/runbook.md#object-store-divergence
+
+  - name: instant-ppt-security
+    rules:
+      - alert: InstantPptAuthorizationDenialsSpike
+        expr: sum(rate(instant_ppt_authorization_denials_total[5m])) > 1
+        for: 10m
+        labels: { severity: ticket, service: instant-ppt-api }
+        annotations:
+          summary: Authorization denials exceed the expected baseline
+          runbook: docs/runbook.md#authorization-denial-spike
+
+      - alert: InstantPptScannerMetricsMissing
+        expr: absent(clamav_signature_age_seconds)
+        for: 15m
+        labels: { severity: page, service: clamav }
+        annotations:
+          summary: ClamAV signature freshness metric is missing
+          runbook: docs/runbook.md#source-scan-or-parse-failure
+
+      - alert: InstantPptScannerSignaturesStale
+        expr: clamav_signature_age_seconds > 86400
+        for: 15m
+        labels: { severity: page, service: clamav }
+        annotations:
+          summary: ClamAV signatures are older than 24 hours
+          runbook: docs/runbook.md#source-scan-or-parse-failure

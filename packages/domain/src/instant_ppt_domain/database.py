@@ -11,8 +11,17 @@ from instant_ppt_domain.config import DomainSettings
 
 
 def create_domain_engine(database_url: str | None = None, *, echo: bool = False) -> Engine:
-    url = database_url or DomainSettings.from_env().database_url
-    return create_engine(url, echo=echo, pool_pre_ping=True, future=True)
+    settings = DomainSettings.from_env()
+    url = database_url or settings.database_url
+    return create_engine(
+        url,
+        echo=echo,
+        pool_pre_ping=True,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout_seconds,
+        future=True,
+    )
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:

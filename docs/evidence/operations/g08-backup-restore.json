@@ -1,0 +1,40 @@
+{
+  "generatedAt": "2026-08-16T10:34:04.053717+00:00",
+  "goal": "G08",
+  "objects": {
+    "canaryUsedForEmptySource": false,
+    "hashesMatched": true,
+    "objectCount": 64,
+    "restoreBucket": "instant-ppt-g08-restore",
+    "sourceBucket": "instant-ppt-private"
+  },
+  "postgres": {
+    "backupBytes": 4025584,
+    "countsAndSchemaMatched": true,
+    "format": "pg_dump custom",
+    "restoreDatabase": "instant_ppt_g08_restore",
+    "restored": {
+      "alembicVersion": "ad9d3a5d7be1",
+      "artifacts": 9013,
+      "auditLogs": 3171,
+      "drafts": 9001,
+      "generationJobs": 901,
+      "jobEvents": 90040,
+      "organizations": 904,
+      "reconciliationRuns": 2
+    },
+    "source": {
+      "alembicVersion": "ad9d3a5d7be1",
+      "artifacts": 9013,
+      "auditLogs": 3171,
+      "drafts": 9001,
+      "generationJobs": 901,
+      "jobEvents": 90040,
+      "organizations": 904,
+      "reconciliationRuns": 2
+    },
+    "sourceDatabase": "instant_ppt"
+  },
+  "result": "passed",
+  "schemaVersion": 1
+}

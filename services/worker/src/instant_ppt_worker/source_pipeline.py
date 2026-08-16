@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from instant_ppt_domain.artifacts import tenant_object_key
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import Artifact, SourceArtifact
+from instant_ppt_domain.reconciliation import StoredObject
 from instant_ppt_domain.sources import SourceNotFound, get_source
 from minio import Minio
 from minio.commonconfig import CopySource
@@ -154,6 +155,16 @@ class WorkerObjectStore:
             self.client.remove_object(self.bucket, object_key)
         except (S3Error, HTTPError) as error:
             raise SourceObjectError("artifact object could not be removed") from error
+
+    def list_objects(self, prefix: str) -> list[StoredObject]:
+        try:
+            return [
+                StoredObject(item.object_name, item.last_modified)
+                for item in self.client.list_objects(self.bucket, prefix=prefix, recursive=True)
+                if item.object_name and item.last_modified
+            ]
+        except (S3Error, HTTPError) as error:
+            raise SourceObjectError("artifact objects could not be listed") from error
 
 
 def _sha256_file(path: Path) -> str:

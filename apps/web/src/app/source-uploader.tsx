@@ -236,6 +236,7 @@ export function SourceUploader({
         ref={inputRef}
         className="sr-only"
         id="source-file"
+        aria-label="选择主文档"
         type="file"
         accept={ACCEPTED.join(",")}
         onChange={onFile}

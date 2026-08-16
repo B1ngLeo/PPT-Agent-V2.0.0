@@ -8,6 +8,7 @@ from celery import Task
 from instant_ppt_domain.config import DomainSettings
 from instant_ppt_domain.database import create_domain_engine, create_session_factory
 from instant_ppt_domain.fake_worker import InjectedWorkerCrash, process_fake_job
+from instant_ppt_domain.reconciliation import reconcile_organization_objects
 from instant_ppt_domain.service import LeaseConflict, ResourceNotFound, SlideStart
 from sqlalchemy.exc import OperationalError
 
@@ -17,6 +18,7 @@ from instant_ppt_worker.generation_pipeline import (
     InjectedGenerationCrash,
     process_generation_job,
 )
+from instant_ppt_worker.observability import ObservedTask
 from instant_ppt_worker.presentation_pipeline import (
     process_export,
     process_project_cleanup,
@@ -25,6 +27,8 @@ from instant_ppt_worker.presentation_pipeline import (
 from instant_ppt_worker.source_pipeline import (
     ScannerUnavailable,
     SourceObjectError,
+    WorkerObjectSettings,
+    WorkerObjectStore,
     process_source_pipeline,
 )
 
@@ -35,7 +39,7 @@ def _kill_process(_: SlideStart) -> None:
 
 @celery_app.task(
     bind=True,
-    base=Task,
+    base=ObservedTask,
     name="instant_ppt.process_fake_job",
     acks_late=True,
     reject_on_worker_lost=True,
@@ -68,7 +72,7 @@ def process_fake_job_task(self: Task, job_id: str, organization_id: str) -> str:
 
 @celery_app.task(
     bind=True,
-    base=Task,
+    base=ObservedTask,
     name="instant_ppt.process_generation_job",
     acks_late=True,
     reject_on_worker_lost=True,
@@ -107,7 +111,7 @@ def process_generation_job_task(self: Task, job_id: str, organization_id: str) -
 
 @celery_app.task(
     bind=True,
-    base=Task,
+    base=ObservedTask,
     name="instant_ppt.process_source",
     acks_late=True,
     reject_on_worker_lost=True,
@@ -131,7 +135,7 @@ def process_source_task(self: Task, source_id: str, organization_id: str) -> str
 
 @celery_app.task(
     bind=True,
-    base=Task,
+    base=ObservedTask,
     name="instant_ppt.process_slide_regeneration",
     acks_late=True,
     reject_on_worker_lost=True,
@@ -154,7 +158,7 @@ def process_slide_regeneration_task(
 
 @celery_app.task(
     bind=True,
-    base=Task,
+    base=ObservedTask,
     name="instant_ppt.process_export",
     acks_late=True,
     reject_on_worker_lost=True,
@@ -175,7 +179,7 @@ def process_export_task(self: Task, job_id: str, organization_id: str) -> str:
 
 @celery_app.task(
     bind=True,
-    base=Task,
+    base=ObservedTask,
     name="instant_ppt.process_project_cleanup",
     acks_late=True,
     reject_on_worker_lost=True,
@@ -190,5 +194,30 @@ def process_project_cleanup_task(self: Task, job_id: str, organization_id: str) 
     factory = create_session_factory(engine)
     try:
         return process_project_cleanup(factory, job_id, organization_id)
+    finally:
+        engine.dispose()
+
+
+@celery_app.task(
+    bind=True,
+    base=ObservedTask,
+    name="instant_ppt.reconcile_objects",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=2,
+    soft_time_limit=300,
+    time_limit=330,
+)
+def reconcile_objects_task(self: Task, organization_id: str) -> dict[str, object]:
+    del self
+    settings = DomainSettings.from_env()
+    engine = create_domain_engine(settings.database_url)
+    factory = create_session_factory(engine)
+    try:
+        return reconcile_organization_objects(
+            factory,
+            WorkerObjectStore(WorkerObjectSettings.from_env()),
+            organization_id,
+        )
     finally:
         engine.dispose()

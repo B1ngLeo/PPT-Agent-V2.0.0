@@ -155,10 +155,52 @@ def provision_identity(
 ) -> TenantContext:
     """Create a user's personal tenant once and resolve an active membership."""
     now = datetime.now(UTC)
-    _advisory_lock(session, f"identity:{claims.issuer}:{claims.subject}")
+    existing_query = (
+        select(User, Membership)
+        .join(Membership, Membership.user_id == User.id)
+        .join(Organization, Organization.id == Membership.organization_id)
+        .where(
+            User.issuer == claims.issuer,
+            User.subject == claims.subject,
+            Membership.status == "active",
+            Organization.deleted_at.is_(None),
+        )
+    )
+    if requested_organization_id:
+        existing_query = existing_query.where(
+            Membership.organization_id == requested_organization_id
+        )
+    else:
+        existing_query = existing_query.where(Organization.personal_owner_user_id == User.id)
+    existing = session.execute(existing_query).one_or_none()
+    if existing is not None:
+        user, membership = existing
+        if user.status != "active":
+            raise AuthenticationRejected("user is disabled")
+        if user.last_login_at <= now - timedelta(minutes=5):
+            user.last_login_at = now
+        if claims.email and user.email != claims.email:
+            user.email = claims.email
+            user.email_normalized = _normalized_email(claims.email)
+        if claims.display_name.strip() and user.display_name != claims.display_name.strip():
+            user.display_name = claims.display_name.strip()
+        return TenantContext(
+            user_id=user.id,
+            organization_id=membership.organization_id,
+            membership_id=membership.id,
+            role=membership.role,
+            issuer=user.issuer,
+            subject=user.subject,
+        )
+
     user = session.scalar(
         select(User).where(User.issuer == claims.issuer, User.subject == claims.subject)
     )
+    if user is None:
+        _advisory_lock(session, f"identity:{claims.issuer}:{claims.subject}")
+        user = session.scalar(
+            select(User).where(User.issuer == claims.issuer, User.subject == claims.subject)
+        )
     if user is None:
         user = User(
             id=(
@@ -209,11 +251,12 @@ def provision_identity(
     else:
         if user.status != "active":
             raise AuthenticationRejected("user is disabled")
-        user.last_login_at = now
-        if claims.email:
+        if user.last_login_at <= now - timedelta(minutes=5):
+            user.last_login_at = now
+        if claims.email and user.email != claims.email:
             user.email = claims.email
             user.email_normalized = _normalized_email(claims.email)
-        if claims.display_name.strip():
+        if claims.display_name.strip() and user.display_name != claims.display_name.strip():
             user.display_name = claims.display_name.strip()
 
     membership_query = (

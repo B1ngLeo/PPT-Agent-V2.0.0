@@ -1,0 +1,33 @@
+{
+  "generatedAt": "2026-08-16T10:38:08.908075+00:00",
+  "goal": "G08",
+  "node": {
+    "advisoryCount": 0,
+    "command": "pnpm audit --registry=https://registry.npmjs.org --prod --json",
+    "dependencies": 15,
+    "vulnerabilities": {
+      "critical": 0,
+      "high": 0,
+      "info": 0,
+      "low": 0,
+      "moderate": 0
+    }
+  },
+  "notes": [
+    "The configured npm mirror does not expose an audit endpoint; the official npm registry is used explicitly.",
+    "Local workspace packages are not published on PyPI and are expected to be skipped by pip-audit."
+  ],
+  "python": {
+    "command": "uv run --with pip-audit pip-audit --format json --progress-spinner off",
+    "dependencyCount": 113,
+    "localWorkspacePackagesNotOnPyPI": [
+      "instant-ppt-api",
+      "instant-ppt-domain",
+      "instant-ppt-worker"
+    ],
+    "vulnerabilities": 0,
+    "vulnerableDependencyCount": 0
+  },
+  "result": "passed",
+  "schemaVersion": 1
+}

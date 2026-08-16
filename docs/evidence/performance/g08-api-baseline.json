@@ -1,0 +1,59 @@
+{
+  "dataset": {
+    "artifacts": 1000,
+    "drafts": 1000,
+    "jobEvents": 10000,
+    "organizations": 100
+  },
+  "environment": {
+    "containerImageIds": {
+      "instant-ppt-api:latest": "sha256:f090b5d13c1ed9ef97a8293908fb928ac340f2e4eec5ae15a100f0d10ac48657",
+      "instant-ppt-worker:latest": "sha256:100b9769fac962fda89583511ea67f65982d3a3696324c41b426cc9ff9aae41a",
+      "postgres:17.6-alpine": "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94"
+    },
+    "cpuCount": 20,
+    "database": "PostgreSQL 17.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 14.2.0) 14.2.0, 64-bit",
+    "memoryBytes": 16962281472,
+    "platform": "Windows-11-10.0.22631-SP0",
+    "python": "3.12.4"
+  },
+  "errorRate": 0.0,
+  "errors": 0,
+  "generatedAt": "2026-08-16T10:33:28.105285+00:00",
+  "goal": "G08",
+  "latency": {
+    "read": {
+      "maxMs": 190.747,
+      "meanMs": 34.3,
+      "p50Ms": 24.439,
+      "p95Ms": 72.113,
+      "p99Ms": 90.83,
+      "samples": 19930
+    },
+    "write": {
+      "maxMs": 144.895,
+      "meanMs": 63.016,
+      "p50Ms": 61.996,
+      "p95Ms": 80.873,
+      "p99Ms": 93.7,
+      "samples": 2201
+    }
+  },
+  "profile": {
+    "apiWorkers": 4,
+    "externalProviderTimeIncluded": false,
+    "measurementSeconds": 600,
+    "readEndpoint": "GET /v1/me/entitlements",
+    "requestThinkTimeMs": 500,
+    "server": "Uvicorn production mode without reload in release container",
+    "virtualUsers": 20,
+    "warmupSeconds": 120,
+    "writeEndpoint": "PATCH /v1/drafts/{draft_id}"
+  },
+  "result": "passed",
+  "schemaVersion": 1,
+  "targets": {
+    "readP95Ms": 300,
+    "writeP95Ms": 500
+  }
+}

@@ -168,7 +168,7 @@ button {
   padding: 0.38rem 0.58rem;
   border-radius: 0.4rem;
   background: #eef0e8;
-  color: var(--muted);
+  color: #3f4c46;
   font-size: 0.72rem;
   font-weight: 750;
 }
@@ -1573,7 +1573,7 @@ select {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid rgba(23, 34, 29, 0.15);
-  color: var(--muted);
+  color: #3f4c46;
   font-family: ui-monospace, monospace;
   font-size: 0.7rem;
 }
@@ -1939,4 +1939,19 @@ select {
   .history-item {
     grid-template-columns: 1fr;
   }
+}
+
+.a11y-audit-output {
+  position: fixed;
+  z-index: 1000;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  max-width: min(42rem, calc(100vw - 1.5rem));
+  padding: 0.75rem;
+  border: 2px solid #ffffff;
+  border-radius: 0.5rem;
+  color: #ffffff;
+  background: #101623;
+  font: 600 0.75rem/1.4 ui-monospace, monospace;
+  overflow-wrap: anywhere;
 }

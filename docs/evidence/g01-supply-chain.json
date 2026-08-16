@@ -5,14 +5,14 @@
   "python": {
     "lockfile": "uv.lock",
     "sbom": "docs/evidence/sbom-python.cdx.json",
-    "componentCount": 53,
-    "sha256": "ba57015521675877b9dbcb53a00b1aaaaae2333479ee81670dc4d349d62eaa6d"
+    "componentCount": 93,
+    "sha256": "0b6d1a2f78c016898d8157c4591e317730dbbe2741c1d3d8b6efb82e457bf0f5"
   },
   "node": {
     "lockfile": "pnpm-lock.yaml",
     "sbom": "docs/evidence/sbom-node.cdx.json",
-    "componentCount": 213,
-    "sha256": "6b22775ab0de410eb742c83d6005eb227eef13418921b309e9de98c558d84e6b"
+    "componentCount": 216,
+    "sha256": "d01aff3b451a4420122f5c0f9b9161c067f99dc257bb790e22f8b41a78829ced"
   },
   "fonts": {
     "fontPackVersion": "system-safe-fonts@1",

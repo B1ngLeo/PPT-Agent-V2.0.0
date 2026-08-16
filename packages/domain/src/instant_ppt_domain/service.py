@@ -301,7 +301,8 @@ def _append_event(
         progress_completed=job.progress_completed,
         progress_total=job.progress_total,
         data=data or {},
-        trace_id=trace_id or f"g02-{job.id}",
+        trace_id=trace_id
+        or hashlib.sha256(f"instant-ppt-job:{job.id}".encode()).hexdigest()[:32],
         occurred_at=now,
     )
     session.add(event)

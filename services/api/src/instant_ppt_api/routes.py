@@ -318,6 +318,7 @@ async def generation_job_events(
             organization_id=auth.organization_id,
             last_event_id=last_event_id,
             heartbeat_seconds=settings.sse_heartbeat_seconds,
+            metrics=request.app.state.observability.metrics,
         ),
         media_type="text/event-stream",
         headers={

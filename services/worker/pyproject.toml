@@ -12,6 +12,8 @@ dependencies = [
   "markdownify==1.2.3",
   "minio==7.2.20",
   "numpy==2.5.2",
+  "opentelemetry-exporter-otlp-proto-http>=1.44.0",
+  "opentelemetry-sdk>=1.44.0",
   "pillow==12.3.0",
   "pydantic==2.13.4",
   "pypdf==6.16.1",

@@ -20,6 +20,9 @@ class DomainSettings:
     sse_heartbeat_seconds: float
     outbox_poll_seconds: float
     worker_lease_seconds: int
+    database_pool_size: int = 5
+    database_max_overflow: int = 5
+    database_pool_timeout_seconds: int = 10
     app_environment: str = "local"
     auth_mode: str = "local"
     oidc_issuer: str = ""
@@ -50,6 +53,12 @@ class DomainSettings:
             raise ValueError("DOWNLOAD_URL_TTL_SECONDS must be between 15 and 900")
         if not 60 <= self.upload_session_ttl_seconds <= 900:
             raise ValueError("UPLOAD_SESSION_TTL_SECONDS must be between 60 and 900")
+        if not 1 <= self.database_pool_size <= 100:
+            raise ValueError("DATABASE_POOL_SIZE must be between 1 and 100")
+        if not 0 <= self.database_max_overflow <= 100:
+            raise ValueError("DATABASE_MAX_OVERFLOW must be between 0 and 100")
+        if not 1 <= self.database_pool_timeout_seconds <= 60:
+            raise ValueError("DATABASE_POOL_TIMEOUT_SECONDS must be between 1 and 60")
 
     @classmethod
     def from_env(cls) -> DomainSettings:
@@ -60,6 +69,11 @@ class DomainSettings:
             sse_heartbeat_seconds=float(os.getenv("SSE_HEARTBEAT_SECONDS", "20")),
             outbox_poll_seconds=float(os.getenv("OUTBOX_POLL_SECONDS", "0.25")),
             worker_lease_seconds=int(os.getenv("WORKER_LEASE_SECONDS", "30")),
+            database_pool_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
+            database_max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "5")),
+            database_pool_timeout_seconds=int(
+                os.getenv("DATABASE_POOL_TIMEOUT_SECONDS", "10")
+            ),
             app_environment=os.getenv("APP_ENVIRONMENT", "local").strip().lower(),
             auth_mode=os.getenv("AUTH_MODE", "local").strip().lower(),
             oidc_issuer=os.getenv("OIDC_ISSUER", "").strip(),

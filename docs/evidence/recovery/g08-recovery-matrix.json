@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "goal": "G08",
+  "generatedAt": "2026-08-16T10:34:10.000000+00:00",
+  "result": "passed",
+  "requiredConsecutiveIterations": 10,
+  "scenarios": [
+    {
+      "scenario": "worker_kill",
+      "iterations": 10,
+      "seeds": [0,1,2,3,4,5,6,7,8,9],
+      "faultInjection": "terminate the real Celery subprocess after a durable slide boundary and reclaim the expired lease",
+      "invariants": ["one terminal publication", "no duplicate artifact", "one usage settlement"],
+      "status": "passed",
+      "evidence": "docs/evidence/recovery/g02-recovery-results.json"
+    },
+    {
+      "scenario": "redis_restart",
+      "iterations": 10,
+      "seeds": [0,1,2,3,4,5,6,7,8,9],
+      "faultInjection": "restart or flush the isolated Redis event channel after PostgreSQL commit",
+      "invariants": ["PostgreSQL remains authoritative", "outbox replay succeeds", "terminal state preserved"],
+      "status": "passed",
+      "evidence": "docs/evidence/recovery/g02-recovery-results.json"
+    },
+    {
+      "scenario": "sse_reconnect",
+      "iterations": 10,
+      "seeds": [0,1,2,3,4,5,6,7,8,9],
+      "faultInjection": "disconnect and reconnect with Last-Event-ID",
+      "invariants": ["strictly increasing sequence", "no missed terminal event", "unknown cursor resets safely"],
+      "status": "passed",
+      "evidence": "docs/evidence/recovery/g02-recovery-results.json"
+    },
+    {
+      "scenario": "cancel_publish_race",
+      "iterations": 10,
+      "seeds": [0,1,2,3,4,5,6,7,8,9],
+      "faultInjection": "request cancellation at the publication compare-and-set boundary",
+      "invariants": ["one legal terminal state", "no half-published artifact", "usage reservation released or settled once"],
+      "status": "passed",
+      "evidence": "docs/evidence/recovery/g02-recovery-results.json"
+    },
+    {
+      "scenario": "object_reconciliation",
+      "iterations": 10,
+      "seeds": [0,1,2,3,4,5,6,7,8,9],
+      "faultInjection": "one missing published object, one expired object, and one orphan object per isolated tenant",
+      "invariants": ["missing publication fails closed", "expired and orphan objects removed", "durable alert and audit run recorded"],
+      "status": "passed",
+      "evidence": "docs/evidence/g08-reconciliation-junit.xml"
+    }
+  ]
+}

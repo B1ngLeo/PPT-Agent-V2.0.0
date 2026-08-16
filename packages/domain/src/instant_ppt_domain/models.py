@@ -1356,3 +1356,30 @@ class ProjectCleanupJob(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ObjectReconciliationRun(Base):
+    __tablename__ = "object_reconciliation_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'succeeded_with_alerts', 'failed')",
+            name="valid_status",
+        ),
+        Index("ix_object_reconciliation_runs_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="running")
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

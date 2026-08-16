@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "goal": "G08",
+  "generatedAt": "2026-08-16T11:00:00.000000+00:00",
+  "result": "passed",
+  "runtime": {
+    "web": "Next.js 16.2.11 production build",
+    "apiImage": "sha256:f090b5d13c1ed9ef97a8293908fb928ac340f2e4eec5ae15a100f0d10ac48657",
+    "workerImage": "sha256:100b9769fac962fda89583511ea67f65982d3a3696324c41b426cc9ff9aae41a",
+    "outboxImage": "sha256:6c48aeb7a83704a245339eaa7a7f519cfd6959d63a17cde0de64623c8baec862",
+    "containerUser": "10001:10001",
+    "apiWorkerCount": 4,
+    "apiReadOnlyRoot": true,
+    "workerReadOnlyRoot": true,
+    "outboxReadOnlyRoot": true,
+    "capabilitiesDropped": ["ALL"],
+    "noNewPrivileges": true
+  },
+  "journey": {
+    "topic": "G08 发布就绪与韧性总结",
+    "template": "信号红",
+    "draftId": "01M053CHX5V4MWA3VMSW35A7WD",
+    "jobId": "01M053DQFYZY8WYA67K55A5108",
+    "presentationId": "01E9JM8A1XABFVG89W7PCZ8G6M",
+    "steps": [
+      "created topic draft and deterministic intent/outline",
+      "edited story summary and first-page title before exact approval",
+      "generated 8/8 ready slides through real outbox and Celery Worker",
+      "edited text to immutable revision 2",
+      "reordered the stable slide to immutable revision 3",
+      "regenerated that exact stable slide after QA to immutable revision 4",
+      "exported PPTX bound to revision 4",
+      "exported the project data snapshot",
+      "restored the ready revision-4 presentation from persisted history"
+    ],
+    "generationStatus": "succeeded",
+    "presentationStatus": "ready",
+    "currentRevisionId": "01SWD7ZNH4QWD3R2JQSZFC900Z",
+    "currentRevisionNumber": 4,
+    "currentRevisionOperation": "regenerate_slide",
+    "slideCount": 8,
+    "editedTitlePersisted": "发布结论：最终 E2E 已通过",
+    "historyRestore": "passed",
+    "visibleErrorsAtCompletion": []
+  },
+  "pptxExport": {
+    "jobId": "01M053G48568C5F7BR94HX1N11",
+    "status": "succeeded",
+    "boundRevisionId": "01SWD7ZNH4QWD3R2JQSZFC900Z",
+    "artifactId": "019Y0MHY5JG82S7QBNH6KPD14B",
+    "manifestArtifactId": "01675WJMQF8KESW7RTB41040WE",
+    "bytes": 25473,
+    "sha256": "5ab438ff6aa589f0cea3234eac8367531a56d83ad55fa9fb83725ed01420c61b",
+    "objectBytesAndHashMatched": true
+  },
+  "projectDataExport": {
+    "dataExportId": "01M053GJP1JQF7YNQ7N6DW4WZH",
+    "status": "succeeded",
+    "artifactId": "01M053GJP1JQF7YNQ7N6DW4WZJ",
+    "bytes": 11330,
+    "sha256": "e4dd59a6dbce160e398d50c10e5a576a380de6f42556c6514f85c6b4b55963e1"
+  },
+  "responsive": {
+    "requestedWidth": 390,
+    "documentClientWidth": 375,
+    "documentScrollWidth": 375,
+    "horizontalOverflow": false
+  },
+  "closedTransient": {
+    "attempts": 1,
+    "finding": "The first request began while the freshly recreated four-worker API was still starting and the browser displayed Failed to fetch.",
+    "resolution": "The readiness endpoint returned 200; one explicit user retry completed the entire journey without another error."
+  }
+}
+

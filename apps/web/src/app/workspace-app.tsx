@@ -16,6 +16,74 @@ const DEV_SUBJECT =
   process.env.NEXT_PUBLIC_DEV_USER_SUBJECT ?? "local-web-user";
 const ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
+function AccessibilityAudit({ auditKey }: { auditKey: string }) {
+  const enabled = process.env.NEXT_PUBLIC_A11Y_AUDIT === "1";
+  const [result, setResult] = useState({
+    state: "waiting",
+    violations: -1,
+    criticalSerious: -1,
+    incomplete: -1,
+    passes: -1,
+    ids: [] as string[],
+    issues: [] as Array<{
+      id: string;
+      impact: string | null;
+      help: string;
+      targets: string[];
+    }>,
+  });
+
+  useEffect(() => {
+    if (!enabled) return;
+    setResult((current) => ({ ...current, state: "waiting" }));
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void import("axe-core")
+        .then(({ default: axe }) =>
+          axe.run(document, {
+            runOnly: {
+              type: "tag",
+              values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"],
+            },
+          }),
+        )
+        .then((audit) => {
+          if (cancelled) return;
+          setResult({
+            state: "complete",
+            violations: audit.violations.length,
+            criticalSerious: audit.violations.filter((item) =>
+              ["critical", "serious"].includes(item.impact ?? ""),
+            ).length,
+            incomplete: audit.incomplete.length,
+            passes: audit.passes.length,
+            ids: audit.violations.map((item) => item.id),
+            issues: audit.violations.map((item) => ({
+              id: item.id,
+              impact: item.impact ?? null,
+              help: item.help,
+              targets: item.nodes.flatMap((node) => node.target.map(String)),
+            })),
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setResult((current) => ({ ...current, state: "failed" }));
+        });
+    }, 1200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [auditKey, enabled]);
+
+  if (!enabled) return null;
+  return (
+    <output className="a11y-audit-output" aria-label="axe accessibility audit results">
+      {JSON.stringify({ auditKey, ...result })}
+    </output>
+  );
+}
+
 type ApiEnvelope<T> = {
   resourceId: string;
   data: T;
@@ -2276,6 +2344,7 @@ export function WorkspaceApp() {
                   <span>{outline.slides.length} 页</span>
                 </div>
                 <textarea
+                  aria-label="一句话故事线"
                   rows={2}
                   value={outline.storySummary}
                   onChange={(event) => {
@@ -2476,6 +2545,8 @@ export function WorkspaceApp() {
           </button>
         </div>
       ) : null}
+
+      <AccessibilityAudit auditKey={view} />
 
       <dialog
         ref={historyDialogRef}

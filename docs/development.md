@@ -8,7 +8,7 @@
 - uv 0.12.5
 - Docker Engine 29.5.2 and Compose 5.1.4 were used for the G00 local baseline
 
-Next.js 16.2.9 requires Node.js >=20.9.0; the repository uses one fixed Node 24 line on local and CI workers. uv manages both Python workspace members with a single cross-platform `uv.lock`.
+Next.js 16.2.11 requires Node.js >=20.9.0; the repository uses one fixed Node 24 line on local and CI workers. uv manages all Python workspace members with a single cross-platform `uv.lock`.
 
 ## Bootstrap
 
@@ -31,4 +31,7 @@ Edit `scripts/contracts/catalog.mjs`, run `pnpm contracts:materialize`, inspect 
 
 The root `verify:*` commands never change names. Before their owning Goal, integration/golden/E2E/security commands print `not-configured` and exit successfully. Once implemented, a command must run real checks and may not revert to a placeholder.
 
-Run the current complete G00 suite with `pnpm verify`.
+Run all automated G08 release checks with `pnpm verify:automated:g08`. Run the complete
+repository and Gate chain with `pnpm verify`; until the two required human release decisions
+are signed, that command intentionally exits non-zero only at `GATE-G08-RELEASE` with status
+`ready_for_review`.
