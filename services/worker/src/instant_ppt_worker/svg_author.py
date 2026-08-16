@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import unicodedata
 from pathlib import Path
 
 from instant_ppt_worker.models import DeckPlan, SlidePlan
@@ -14,8 +15,34 @@ def _text(value: str) -> str:
     return html.escape(value, quote=False)
 
 
+def _display_units(value: str) -> int:
+    return sum(
+        2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+        for character in value
+    )
+
+
 def _fit(value: str, limit: int) -> str:
-    return value if len(value) <= limit else value[: limit - 1] + "…"
+    if _display_units(value) <= limit:
+        return value
+    fitted: list[str] = []
+    used = 0
+    ellipsis_units = _display_units("…")
+    for character in value:
+        width = 2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+        if used + width + ellipsis_units > limit:
+            break
+        fitted.append(character)
+        used += width
+    return "".join(fitted) + "…"
+
+
+def _font_size_for_line(
+    value: str, *, preferred: int, available_width: int, minimum: int = 12
+) -> int:
+    display_units = max(_display_units(value), 1)
+    fitted = (available_width * 2) // display_units
+    return max(minimum, min(preferred, fitted))
 
 
 def _element(tag: str, element_id: str, attributes: dict[str, object], content: str = "") -> str:
@@ -27,7 +54,12 @@ def _element(tag: str, element_id: str, attributes: dict[str, object], content: 
 
 def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> None:
     accent = COLORS[index % len(COLORS)]
-    title_size = 42 if len(slide.title) <= 28 else 24
+    title_preferred = 42 if _display_units(slide.title) <= 50 else 24
+    title_size = _font_size_for_line(
+        slide.title,
+        preferred=title_preferred,
+        available_width=940,
+    )
     body = slide.body[:6]
     page_role = (
         slide.role if slide.role in {"cover", "toc", "section", "content", "ending"} else "content"
@@ -80,7 +112,7 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
                 "font-weight": 700,
                 "fill": "#0F172A",
             },
-            _text(_fit(slide.title, 48)),
+            _text(slide.title),
         ),
         _element(
             "text",
@@ -92,7 +124,7 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
                 "font-size": 18,
                 "fill": "#64748B",
             },
-            _text(_fit(deck_title, 64)),
+            _text(_fit(deck_title, 104)),
         ),
     ]
     if slide.role == "cover":
@@ -118,10 +150,14 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
                         "x": 160,
                         "y": 344,
                         "font-family": "Arial, Microsoft YaHei, sans-serif",
-                        "font-size": 32,
+                        "font-size": _font_size_for_line(
+                            body[0],
+                            preferred=32,
+                            available_width=920,
+                        ),
                         "fill": accent,
                     },
-                    _text(_fit(body[0], 48)),
+                    _text(body[0]),
                 ),
                 _element(
                     "text",
@@ -174,10 +210,14 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
                         "x": x + 26,
                         "y": y,
                         "font-family": "Arial, Microsoft YaHei, sans-serif",
-                        "font-size": 22,
+                        "font-size": _font_size_for_line(
+                            item,
+                            preferred=22,
+                            available_width=850 if panel_width == 1056 else 390,
+                        ),
                         "fill": "#1E293B",
                     },
-                    _text(_fit(item, 34)),
+                    _text(item),
                 )
             )
     lines.extend(

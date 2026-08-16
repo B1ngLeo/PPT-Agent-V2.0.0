@@ -79,7 +79,17 @@ SOURCE_STATUSES = (
 SCAN_STATUSES = ("pending", "running", "clean", "rejected", "failed")
 PARSE_STATUSES = ("pending", "running", "succeeded", "failed")
 SOURCE_ARTIFACT_KINDS = ("markdown", "asset", "conversion_profile")
-DRAFT_STATUSES = ("draft", "outline_ready", "approved", "deleted")
+DRAFT_STATUSES = (
+    "draft",
+    "outline_ready",
+    "approved",
+    "generating",
+    "needs_attention",
+    "completed",
+    "failed",
+    "cancelled",
+    "deleted",
+)
 REVISION_ACTORS = ("user", "ai", "system")
 PROVIDER_CALL_STATUSES = ("succeeded", "failed", "rate_limited", "timed_out")
 TERMINAL_JOB_STATUSES = frozenset({"cancelled", "succeeded", "partially_succeeded", "failed"})
@@ -201,6 +211,7 @@ class GenerationSnapshot(Base):
         String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    approval_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
     intent_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     outline_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     template_version_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
@@ -233,6 +244,7 @@ class GenerationJob(Base):
         UniqueConstraint("id", "organization_id", name="uq_generation_jobs_id_organization"),
         CheckConstraint(f"status IN ({_values(JOB_STATUSES)})", name="valid_status"),
         CheckConstraint(f"stage IN ({_values(JOB_STAGES)})", name="valid_stage"),
+        CheckConstraint("processor IN ('fake', 'real')", name="valid_processor"),
         CheckConstraint("latest_seq >= 0", name="latest_seq_nonnegative"),
         CheckConstraint("attempt >= 0", name="attempt_nonnegative"),
         Index("ix_generation_jobs_org_created", "organization_id", "created_at"),
@@ -243,11 +255,13 @@ class GenerationJob(Base):
         String(ULID_LENGTH), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
     )
     snapshot_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    processor: Mapped[str] = mapped_column(String(16), nullable=False, default="fake")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="deck_planning")
     latest_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    publication_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     progress_completed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     progress_total: Mapped[int] = mapped_column(Integer, nullable=False)
     lease_owner: Mapped[str | None] = mapped_column(String(160))
@@ -289,7 +303,10 @@ class GenerationJobSlide(Base):
     organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     job_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     slide_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    outline_slide_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(300))
+    body: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     stage: Mapped[str] = mapped_column(String(32), nullable=False, default="content_generation")
@@ -298,6 +315,8 @@ class GenerationJobSlide(Base):
     failure_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="none")
     logical_task_key: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
     artifact_ref: Mapped[str | None] = mapped_column(String(320))
+    render_sha256: Mapped[str | None] = mapped_column(String(64))
+    qa_report: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     error_code: Mapped[str | None] = mapped_column(String(80))
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
@@ -986,6 +1005,195 @@ class OutlineApproval(Base):
     snapshot_input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     approved_by: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
     approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class GenerationArtifact(Base):
+    __tablename__ = "generation_artifacts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id", "organization_id"],
+            ["generation_jobs.id", "generation_jobs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_generation_artifacts_job_org",
+        ),
+        ForeignKeyConstraint(
+            ["artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_generation_artifacts_artifact_org",
+        ),
+        UniqueConstraint("artifact_id", name="uq_generation_artifacts_artifact"),
+        CheckConstraint("publication_version >= 1", name="publication_version_positive"),
+        Index("ix_generation_artifacts_job_kind", "job_id", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    job_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    slide_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    publication_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class GenerationPublication(Base):
+    __tablename__ = "generation_publications"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["job_id", "organization_id"],
+            ["generation_jobs.id", "generation_jobs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_generation_publications_job_org",
+        ),
+        ForeignKeyConstraint(
+            ["manifest_artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_generation_publications_manifest_org",
+        ),
+        UniqueConstraint("job_id", "version", name="uq_generation_publications_job_version"),
+        UniqueConstraint("manifest_artifact_id", name="uq_generation_publications_manifest"),
+        CheckConstraint("version >= 1", name="version_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    job_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    manifest_artifact_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    manifest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Presentation(Base):
+    __tablename__ = "presentations"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_presentations_id_organization"),
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_presentations_draft_org",
+        ),
+        ForeignKeyConstraint(
+            ["generation_job_id", "organization_id"],
+            ["generation_jobs.id", "generation_jobs.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_presentations_job_org",
+        ),
+        UniqueConstraint("generation_job_id", name="uq_presentations_generation_job"),
+        CheckConstraint("status IN ('ready', 'partial')", name="valid_status"),
+        Index("ix_presentations_org_updated", "organization_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    generation_job_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    current_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PresentationRevision(Base):
+    __tablename__ = "presentation_revisions"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_presentation_revisions_id_organization"),
+        ForeignKeyConstraint(
+            ["presentation_id", "organization_id"],
+            ["presentations.id", "presentations.organization_id"],
+            ondelete="CASCADE",
+            name="fk_presentation_revisions_presentation_org",
+        ),
+        ForeignKeyConstraint(
+            ["generation_job_id", "organization_id"],
+            ["generation_jobs.id", "generation_jobs.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_presentation_revisions_job_org",
+        ),
+        ForeignKeyConstraint(
+            ["manifest_artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_presentation_revisions_manifest_org",
+        ),
+        UniqueConstraint(
+            "presentation_id", "revision_number", name="uq_presentation_revisions_number"
+        ),
+        CheckConstraint("revision_number >= 1", name="revision_number_positive"),
+        Index("ix_presentation_revisions_presentation", "presentation_id", "revision_number"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    presentation_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    generation_job_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    manifest_artifact_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False, default="generation")
+    partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SlideVersion(Base):
+    __tablename__ = "slide_versions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["presentation_revision_id", "organization_id"],
+            ["presentation_revisions.id", "presentation_revisions.organization_id"],
+            ondelete="CASCADE",
+            name="fk_slide_versions_revision_org",
+        ),
+        ForeignKeyConstraint(
+            ["artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_slide_versions_artifact_org",
+        ),
+        UniqueConstraint(
+            "presentation_revision_id", "slide_id", name="uq_slide_versions_revision_slide"
+        ),
+        UniqueConstraint(
+            "presentation_revision_id", "position", name="uq_slide_versions_revision_position"
+        ),
+        CheckConstraint("status IN ('ready', 'failed')", name="valid_status"),
+        CheckConstraint("position >= 1", name="position_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    presentation_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    slide_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    outline_slide_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    body: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    artifact_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

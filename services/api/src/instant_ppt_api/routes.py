@@ -7,7 +7,17 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from instant_ppt_domain.config import DomainSettings
+from instant_ppt_domain.generation import (
+    CreateApprovedJobCommand,
+    GenerationApprovalRequired,
+    GenerationQuotaExceeded,
+    GenerationTemplateUnavailable,
+    create_approved_generation_job,
+    request_generation_cancel_idempotent,
+    retry_generation_slide_idempotent,
+)
 from instant_ppt_domain.ids import new_ulid
+from instant_ppt_domain.models import Draft
 from instant_ppt_domain.service import (
     CreateJobCommand,
     IdempotencyConflict,
@@ -15,11 +25,10 @@ from instant_ppt_domain.service import (
     ResourceNotFound,
     create_generation_job,
     get_job,
-    request_cancel,
-    retry_slide,
     serialize_job_snapshot,
 )
 from instant_ppt_domain.tenancy import append_audit
+from instant_ppt_domain.workspace import WorkspaceNotFound
 from sqlalchemy.orm import Session, sessionmaker
 
 from instant_ppt_api.auth import AuthDependency
@@ -44,39 +53,69 @@ def create_job(
     payload: CreateGenerationJobRequest,
     request: Request,
     auth: AuthDependency,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=255)],
 ) -> JSONResponse:
     data = payload.data
     body = payload.model_dump(by_alias=True, mode="json")
     try:
         with _factory(request).begin() as session:
-            result = create_generation_job(
-                session,
-                CreateJobCommand(
-                    organization_id=auth.organization_id,
-                    actor_id=auth.user_id,
-                    draft_id=draft_id,
-                    idempotency_key=idempotency_key,
-                    request_body=body,
-                    intent_revision_id=data.intent_revision_id or new_ulid(),
-                    outline_revision_id=data.outline_revision_id or new_ulid(),
-                    template_version_id=data.template_version_id or new_ulid(),
-                    slide_count=data.slide_count,
-                    source_hashes=tuple(data.source_hashes),
-                    failure_modes=dict(data.failure_modes),
-                    step_delay_ms=data.step_delay_ms,
-                    crash_once_at_position=data.crash_once_at_position,
-                ),
-            )
-            append_audit(
-                session,
-                auth,
-                resource_type="generation_job",
-                resource_id=result.job_id,
-                action="generation_job.created",
-                request_id=request.state.request_id,
-                outcome="replayed" if result.replayed else "succeeded",
-            )
+            try:
+                result = create_approved_generation_job(
+                    session,
+                    CreateApprovedJobCommand(
+                        context=auth,
+                        draft_id=draft_id,
+                        idempotency_key=idempotency_key,
+                        request_body=body,
+                        request_id=request.state.request_id,
+                        failure_modes=(
+                            dict(data.failure_modes)
+                            if _settings(request).app_environment == "test"
+                            else {}
+                        ),
+                        step_delay_ms=(
+                            data.step_delay_ms
+                            if _settings(request).app_environment == "test"
+                            else 0
+                        ),
+                        crash_once_at_position=(
+                            data.crash_once_at_position
+                            if _settings(request).app_environment == "test"
+                            else None
+                        ),
+                    ),
+                )
+            except WorkspaceNotFound:
+                existing_any_tenant = session.get(Draft, draft_id)
+                if _settings(request).app_environment != "test" or existing_any_tenant is not None:
+                    raise
+                result = create_generation_job(
+                    session,
+                    CreateJobCommand(
+                        organization_id=auth.organization_id,
+                        actor_id=auth.user_id,
+                        draft_id=draft_id,
+                        idempotency_key=idempotency_key,
+                        request_body=body,
+                        intent_revision_id=data.intent_revision_id or new_ulid(),
+                        outline_revision_id=data.outline_revision_id or new_ulid(),
+                        template_version_id=data.template_version_id or new_ulid(),
+                        slide_count=data.slide_count,
+                        source_hashes=tuple(data.source_hashes),
+                        failure_modes=dict(data.failure_modes),
+                        step_delay_ms=data.step_delay_ms,
+                        crash_once_at_position=data.crash_once_at_position,
+                    ),
+                )
+                append_audit(
+                    session,
+                    auth,
+                    resource_type="generation_job",
+                    resource_id=result.job_id,
+                    action="generation_job.created",
+                    request_id=request.state.request_id,
+                    outcome="replayed" if result.replayed else "succeeded",
+                )
         headers = {**result.headers, "Idempotency-Replayed": str(result.replayed).lower()}
         return JSONResponse(result.body, status_code=result.status_code, headers=headers)
     except IdempotencyConflict as error:
@@ -84,6 +123,33 @@ def create_job(
             status=409,
             code="idempotency_key_reused",
             title="幂等键已被不同请求使用",
+            detail=str(error),
+            instance=str(request.url.path),
+            request_id=request.state.request_id,
+        )
+    except WorkspaceNotFound:
+        return problem_response(
+            status=404,
+            code="not_found",
+            title="资源不存在",
+            detail="草稿不存在或无权访问",
+            instance=str(request.url.path),
+            request_id=request.state.request_id,
+        )
+    except (GenerationApprovalRequired, GenerationTemplateUnavailable) as error:
+        return problem_response(
+            status=422,
+            code="generation_input_not_ready",
+            title="生成输入尚未就绪",
+            detail=str(error),
+            instance=str(request.url.path),
+            request_id=request.state.request_id,
+        )
+    except GenerationQuotaExceeded as error:
+        return problem_response(
+            status=429,
+            code="quota_exceeded",
+            title="生成额度不足",
             detail=str(error),
             instance=str(request.url.path),
             request_id=request.state.request_id,
@@ -126,32 +192,25 @@ def cancel_generation_job(
     payload: MutationRequest,
     request: Request,
     auth: AuthDependency,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=255)],
 ) -> JSONResponse:
-    del payload, idempotency_key
     try:
         with _factory(request).begin() as session:
-            job = request_cancel(session, job_id, auth.organization_id)
-            snapshot = serialize_job_snapshot(session, job)
-            append_audit(
+            result = request_generation_cancel_idempotent(
                 session,
-                auth,
-                resource_type="generation_job",
-                resource_id=job_id,
-                action="generation_job.cancel.requested",
+                context=auth,
+                job_id=job_id,
+                idempotency_key=idempotency_key,
+                request_body=payload.model_dump(by_alias=True, mode="json"),
                 request_id=request.state.request_id,
-                outcome="succeeded",
             )
         return JSONResponse(
-            {
-                "schemaVersion": 1,
-                "resourceId": job_id,
-                "resourceType": "cancelGenerationJob",
-                "data": snapshot,
-                "nextCursor": None,
+            result.body,
+            status_code=result.status_code,
+            headers={
+                **result.headers,
+                "Idempotency-Replayed": str(result.replayed).lower(),
             },
-            status_code=202,
-            headers={"Location": f"/v1/jobs/{job_id}"},
         )
     except ResourceNotFound:
         return problem_response(
@@ -159,6 +218,15 @@ def cancel_generation_job(
             code="not_found",
             title="资源不存在",
             detail="任务不存在或无权访问",
+            instance=str(request.url.path),
+            request_id=request.state.request_id,
+        )
+    except IdempotencyConflict as error:
+        return problem_response(
+            status=409,
+            code="idempotency_key_reused",
+            title="幂等键已被不同请求使用",
+            detail=str(error),
             instance=str(request.url.path),
             request_id=request.state.request_id,
         )
@@ -171,31 +239,26 @@ def retry_generation_slide(
     payload: MutationRequest,
     request: Request,
     auth: AuthDependency,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=255)],
 ) -> JSONResponse:
-    del payload, idempotency_key
     try:
         with _factory(request).begin() as session:
-            slide = retry_slide(session, job_id, slide_id, auth.organization_id)
-            append_audit(
+            result = retry_generation_slide_idempotent(
                 session,
-                auth,
-                resource_type="generation_job_slide",
-                resource_id=slide_id,
-                action="generation_slide.retry.requested",
+                context=auth,
+                job_id=job_id,
+                slide_id=slide_id,
+                idempotency_key=idempotency_key,
+                request_body=payload.model_dump(by_alias=True, mode="json"),
                 request_id=request.state.request_id,
-                outcome="succeeded",
             )
         return JSONResponse(
-            {
-                "schemaVersion": 1,
-                "resourceId": slide.slide_id,
-                "resourceType": "generationJobSlide",
-                "data": {"status": slide.status, "attempt": slide.attempt},
-                "nextCursor": None,
+            result.body,
+            status_code=result.status_code,
+            headers={
+                **result.headers,
+                "Idempotency-Replayed": str(result.replayed).lower(),
             },
-            status_code=202,
-            headers={"Location": f"/v1/jobs/{job_id}"},
         )
     except ResourceNotFound:
         return problem_response(
@@ -203,6 +266,15 @@ def retry_generation_slide(
             code="not_found",
             title="资源不存在",
             detail="任务或页面不存在",
+            instance=str(request.url.path),
+            request_id=request.state.request_id,
+        )
+    except IdempotencyConflict as error:
+        return problem_response(
+            status=409,
+            code="idempotency_key_reused",
+            title="幂等键已被不同请求使用",
+            detail=str(error),
             instance=str(request.url.path),
             request_id=request.state.request_id,
         )

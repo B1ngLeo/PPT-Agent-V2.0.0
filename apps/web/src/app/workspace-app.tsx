@@ -115,6 +115,69 @@ type DraftSnapshot = {
   generationSummary: GenerationSummary | null;
 };
 
+type GenerationJobSlide = {
+  slideId: string;
+  outlineSlideId: string;
+  position: number;
+  title: string;
+  status: "pending" | "running" | "ready" | "failed" | "retrying" | "cancelled";
+  stage: "content_generation" | "rendering" | "qa";
+  attempt: number;
+  renderSha256: string | null;
+  errorCode: string | null;
+};
+
+type GenerationArtifact = {
+  artifactId: string;
+  artifactType: string;
+  slideId: string | null;
+  sha256: string;
+  mediaType: string;
+  sizeBytes: number;
+};
+
+type GenerationJob = {
+  jobId: string;
+  snapshotId: string;
+  draftId: string;
+  organizationId: string;
+  processor: "real" | "fake";
+  status:
+    | "queued"
+    | "running"
+    | "cancel_requested"
+    | "succeeded"
+    | "partially_succeeded"
+    | "failed"
+    | "cancelled";
+  stage:
+    | "deck_planning"
+    | "slide_generation"
+    | "deck_qa"
+    | "compiling"
+    | "package_qa"
+    | "publishing";
+  publicationVersion: number;
+  latestSeq: number;
+  terminal: boolean;
+  attempt: number;
+  progress: { completed: number; total: number };
+  slides: GenerationJobSlide[];
+  artifacts: GenerationArtifact[];
+  publication: {
+    publicationId: string;
+    manifestArtifactId: string;
+    manifestSha256: string;
+  } | null;
+  presentation: {
+    presentationId: string;
+    currentRevisionId: string;
+    status: "ready" | "partial";
+  } | null;
+};
+
+type StreamState = "connecting" | "live" | "reconnecting" | "closed";
+
 type SaveState = "idle" | "saving" | "saved" | "failed";
 type FailedSaveKind = "intent" | "outline" | null;
 
@@ -210,8 +273,76 @@ function saveLabel(state: SaveState): string {
   return "所有修改都会形成版本";
 }
 
+function generationStageLabel(stage: GenerationJob["stage"]): string {
+  const labels: Record<GenerationJob["stage"], string> = {
+    deck_planning: "构建生成计划",
+    slide_generation: "逐页生成与检查",
+    deck_qa: "整稿质量检查",
+    compiling: "编译原生 PPTX",
+    package_qa: "验证可编辑包",
+    publishing: "发布不可变工件",
+  };
+  return labels[stage];
+}
+
+function generationStatusLabel(status: GenerationJob["status"]): string {
+  const labels: Record<GenerationJob["status"], string> = {
+    queued: "已排队",
+    running: "生成中",
+    cancel_requested: "正在取消",
+    succeeded: "生成完成",
+    partially_succeeded: "部分完成",
+    failed: "生成失败",
+    cancelled: "已取消",
+  };
+  return labels[status];
+}
+
+async function streamGenerationEvents(
+  jobId: string,
+  signal: AbortSignal,
+  lastEventId: string,
+  onEvent: (eventId: string) => void,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/v1/jobs/${jobId}/events`, {
+    headers: {
+      ...authHeaders(),
+      Accept: "text/event-stream",
+      ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
+    },
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`任务事件连接失败（${response.status}）`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (!signal.aborted) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder
+      .decode(chunk.value, { stream: true })
+      .replace(/\r\n/g, "\n");
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const block = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const idLine = block.split("\n").find((line) => line.startsWith("id:"));
+      const dataLine = block
+        .split("\n")
+        .find((line) => line.startsWith("data:"));
+      if (idLine && dataLine) onEvent(idLine.slice(3).trim());
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+}
+
 export function WorkspaceApp() {
-  const [view, setView] = useState<"loading" | "home" | "workspace">("loading");
+  const [view, setView] = useState<
+    "loading" | "home" | "workspace" | "monitor"
+  >("loading");
   const [templates, setTemplates] = useState<TemplateVersion[]>([]);
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -223,6 +354,10 @@ export function WorkspaceApp() {
   const [intent, setIntent] = useState<IntentRevision | null>(null);
   const [outline, setOutline] = useState<OutlineRevision | null>(null);
   const [summary, setSummary] = useState<GenerationSummary | null>(null);
+  const [generationJob, setGenerationJob] = useState<GenerationJob | null>(
+    null,
+  );
+  const [streamState, setStreamState] = useState<StreamState>("closed");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [failedSaveKind, setFailedSaveKind] = useState<FailedSaveKind>(null);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
@@ -243,6 +378,8 @@ export function WorkspaceApp() {
   const outlineInFlight = useRef(false);
   const intentEditToken = useRef(0);
   const outlineEditToken = useRef(0);
+  const lastEventId = useRef("");
+  const jobRefreshInFlight = useRef(false);
 
   useEffect(() => {
     const tablet = window.matchMedia(
@@ -263,6 +400,40 @@ export function WorkspaceApp() {
     setHistory(response.data.items);
   }, []);
 
+  const loadGenerationJob = useCallback(
+    async (jobId: string, push = false, showLoading = false) => {
+      if (jobRefreshInFlight.current) return;
+      jobRefreshInFlight.current = true;
+      if (showLoading) setView("loading");
+      try {
+        const response = await api<GenerationJob>(`/v1/jobs/${jobId}`);
+        setGenerationJob(response.data);
+        if (!lastEventId.current) {
+          lastEventId.current = String(response.data.latestSeq);
+        }
+        setView("monitor");
+        if (push) {
+          window.history.pushState(
+            {},
+            "",
+            `/?draft=${response.data.draftId}&job=${response.data.jobId}`,
+          );
+        }
+        if (response.data.terminal) {
+          setStreamState("closed");
+          const usageResponse = await api<Usage>("/v1/me/usage");
+          setUsage(usageResponse.data);
+        }
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "任务恢复失败");
+        if (showLoading) setView("home");
+      } finally {
+        jobRefreshInFlight.current = false;
+      }
+    },
+    [],
+  );
+
   const openDraft = useCallback(async (draftId: string, push = true) => {
     setView("loading");
     setError(null);
@@ -270,6 +441,9 @@ export function WorkspaceApp() {
       const response = await api<DraftSnapshot>(`/v1/drafts/${draftId}`);
       const next = response.data;
       setDraft(next);
+      setGenerationJob(null);
+      setStreamState("closed");
+      lastEventId.current = "";
       setIntent(next.currentIntent);
       setOutline(next.currentOutline);
       setSummary(next.generationSummary);
@@ -319,10 +493,11 @@ export function WorkspaceApp() {
         setEntitlement(entitlementResponse.data);
         setUsage(usageResponse.data);
         await refreshHistory();
-        const draftId = new URLSearchParams(window.location.search).get(
-          "draft",
-        );
-        if (draftId) await openDraft(draftId, false);
+        const parameters = new URLSearchParams(window.location.search);
+        const jobId = parameters.get("job");
+        const draftId = parameters.get("draft");
+        if (jobId) await loadGenerationJob(jobId, false, false);
+        else if (draftId) await openDraft(draftId, false);
         else setView("home");
       } catch (reason) {
         if (!active) return;
@@ -334,7 +509,50 @@ export function WorkspaceApp() {
     return () => {
       active = false;
     };
-  }, [openDraft, refreshHistory]);
+  }, [loadGenerationJob, openDraft, refreshHistory]);
+
+  const generationJobId = generationJob?.jobId;
+  const generationJobTerminal = generationJob?.terminal;
+
+  useEffect(() => {
+    if (view !== "monitor" || !generationJobId || generationJobTerminal) return;
+    const activeJobId = generationJobId;
+    const controller = new AbortController();
+    let reconnectAttempt = 0;
+    let active = true;
+    async function connect() {
+      while (active && !controller.signal.aborted) {
+        setStreamState(reconnectAttempt === 0 ? "connecting" : "reconnecting");
+        try {
+          await streamGenerationEvents(
+            activeJobId,
+            controller.signal,
+            lastEventId.current,
+            (eventId) => {
+              lastEventId.current = eventId;
+              setStreamState("live");
+              void loadGenerationJob(activeJobId);
+            },
+          );
+          if (!controller.signal.aborted) reconnectAttempt += 1;
+        } catch (reason) {
+          if (controller.signal.aborted) return;
+          reconnectAttempt += 1;
+          setError(
+            reason instanceof Error ? reason.message : "任务事件连接已中断",
+          );
+        }
+        if (!active || controller.signal.aborted) return;
+        const delay = Math.min(1000 * 2 ** (reconnectAttempt - 1), 8000);
+        await new Promise<void>((resolve) => window.setTimeout(resolve, delay));
+      }
+    }
+    void connect();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [generationJobId, generationJobTerminal, loadGenerationJob, view]);
 
   useEffect(() => {
     const dialog = historyDialogRef.current;
@@ -688,8 +906,99 @@ export function WorkspaceApp() {
     }
   };
 
+  const startGeneration = async () => {
+    if (
+      !draft ||
+      !summary ||
+      draft.currentOutlineRevisionId !== summary.outlineRevisionId ||
+      saveState === "saving"
+    )
+      return;
+    setBusyMessage("正在创建真实生成任务…");
+    setError(null);
+    try {
+      const response = await api<GenerationJob>(
+        `/v1/drafts/${draft.draftId}/generation-jobs`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation({}),
+        },
+      );
+      setGenerationJob(response.data);
+      lastEventId.current = String(response.data.latestSeq);
+      setStreamState("connecting");
+      setView("monitor");
+      window.history.pushState(
+        {},
+        "",
+        `/?draft=${draft.draftId}&job=${response.data.jobId}`,
+      );
+      await refreshHistory();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "生成任务创建失败");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
+  const cancelGeneration = async () => {
+    if (!generationJob || generationJob.terminal) return;
+    setBusyMessage("正在请求取消…");
+    setError(null);
+    try {
+      const response = await api<GenerationJob>(
+        `/v1/jobs/${generationJob.jobId}:cancel`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation({}),
+        },
+      );
+      setGenerationJob(response.data);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "取消请求失败");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
+  const retryGenerationSlide = async (slideId: string) => {
+    if (!generationJob) return;
+    setBusyMessage("正在重试失败页面…");
+    setError(null);
+    try {
+      await api<{ status: string; attempt: number }>(
+        `/v1/jobs/${generationJob.jobId}/slides/${slideId}:retry`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: mutation({}),
+        },
+      );
+      lastEventId.current = "";
+      await loadGenerationJob(generationJob.jobId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "页面重试失败");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
   const returnHome = () => {
     setView("home");
+    setGenerationJob(null);
+    setStreamState("closed");
+    lastEventId.current = "";
     window.history.pushState({}, "", "/");
     void refreshHistory();
   };
@@ -743,7 +1052,225 @@ export function WorkspaceApp() {
         </div>
       </header>
 
-      {view === "home" ? (
+      {view === "monitor" && generationJob ? (
+        <div className="generation-monitor">
+          <div className="monitor-topbar">
+            <button
+              className="quiet-button"
+              type="button"
+              onClick={() => void openDraft(generationJob.draftId)}
+            >
+              ← 返回大纲
+            </button>
+            <div>
+              <strong>真实生成任务 · {generationJob.jobId.slice(-6)}</strong>
+              <span
+                className={`stream-state stream-${streamState}`}
+                aria-live="polite"
+              >
+                <i aria-hidden="true" />
+                {streamState === "live"
+                  ? "实时事件已连接"
+                  : streamState === "closed"
+                    ? "任务状态已固定"
+                    : streamState === "reconnecting"
+                      ? "事件重连中"
+                      : "正在连接事件"}
+              </span>
+            </div>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={generationJob.terminal || Boolean(busyMessage)}
+              onClick={() => void cancelGeneration()}
+            >
+              {generationJob.status === "cancel_requested"
+                ? "正在取消"
+                : "取消任务"}
+            </button>
+          </div>
+
+          <ol className="stepper monitor-stepper" aria-label="生成步骤">
+            {[
+              ["01", "生成计划", "deck_planning"],
+              ["02", "逐页生成", "slide_generation"],
+              ["03", "整稿检查", "deck_qa"],
+              ["04", "编译与包检", "compiling"],
+              ["05", "不可变发布", "publishing"],
+            ].map(([number, label, stage], index, stages) => {
+              const currentIndex = stages.findIndex(
+                ([, , candidate]) => candidate === generationJob.stage,
+              );
+              const packageStage = generationJob.stage === "package_qa";
+              const effectiveIndex = packageStage ? 3 : currentIndex;
+              const complete = generationJob.terminal || index < effectiveIndex;
+              const active =
+                !generationJob.terminal && index === effectiveIndex;
+              return (
+                <li
+                  key={stage}
+                  className={complete ? "done" : active ? "active" : ""}
+                >
+                  <b>{number}</b>
+                  <span>{label}</span>
+                </li>
+              );
+            })}
+          </ol>
+
+          {error ? (
+            <div className="error-banner" role="alert">
+              <span>{error}</span>
+              <button type="button" onClick={() => setError(null)}>
+                关闭
+              </button>
+            </div>
+          ) : null}
+
+          <section className="monitor-hero" aria-labelledby="monitor-title">
+            <div className="monitor-status-copy">
+              <p className="eyebrow">DURABLE GENERATION · NATIVE MODE</p>
+              <h1 id="monitor-title">
+                {generationStatusLabel(generationJob.status)}
+              </h1>
+              <p aria-live="polite">
+                {generationJob.terminal
+                  ? generationJob.status === "succeeded"
+                    ? "全部页面、原生 PPTX 与不可变清单已经发布。"
+                    : generationJob.status === "partially_succeeded"
+                      ? "成功页面已发布；失败槽位保留，可单页重试。"
+                      : generationJob.status === "cancelled"
+                        ? "任务已安全终止，未创建演示文稿。"
+                        : "任务未发布演示文稿，可返回大纲检查输入。"
+                  : generationStageLabel(generationJob.stage)}
+              </p>
+              <div className="progress-copy">
+                <span>
+                  {generationJob.progress.completed} /{" "}
+                  {generationJob.progress.total} 页就绪
+                </span>
+                <span>任务尝试 {generationJob.attempt}</span>
+              </div>
+              <progress
+                max={generationJob.progress.total}
+                value={generationJob.progress.completed}
+                aria-label="页面生成进度"
+              />
+            </div>
+            <dl className="monitor-facts">
+              <div>
+                <dt>Snapshot</dt>
+                <dd>{generationJob.snapshotId.slice(-10)}</dd>
+              </div>
+              <div>
+                <dt>事件序号</dt>
+                <dd>{generationJob.latestSeq}</dd>
+              </div>
+              <div>
+                <dt>发布版本</dt>
+                <dd>v{generationJob.publicationVersion}</dd>
+              </div>
+              <div>
+                <dt>处理器</dt>
+                <dd>
+                  {generationJob.processor === "real"
+                    ? "真实 Worker"
+                    : "Fixture"}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section
+            className="monitor-slides"
+            aria-labelledby="monitor-slides-title"
+          >
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">STABLE SLIDE IDS</p>
+                <h2 id="monitor-slides-title">逐页状态</h2>
+              </div>
+              <p>刷新或重试不会改变页面身份；成功页面不会重复生成。</p>
+            </div>
+            <div className="generation-slide-grid">
+              {generationJob.slides.map((slide) => (
+                <article
+                  className={`generation-slide status-${slide.status}`}
+                  key={slide.slideId}
+                >
+                  <div className="generation-slide-head">
+                    <span>{String(slide.position).padStart(2, "0")}</span>
+                    <strong>
+                      {slide.status === "ready" ? "已就绪" : slide.status}
+                    </strong>
+                  </div>
+                  <h3>{slide.title}</h3>
+                  <p>
+                    {slide.status === "running" || slide.status === "retrying"
+                      ? slide.stage === "content_generation"
+                        ? "生成内容"
+                        : slide.stage === "rendering"
+                          ? "渲染 SVG"
+                          : "逐页质量检查"
+                      : slide.status === "failed"
+                        ? `错误：${slide.errorCode ?? "slide_failed"}`
+                        : slide.status === "ready"
+                          ? `渲染指纹 ${slide.renderSha256?.slice(0, 12) ?? "待发布"}…`
+                          : "等待 Worker"}
+                  </p>
+                  <small>
+                    slide · {slide.slideId.slice(-8)} · attempt {slide.attempt}
+                  </small>
+                  {slide.status === "failed" && slide.attempt < 2 ? (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={Boolean(busyMessage)}
+                      onClick={() => void retryGenerationSlide(slide.slideId)}
+                    >
+                      只重试这一页
+                    </button>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {generationJob.presentation ? (
+            <section
+              className="publication-card"
+              aria-labelledby="publication-title"
+            >
+              <div>
+                <p className="eyebrow">IMMUTABLE GENERATION PUBLICATION</p>
+                <h2 id="publication-title">
+                  {generationJob.presentation.status === "ready"
+                    ? "原生基线已发布"
+                    : "部分基线已发布"}
+                </h2>
+                <p>
+                  修订 {generationJob.presentation.currentRevisionId.slice(-8)}{" "}
+                  · 清单{" "}
+                  {generationJob.publication?.manifestSha256.slice(0, 14)}…
+                </p>
+              </div>
+              <div className="publication-artifacts">
+                {generationJob.artifacts
+                  .filter((artifact) => artifact.slideId === null)
+                  .map((artifact) => (
+                    <span key={artifact.artifactId}>
+                      {artifact.artifactType.replace("generation_", "")} ·{" "}
+                      {(artifact.sizeBytes / 1024).toFixed(1)} KB
+                    </span>
+                  ))}
+              </div>
+              <small>
+                此处仅展示 G06 生成工件；编辑与最终导出将在 G07 开放。
+              </small>
+            </section>
+          ) : null}
+        </div>
+      ) : view === "home" ? (
         <div className="home-content">
           <section className="creation-hero" aria-labelledby="home-title">
             <div className="creation-copy">
@@ -949,10 +1476,22 @@ export function WorkspaceApp() {
                 ) : (
                   <p className="revision-ok">当前内容与已批准版本一致。</p>
                 )}
-                <button className="primary-button" type="button" disabled>
-                  开始生成（G06 开放）
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={
+                    draft.currentOutlineRevisionId !==
+                      summary.outlineRevisionId ||
+                    saveState === "saving" ||
+                    Boolean(busyMessage)
+                  }
+                  onClick={() => void startGeneration()}
+                >
+                  {busyMessage ?? "开始真实生成"}
                 </button>
-                <small>当前明确停在确认边界，未创建 generation job。</small>
+                <small>
+                  将创建可恢复的真实 Worker 任务，并锁定精确批准版本。
+                </small>
               </div>
             </section>
           ) : null}

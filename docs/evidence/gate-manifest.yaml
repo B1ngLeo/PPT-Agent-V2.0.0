@@ -148,13 +148,26 @@ gates:
   - id: GATE-G06-GENERATION
     goal: G06
     required: true
-    status: pending
+    status: passed
     ownerRole: engineering
-    approver: null
-    checkedAt: null
-    targetVersions: []
-    evidence: []
-    notes: Generation, publish, partial, retry, cancellation and recovery evidence.
+    approver: automated:g06-generation-publication-matrix
+    checkedAt: 2026-08-16T15:46:00+08:00
+    targetVersions:
+      [
+        ppt-master-v4.7.0-e8323bfa,
+        postgresql-17.6,
+        redis-7.4.2,
+        celery-5.6.3,
+        nextjs-16.2.9,
+      ]
+    evidence:
+      [
+        "docs/design/g06-real-generation-publication.md",
+        "docs/evidence/g06-real-generation-publication.md",
+        "docs/evidence/g06-browser-e2e.json",
+        "docs/evidence/g06-generation-junit.xml",
+      ]
+    notes: Exact snapshot, real native Worker, immutable manifest publication, OS process death, Redis restart/SSE replay, upload replay, partial/retry reuse, cancellation race, quota, tenant hiding, long-CJK fidelity, and production browser recovery all passed.
     waiver: null
   - id: GATE-G07-USER-CLOSURE
     goal: G07

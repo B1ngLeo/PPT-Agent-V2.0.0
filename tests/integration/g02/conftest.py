@@ -81,6 +81,8 @@ def client(
         sse_heartbeat_seconds=0.1,
         outbox_poll_seconds=0.05,
         worker_lease_seconds=30,
+        app_environment="test",
+        auth_mode="local",
     )
     with TestClient(create_app(settings=settings, session_factory=session_factory)) as test_client:
         yield test_client

@@ -5,10 +5,10 @@
 ## 当前 Goal
 
 - Goal：G06 / 真实生成、监控与工件发布
-- 状态：in_progress
-- 当前检查点：G05 CP-05A/B/C 与 required Gate 完成，开始 G06 真实逐页生成、监控、取消、partial/retry 与不可变发布
-- 已验证：G00–G05 complete；P0 Gate passed；G01 required Gate 3/3、G02–G05 各 1/1 均通过且无 waiver；G05 Provider 7、真实 PostgreSQL 集成 4、Web 生产构建、安全与三档浏览器 E2E 通过
-- 剩余工作：G06 真实生成、G07 编辑导出闭环、G08 发布工程与最终用户 E2E
+- 状态：complete
+- 当前检查点：G06 Gate 与整仓回归通过，准备提交并进入 G07
+- 已验证：根 `pnpm verify` 完整通过；G00–G06 required Gate 全部 passed；G06 独立集成 7/7、长中文 SVG/PPTX 文本完整性、生产 Web 与真实浏览器 8/8 发布/刷新恢复通过
+- 剩余工作：G07 编辑导出与历史闭环，G08 发布工程与最终用户 E2E
 - 决策/偏离：G05 P1 规划默认走 deterministic Fake Provider；Kimi/OpenAI 适配器仅保留 Worker 侧服务端配置。2026-08-16 官方 Kimi 列表尚未证明 `kimi-k3`、官方 OpenAI Images 列表尚未证明 `gpt-image-2`，因此不宣称真实生产集成完成；仍按已冻结 PLAN 保留精确模型名并将真实 smoke 设为密钥与供应商可用性双条件
 - 阻塞：无
 - 恢复记录：应用内浏览器的 Tab/Enter 注入连续 5 次不产生事件，已按防循环规则停止并记录；产品使用原生控件，键盘文本焦点、焦点恢复及完整用户旅程通过，无产品阻塞
@@ -56,10 +56,15 @@
 - G05 Workspace API 模块：实现草稿创建/刷新/ETag 自动保存/软删除/历史、意图 AI 推断与人工 revision、大纲生成/优化/人工 revision/list/get、明确 revision 批准摘要和模板 catalog；4 组集成场景覆盖幂等、刷新、跨租户、并发 412、稳定 slide ID、撤销/恢复、批准后继续修改和图片调用 0，全部通过。
 - G05 Web 模块：完成 API 驱动首页与工作台、Intent/Outline 800ms revision 自动保存、失败稳定态/显式重试、增删移动、撤销恢复、AI 真实 revision、历史对话框与批准摘要；1440/900/390 三档无横向溢出，模板 3/2/1 列、平板双列幻灯片与可开合助手抽屉、移动横向步骤及 44px 触控目标通过。
 - G05 Gate 完成：7 项 Provider、4 项 PostgreSQL 集成、不可变 trigger、冲突/租户/幂等/刷新、clean console 浏览器旅程、秘密/思维链/图片 0 边界均固化证据；`GATE-G05-PROVIDER-DATA` 1/1 自动通过，无 waiver。外部密钥缺失，按条件未运行真实 smoke，且不宣称冻结模型名的官方生产可用性。
+- G06 Persistence 模块：新增 approved-input generation snapshot、真实 job processor、逐页内容/QA 字段、不可变 generation artifact/publication、presentation/revision/slide-version 与使用量结算模型；发布身份防篡改 trigger 已完成，迁移 `G05 → G06 → G05 → G06`、Ruff 与 Alembic drift 检查通过。
+- G06 Worker/发布模块：批准快照经稳定 slideId 逐页 author/render/QA，再由唯一 G01 engine-adapter 执行整稿 compile/package QA；确定性 source bundle/PPTX/preview/QA/slide SVG/manifest 先上传后以单事务发布，partial retry 复用已通过工件且不重复扣费。
+- G06 恢复模块：7/7 真实 PostgreSQL/MinIO/Redis/引擎矩阵通过，覆盖 Worker 子进程 `os._exit(73)`、租约接管、上传后崩溃、重复投递、Redis 容器重启与 SSE 回放、partial/单页 retry、取消与 publish 竞态、配额和跨租户隐藏。
+- G06 Web 模块：完成真实任务启动、URL 刷新恢复、fetch SSE + Last-Event-ID/有界重连、五阶段/逐页稳定身份/取消/重试/发布物监控；生产 Next.js 构建真实浏览器完成 8/8、publication v1、13 工件、1 Presentation revision 与 images 0。
+- G06 内容完整性模块：真实生产旅程发现长中文正文被早期 SVG 截断并被 PPTX package QA 正确拒绝；改为按 East Asian Width 动态字号且保留完整批准文本，SVG QA、可编辑 PPTX 文本回归及新鲜 8 页任务首次尝试全部通过。
 
 ## 进行中事项
 
-- G06：复用 G01 engine-adapter、G02 orchestrator 和 G05 approved revision，梳理 generation snapshot、逐页状态、SSE、取消、partial/retry 与 immutable manifest 发布边界。
+- 无 G06 未完成项；下一顺序 Goal 为 G07。
 
 ## 问题及解决方案
 
@@ -111,6 +116,12 @@
 | closed `details` 在桌面有布局尺寸但内容未实际绘制                                     |        1 | 以受控 open 状态保证非平板始终展开，平板保留可开合原生抽屉；桌面截图、平板开合和移动布局复验通过。                                                                                               |
 | Provider 名称常量误落在图片适配器类末尾                                               |        1 | 为 Kimi 与 OpenAI Image 适配器分别声明 `kimi` / `openai-image`，并新增合同断言，7 项 Provider 测试通过。                                                                                         |
 | 应用内浏览器 Tab/Enter 键注入不产生焦点移动或激活事件                                 |        5 | 按防循环规则停止继续尝试并固化 harness limitation；原生 button/link、label、键盘文本输入、dialog 焦点恢复、44px 目标与完整真实点击旅程作为补偿证据，clean console 为 0。                         |
+| G06 迁移 drop check constraint 被 Alembic naming convention 再次拼接表名前缀          |        1 | 对既有约束名使用 `op.f(...)` 标记为已格式化名称；迁移双向演练与 schema drift 检查通过。                                                                                                          |
+| G06 SSE effect 随每次 job 对象刷新重建连接                                            |        1 | effect 只绑定稳定 job ID 与 terminal 标志；普通状态刷新保持同一事件流。                                                                                                                          |
+| G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                      |        1 | 独立矩阵前关闭套件外运行时；真实进程退出、过期租约接管和单次发布/计费随后通过。                                                                                                                  |
+| G06 生产 Worker 消费到数据库清理前遗留 broker 消息并记录异常                          |        1 | 真实任务包装器将不存在的旧 job 收敛为幂等 `noop_missing`；有效任务仍保持严格租约与重试。                                                                                                         |
+| 长中文正文在 SVG 作者层被截断，PPTX package QA 拒绝批准文本丢失                       |        2 | 第 1 次仅修正逐页封面布局；第 2 次定位整稿可编辑文本缺失，改为 East Asian Width 动态字号并保留全文，SVG/PPTX 回归与 8 页真实发布通过。                                                           |
+| G06 应用内浏览器不提供 viewport resize 或历史 console 收集                            |        1 | 不宣称 G06 移动浏览器/零历史 console；记录能力限制，以生产构建、语义 DOM、空 terminal alert、显式响应式规则及 G05 三档 shell 矩阵补偿。                                                          |
 
 ## Goal 历史
 
@@ -164,3 +175,11 @@
 - 不变量：revision/version/approval 不可修改；outlineSlideId 稳定；undo/redo/AI 只追加 revision；批准绑定精确输入 hash；P1 图片调用为 0；G06 前 generation job 为 0。
 - Gate：`GATE-G05-PROVIDER-DATA` automated 1/1 passed，无 waiver；外部密钥缺失使真实 smoke 不适用，冻结模型名的外部可用性未被虚报。
 - 证据：`docs/design/g05-draft-workspace.md`、`docs/evidence/g05-draft-workspace.md`、`docs/evidence/g05-browser-e2e.json`、`docs/evidence/security/g05-provider-results.json`、`docs/evidence/g05-workspace-junit.xml`。
+
+### G06 / 真实生成、监控与工件发布 — complete
+
+- 产物：approved generation snapshot、真实逐页 Worker、候选/整稿/package QA、确定性私有对象、immutable generation manifest/publication、Presentation/revision/slide version、配额预占结算、取消/partial/retry、SSE 监控和响应式任务 UI。
+- 验证：21 项 API/domain、18 项 Worker、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 7/7、10/10 source/render 金样本、生产 Web、真实浏览器 8 页发布/刷新、全安全与链接矩阵通过；根 `pnpm verify` 与 G00–G06 Gate 全部通过。
+- 不变量：批准后输入不可变；PostgreSQL 为状态/事件真相；Redis 可重启；Worker kill/重投不重复发布或扣费；成功页重试复用；取消不会半发布；所有 published artifact 有 hash/版本/manifest；失败/取消无可用页不创建 Presentation；G07 前无编辑/最终导出。
+- Gate：`GATE-G06-GENERATION` automated 1/1 passed，无 waiver。
+- 证据：`docs/design/g06-real-generation-publication.md`、`docs/evidence/g06-real-generation-publication.md`、`docs/evidence/g06-browser-e2e.json`、`docs/evidence/g06-generation-junit.xml`。

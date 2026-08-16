@@ -54,7 +54,11 @@ def enqueue_expired_job_recoveries(
                     aggregate_type="generation_job",
                     aggregate_id=job.id,
                     dedupe_key=dedupe_key,
-                    destination="instant_ppt.process_fake_job",
+                    destination=(
+                        "instant_ppt.process_generation_job"
+                        if job.processor == "real"
+                        else "instant_ppt.process_fake_job"
+                    ),
                     payload={
                         "jobId": job.id,
                         "organizationId": job.organization_id,

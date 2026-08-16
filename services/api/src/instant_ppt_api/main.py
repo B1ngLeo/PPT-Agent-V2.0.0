@@ -51,6 +51,7 @@ def create_app(
             "Content-Type",
             "Idempotency-Key",
             "If-Match",
+            "Last-Event-ID",
             "X-Dev-User-Email",
             "X-Dev-User-Name",
             "X-Dev-User-Subject",

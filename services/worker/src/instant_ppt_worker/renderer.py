@@ -18,7 +18,7 @@ from instant_ppt_worker.package_qa import inspect_pptx, write_package_report
 from instant_ppt_worker.paths import ENGINE_SCRIPTS
 from instant_ppt_worker.settings import WorkerContract
 from instant_ppt_worker.source_parser import deterministic_ulid
-from instant_ppt_worker.svg_author import author_deck
+from instant_ppt_worker.svg_author import author_deck, author_slide
 
 
 def _normalize_pptx_zip(path: Path) -> None:
@@ -61,6 +61,41 @@ def _run(command: list[str], code: str, timeout: int = 180) -> subprocess.Comple
         message = (result.stderr or result.stdout or "engine command failed").strip()
         raise AdapterError(code, message[-2000:])
     return result
+
+
+def render_slide_candidate(
+    deck: DeckPlan,
+    output_dir: Path,
+    *,
+    visual_index: int,
+) -> dict[str, Path]:
+    """Author and upstream-QA one slide without compiling a temporary PPTX."""
+
+    if len(deck.slides) != 1:
+        raise AdapterError(RENDER_FAILED, "slide candidate requires exactly one DeckPlan slide")
+    svg_dir = output_dir / "svg_output"
+    validation_dir = output_dir / "validation"
+    svg_dir.mkdir(parents=True, exist_ok=True)
+    validation_dir.mkdir(parents=True, exist_ok=True)
+    svg_path = svg_dir / "slide_01.svg"
+    author_slide(deck.slides[0], deck.title, visual_index, svg_path)
+    qa_path = validation_dir / "svg_quality_report.json"
+    _run(
+        [
+            sys.executable,
+            str(ENGINE_SCRIPTS / "svg_quality_checker.py"),
+            str(output_dir),
+            "--format",
+            "ppt169",
+            "--stage",
+            "final",
+            "--json-output",
+            str(qa_path),
+            "--quick-generate",
+        ],
+        QA_FAILED,
+    )
+    return {"svg": svg_path, "qa": qa_path}
 
 
 def render_deck(

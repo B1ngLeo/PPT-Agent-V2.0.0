@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "goal": "G06",
+  "generatedAt": "2026-08-16T15:46:00+08:00",
+  "result": "passed",
+  "browser": "Codex in-app Chromium",
+  "server": "Next.js 16.2.9 production build",
+  "journey": {
+    "topic": "G06 长中文内容完整保留与刷新恢复发布验证",
+    "draftId": "01M04RHYKJ85BYWS680QFTME7S",
+    "jobId": "01M04RJ1YWDJR6CDJ3VX4QZ3QS",
+    "approvalToRealJob": true,
+    "runningMonitorReloadRecovered": true,
+    "terminalMonitorReloadRecovered": true,
+    "sameUrlAfterReload": true,
+    "status": "succeeded",
+    "stage": "publishing",
+    "readySlides": 8,
+    "totalSlides": 8,
+    "latestEventSeq": 40,
+    "publicationVersion": 1,
+    "processor": "real",
+    "taskAttempt": 1
+  },
+  "publication": {
+    "generationArtifactCount": 13,
+    "publicationCount": 1,
+    "presentationRevisionCount": 1,
+    "slideVersionCount": 8,
+    "coreArtifactKindsVisible": [
+      "generation_baseline_pptx",
+      "generation_manifest",
+      "generation_preview_svg",
+      "generation_qa_report",
+      "generation_source_bundle"
+    ],
+    "usage": {
+      "slides": 8,
+      "images": 0,
+      "modelTokens": 0,
+      "workerSeconds": 9
+    }
+  },
+  "interaction": {
+    "stableSlideIdsVisible": true,
+    "perSlideRenderHashesVisible": true,
+    "connectionStateVisibleWhileRunning": true,
+    "emptyAlertAfterTerminalReload": true,
+    "g07EditingAndExportBoundaryVisible": true
+  },
+  "contentFidelityRegression": {
+    "detectedByProductionJourney": true,
+    "initialSymptom": "long CJK cover content passed slide rendering only after retry but package QA rejected truncated approved body text",
+    "resolution": "East-Asian-width-aware dynamic font sizing preserves exact approved title and body text",
+    "svgQaRegressionPassed": true,
+    "pptxEditableTextRegressionPassed": true,
+    "freshEightSlideJourneyPassedOnAttemptOne": true
+  },
+  "runtimeLimitations": [
+    "The in-app browser runtime does not expose viewport resizing or historical console collection. This record does not claim a G06 mobile browser run or zero historical console messages; the production build, semantic DOM, empty terminal alert, explicit responsive CSS, and the established G05 three-viewport shell matrix are the compensating checks."
+  ]
+}

@@ -13,13 +13,17 @@ from sqlalchemy.orm import Session
 
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
+    Artifact,
+    GenerationArtifact,
     GenerationJob,
     GenerationJobSlide,
+    GenerationPublication,
     GenerationSnapshot,
     IdempotencyRecord,
     JobEvent,
     Organization,
     OutboxEvent,
+    Presentation,
     PublishedFixtureManifest,
     ServiceActor,
     UsageReservation,
@@ -174,18 +178,75 @@ def serialize_event(event: JobEvent) -> dict[str, Any]:
 
 
 def serialize_job_snapshot(session: Session, job: GenerationJob) -> dict[str, Any]:
+    generation_snapshot = session.get(GenerationSnapshot, job.snapshot_id)
+    snapshot_payload = generation_snapshot.payload if generation_snapshot is not None else {}
     slides = session.scalars(
         select(GenerationJobSlide)
         .where(GenerationJobSlide.job_id == job.id)
         .order_by(GenerationJobSlide.position)
     ).all()
+    publication = session.scalar(
+        select(GenerationPublication)
+        .where(GenerationPublication.job_id == job.id)
+        .order_by(GenerationPublication.version.desc())
+        .limit(1)
+    )
+    presentation = session.scalar(
+        select(Presentation).where(Presentation.generation_job_id == job.id)
+    )
+    generation_artifacts = list(
+        session.execute(
+            select(GenerationArtifact, Artifact)
+            .join(Artifact, Artifact.id == GenerationArtifact.artifact_id)
+            .where(
+                GenerationArtifact.job_id == job.id,
+                GenerationArtifact.publication_version == job.publication_version,
+            )
+            .order_by(GenerationArtifact.kind, GenerationArtifact.slide_id)
+        )
+    )
     return {
         "schemaVersion": 1,
         "jobId": job.id,
         "snapshotId": job.snapshot_id,
+        "draftId": snapshot_payload.get("draftId"),
         "organizationId": job.organization_id,
+        "processor": job.processor,
         "status": job.status,
         "stage": job.stage,
+        "mode": snapshot_payload.get("modeId", "native"),
+        "templateVersionId": snapshot_payload.get("templateVersionId"),
+        "approvalId": snapshot_payload.get("approvalId"),
+        "publicationVersion": job.publication_version,
+        "publication": (
+            {
+                "publicationId": publication.id,
+                "manifestArtifactId": publication.manifest_artifact_id,
+                "manifestSha256": publication.manifest_sha256,
+            }
+            if publication is not None
+            else None
+        ),
+        "presentation": (
+            {
+                "presentationId": presentation.id,
+                "currentRevisionId": presentation.current_revision_id,
+                "status": presentation.status,
+            }
+            if presentation is not None
+            else None
+        ),
+        "artifacts": [
+            {
+                "artifactId": artifact.id,
+                "artifactType": link.kind,
+                "slideId": link.slide_id,
+                "sha256": artifact.sha256,
+                "mediaType": artifact.media_type,
+                "sizeBytes": artifact.size_bytes,
+            }
+            for link, artifact in generation_artifacts
+        ],
         "latestSeq": job.latest_seq,
         "terminal": is_terminal_job(job.status),
         "attempt": job.attempt,
@@ -193,11 +254,14 @@ def serialize_job_snapshot(session: Session, job: GenerationJob) -> dict[str, An
         "slides": [
             {
                 "slideId": slide.slide_id,
+                "outlineSlideId": slide.outline_slide_id,
                 "position": slide.position,
+                "title": slide.title,
                 "status": slide.status,
                 "stage": slide.stage,
                 "attempt": slide.attempt,
-                "artifactRef": slide.artifact_ref,
+                "artifactRef": slide.artifact_ref if job.processor == "fake" else None,
+                "renderSha256": slide.render_sha256,
                 "errorCode": slide.error_code,
             }
             for slide in slides
@@ -253,6 +317,11 @@ def _append_event(
 
 
 def _add_task_outbox(session: Session, job: GenerationJob, reason: str) -> None:
+    destination = (
+        "instant_ppt.process_generation_job"
+        if job.processor == "real"
+        else "instant_ppt.process_fake_job"
+    )
     session.add(
         OutboxEvent(
             id=new_ulid(),
@@ -261,7 +330,7 @@ def _add_task_outbox(session: Session, job: GenerationJob, reason: str) -> None:
             aggregate_type="generation_job",
             aggregate_id=job.id,
             dedupe_key=f"task:{job.id}:{reason}",
-            destination="instant_ppt.process_fake_job",
+            destination=destination,
             payload={"jobId": job.id, "organizationId": job.organization_id},
             status="pending",
             available_at=utc_now(),
@@ -349,6 +418,7 @@ def create_generation_job(session: Session, command: CreateJobCommand) -> Create
         id=new_ulid(),
         organization_id=command.organization_id,
         snapshot_id=snapshot.id,
+        processor="fake",
         status="queued",
         stage="deck_planning",
         latest_seq=0,
@@ -470,6 +540,58 @@ def heartbeat_job(session: Session, job_id: str, worker_id: str, *, lease_second
     job.lease_expires_at = now + timedelta(seconds=lease_seconds)
 
 
+def set_job_stage(session: Session, job_id: str, worker_id: str, stage: str) -> GenerationJob:
+    job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id).with_for_update())
+    if job is None:
+        raise ResourceNotFound(f"generation job not found: {job_id}")
+    if job.lease_owner != worker_id:
+        raise LeaseConflict(f"worker does not own job lease: {job_id}")
+    if stage not in {
+        "deck_planning",
+        "slide_generation",
+        "deck_qa",
+        "compiling",
+        "package_qa",
+        "publishing",
+    }:
+        raise ValueError(f"invalid generation job stage: {stage}")
+    if job.stage != stage:
+        job.stage = stage
+        job.lock_version += 1
+        _append_event(session, job, "job.stage.changed", data={"stage": stage})
+    return job
+
+
+def set_slide_stage(
+    session: Session,
+    job_id: str,
+    slide_id: str,
+    worker_id: str,
+    stage: str,
+) -> GenerationJobSlide:
+    job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id).with_for_update())
+    if job is None:
+        raise ResourceNotFound(f"generation job not found: {job_id}")
+    if job.lease_owner != worker_id:
+        raise LeaseConflict(f"worker does not own job lease: {job_id}")
+    if stage not in {"content_generation", "rendering", "qa"}:
+        raise ValueError(f"invalid generation slide stage: {stage}")
+    slide = session.scalar(
+        select(GenerationJobSlide)
+        .where(GenerationJobSlide.job_id == job_id, GenerationJobSlide.slide_id == slide_id)
+        .with_for_update()
+    )
+    if slide is None:
+        raise ResourceNotFound(f"generation slide not found: {slide_id}")
+    if slide.status != "running":
+        raise InvalidTransition("generation_job_slide", slide.status, "running")
+    if slide.stage != stage:
+        slide.stage = stage
+        slide.lock_version += 1
+        _append_event(session, job, "slide.stage.changed", slide=slide, data={"stage": stage})
+    return slide
+
+
 def start_next_slide(session: Session, job_id: str, worker_id: str) -> SlideStart | None:
     job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id).with_for_update())
     if job is None:
@@ -522,6 +644,10 @@ def complete_slide(
     worker_id: str,
     *,
     succeeded: bool,
+    artifact_ref: str | None = None,
+    render_sha256: str | None = None,
+    qa_report: dict[str, Any] | None = None,
+    error_code: str | None = None,
 ) -> GenerationJobSlide:
     job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id).with_for_update())
     if job is None:
@@ -541,9 +667,13 @@ def complete_slide(
     validate_slide_transition(slide.status, target)
     slide.status = target
     slide.stage = "qa"
+    slide.qa_report = qa_report or {}
     slide.lock_version += 1
     if succeeded:
-        slide.artifact_ref = f"fixture://{job.id}/{slide.slide_id}/attempt-{slide.attempt}"
+        slide.artifact_ref = (
+            artifact_ref or f"fixture://{job.id}/{slide.slide_id}/attempt-{slide.attempt}"
+        )
+        slide.render_sha256 = render_sha256
         slide.error_code = None
         job.progress_completed += 1
         _append_event(
@@ -554,7 +684,7 @@ def complete_slide(
             data={"artifactRef": slide.artifact_ref},
         )
     else:
-        slide.error_code = "slide_render_failed"
+        slide.error_code = error_code or "slide_render_failed"
         _append_event(
             session,
             job,
@@ -673,6 +803,9 @@ def retry_slide(
             raise InvalidTransition("generation_job", job.status, "running")
         job.status = "running"
         job.terminal_at = None
+        job.lease_owner = None
+        job.lease_token = None
+        job.lease_expires_at = None
     _append_event(session, job, "slide.retrying", slide=slide)
     _add_task_outbox(session, job, f"slide-retry:{slide.slide_id}:{slide.attempt + 1}")
     return slide
