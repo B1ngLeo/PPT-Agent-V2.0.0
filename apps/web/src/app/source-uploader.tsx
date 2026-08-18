@@ -2,8 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = "/api";
 const DEV_SUBJECT =
   process.env.NEXT_PUBLIC_DEV_USER_SUBJECT ?? "local-web-user";
 const ACTIVE_SOURCE_KEY = "instant-ppt.active-source.v1";

@@ -10,8 +10,7 @@ import {
 
 import { SourceUploader, type SourceState } from "./source-uploader";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = "/api";
 const DEV_SUBJECT =
   process.env.NEXT_PUBLIC_DEV_USER_SUBJECT ?? "local-web-user";
 const ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -380,6 +379,14 @@ function mutation(data: unknown, baseRevisionId: string | null = null) {
   return JSON.stringify({ schemaVersion: 1, data, baseRevisionId });
 }
 
+function planningIdempotencyKey(
+  stage: "intent" | "outline",
+  draftId: string,
+  revisionId: string | null = null,
+) {
+  return `web-${stage}-${draftId}-${revisionId ?? "initial"}-v1`;
+}
+
 function clientUlid(): string {
   let time = Date.now();
   let prefix = "";
@@ -621,43 +628,49 @@ export function WorkspaceApp() {
     [],
   );
 
-  const openDraft = useCallback(async (draftId: string, push = true) => {
-    setView("loading");
-    setError(null);
-    try {
-      const response = await api<DraftSnapshot>(`/v1/drafts/${draftId}`);
-      const next = response.data;
-      setDraft(next);
-      setGenerationJob(null);
-      setStreamState("closed");
-      lastEventId.current = "";
-      setIntent(next.currentIntent);
-      setOutline(next.currentOutline);
-      setSummary(next.generationSummary);
-      lastSavedIntent.current = next.currentIntent
-        ? JSON.stringify(intentPayload(next.currentIntent))
-        : "";
-      lastSavedOutline.current = next.currentOutline
-        ? JSON.stringify(outlinePayload(next.currentOutline))
-        : "";
-      serverOutline.current = next.currentOutline;
-      if (next.currentOutline) {
-        const revisions = await api<{ items: OutlineRevision[] }>(
-          `/v1/drafts/${draftId}/outline-revisions`,
-        );
-        setUndoStack(revisions.data.items.slice(0, -1));
-      } else {
-        setUndoStack([]);
-      }
-      setRedoStack([]);
-      setSaveState("saved");
-      setView("workspace");
-      if (push) window.history.pushState({}, "", `/?draft=${draftId}`);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "草稿恢复失败");
-      setView("home");
+  const applyDraftSnapshot = useCallback(async (next: DraftSnapshot) => {
+    setDraft(next);
+    setGenerationJob(null);
+    setStreamState("closed");
+    lastEventId.current = "";
+    setIntent(next.currentIntent);
+    setOutline(next.currentOutline);
+    setSummary(next.generationSummary);
+    lastSavedIntent.current = next.currentIntent
+      ? JSON.stringify(intentPayload(next.currentIntent))
+      : "";
+    lastSavedOutline.current = next.currentOutline
+      ? JSON.stringify(outlinePayload(next.currentOutline))
+      : "";
+    serverOutline.current = next.currentOutline;
+    if (next.currentOutline) {
+      const revisions = await api<{ items: OutlineRevision[] }>(
+        `/v1/drafts/${next.draftId}/outline-revisions`,
+      );
+      setUndoStack(revisions.data.items.slice(0, -1));
+    } else {
+      setUndoStack([]);
     }
+    setRedoStack([]);
+    setSaveState("saved");
+    setView("workspace");
   }, []);
+
+  const openDraft = useCallback(
+    async (draftId: string, push = true) => {
+      setView("loading");
+      setError(null);
+      try {
+        const response = await api<DraftSnapshot>(`/v1/drafts/${draftId}`);
+        await applyDraftSnapshot(response.data);
+        if (push) window.history.pushState({}, "", `/?draft=${draftId}`);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "草稿恢复失败");
+        setView("home");
+      }
+    },
+    [applyDraftSnapshot],
+  );
 
   useEffect(() => {
     let active = true;
@@ -753,6 +766,63 @@ export function WorkspaceApp() {
 
   const onSourceReady = useCallback((next: SourceState) => setSource(next), []);
 
+  const continuePlanning = async (draftId: string) => {
+    setError(null);
+    try {
+      setBusyMessage("正在核对已保存的规划状态…");
+      let current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
+      if (!current.currentIntent) {
+        setBusyMessage("正在推断创作意图…");
+        await api<IntentRevision>(`/v1/drafts/${draftId}/intent:infer`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": planningIdempotencyKey("intent", draftId),
+          },
+          body: mutation({ language: "zh-CN" }),
+        });
+        current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
+      }
+      if (!current.currentOutline) {
+        setBusyMessage("正在生成可编辑大纲…");
+        await api<OutlineRevision>(`/v1/drafts/${draftId}/outline:generate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": planningIdempotencyKey(
+              "outline",
+              draftId,
+              current.currentIntentRevisionId,
+            ),
+          },
+          body: mutation({ action: "generate", instruction: "" }),
+        });
+      }
+      await refreshHistory();
+      await openDraft(draftId, false);
+    } catch (reason) {
+      try {
+        const current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`))
+          .data;
+        await applyDraftSnapshot(current);
+        setError(
+          current.currentOutline
+            ? "规划响应曾中断，但已从服务端恢复完整大纲。"
+            : current.currentIntent
+              ? "创作意图已保存。连接中断，请点击继续生成大纲。"
+              : "规划连接中断，尚未确认服务端结果，请稍后重新核对。",
+        );
+      } catch {
+        setError(
+          reason instanceof Error ? reason.message : "规划流程暂时不可用",
+        );
+        setView("home");
+      }
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
   const createWorkspace = async () => {
     if (!topic.trim() && !source?.sourceId) return;
     setBusyMessage("正在创建草稿…");
@@ -772,33 +842,7 @@ export function WorkspaceApp() {
         }),
       });
       window.history.replaceState({}, "", `/?draft=${created.data.draftId}`);
-      setBusyMessage("正在推断创作意图…");
-      const inferred = await api<IntentRevision>(
-        `/v1/drafts/${created.data.draftId}/intent:infer`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": crypto.randomUUID(),
-          },
-          body: mutation({ language: "zh-CN" }),
-        },
-      );
-      setBusyMessage("正在生成可编辑大纲…");
-      await api<OutlineRevision>(
-        `/v1/drafts/${created.data.draftId}/outline:generate`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": crypto.randomUUID(),
-          },
-          body: mutation({ action: "generate", instruction: "" }),
-        },
-      );
-      void inferred;
-      await refreshHistory();
-      await openDraft(created.data.draftId, false);
+      await continuePlanning(created.data.draftId);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "草稿创建失败");
     } finally {
@@ -2101,6 +2145,81 @@ export function WorkspaceApp() {
                 );
               })}
             </div>
+          </section>
+        </div>
+      ) : view === "workspace" && draft && (!intent || !outline) ? (
+        <div className="workspace planning-recovery">
+          <div className="workspace-topbar">
+            <button className="quiet-button" type="button" onClick={returnHome}>
+              ← 返回首页
+            </button>
+            <div>
+              <strong>{draft.title}</strong>
+              <span className="save-state" aria-live="polite">
+                规划可恢复
+              </span>
+            </div>
+            <div className="workspace-actions">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={Boolean(busyMessage)}
+                onClick={() => void continuePlanning(draft.draftId)}
+              >
+                {busyMessage ??
+                  (intent ? "继续生成可编辑大纲" : "核对并继续意图识别")}
+              </button>
+            </div>
+          </div>
+
+          <ol className="stepper" aria-label="创作步骤">
+            <li className="done">
+              <b>01</b>
+              <span>主题与来源</span>
+            </li>
+            <li className={intent ? "done" : "active"}>
+              <b>02</b>
+              <span>创作意图</span>
+            </li>
+            <li className={intent ? "active" : ""}>
+              <b>03</b>
+              <span>故事与大纲</span>
+            </li>
+            <li>
+              <b>04</b>
+              <span>生成确认</span>
+            </li>
+          </ol>
+
+          {error ? (
+            <div className="error-banner" role="alert">
+              <span>{error}</span>
+              <button type="button" onClick={() => setError(null)}>
+                关闭
+              </button>
+            </div>
+          ) : null}
+
+          <section className="planning-recovery-card" aria-live="polite">
+            <p className="eyebrow">RECOVERABLE PLANNING</p>
+            <h1>{intent ? "创作意图已保存" : "正在建立创作意图"}</h1>
+            <p>
+              {intent
+                ? "服务端已经保存意图版本，可以从这里继续生成逐页大纲，不需要重新创建草稿。"
+                : "草稿已经安全保存。系统会先核对服务端状态，再继续意图识别，避免重复调用。"}
+            </p>
+            {intent ? (
+              <dl>
+                <div>
+                  <dt>标题</dt>
+                  <dd>{intent.title}</dd>
+                </div>
+                <div>
+                  <dt>目标页数</dt>
+                  <dd>{intent.targetSlideCount} 页</dd>
+                </div>
+              </dl>
+            ) : null}
           </section>
         </div>
       ) : draft && intent && outline ? (

@@ -860,6 +860,43 @@ select {
   font-weight: 800;
   cursor: pointer;
 }
+
+.planning-recovery-card {
+  width: min(760px, calc(100% - 3rem));
+  margin: 3rem auto;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--paper-strong);
+  box-shadow: var(--shadow);
+}
+.planning-recovery-card h1 {
+  margin: 0.35rem 0 0.75rem;
+  font-size: clamp(1.7rem, 4vw, 2.8rem);
+}
+.planning-recovery-card > p:not(.eyebrow) {
+  color: var(--muted);
+  line-height: 1.75;
+}
+.planning-recovery-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.5rem 0 0;
+}
+.planning-recovery-card dl div {
+  padding: 0.9rem;
+  border-radius: 0.7rem;
+  background: var(--blue-soft);
+}
+.planning-recovery-card dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.planning-recovery-card dd {
+  margin: 0.35rem 0 0;
+  font-weight: 750;
+}
 .home-error {
   position: fixed;
   left: 50%;
