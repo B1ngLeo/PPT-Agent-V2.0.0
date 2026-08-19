@@ -78,6 +78,45 @@ def test_long_cjk_cover_copy_is_fitted_before_upstream_qa(tmp_path: Path) -> Non
     assert package_report["matchedEditableTextCount"] == 2
 
 
+def test_single_long_timeline_fact_is_centered_inside_safe_bounds(tmp_path: Path) -> None:
+    deck = DeckPlan.model_validate(
+        {
+            "schemaVersion": 1,
+            "snapshotId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "title": "GPT-5.6 公告解读",
+            "modeId": "native",
+            "templateBinding": {
+                "schemaVersion": 1,
+                "templateId": "01ARZ3NDEKTSV4RRFFQ69G5FAA",
+                "templateVersionId": "01ARZ3NDEKTSV4RRFFQ69G5FAB",
+                "compatibilityVersion": "ppt-master@v4.7.0",
+                "roleBindings": {"timeline": "free-design-timeline"},
+            },
+            "slides": [
+                {
+                    "schemaVersion": 1,
+                    "slideId": "01ARZ3NDEKTSV4RRFFQ69G5FAC",
+                    "outlineSlideId": "01ARZ3NDEKTSV4RRFFQ69G5FAD",
+                    "order": 0,
+                    "role": "timeline",
+                    "title": "效率提升路线",
+                    "body": [
+                        "在 Artificial Analysis Intelligence Index 上，Sol max 与 "
+                        "Fable 5 相差 1 分，但时间减少 61%，预估成本约为一半。"
+                    ],
+                    "editable": True,
+                }
+            ],
+        }
+    )
+
+    result = render_slide_candidate(deck, tmp_path, visual_index=0)
+    report = json.loads(result["qa"].read_text(encoding="utf-8"))
+
+    assert report["summary"]["errors"] == 0
+    assert report["summary"]["passed"] == 1
+
+
 def test_generated_cover_image_is_embedded_as_referenced_pptx_media(tmp_path: Path) -> None:
     deck = DeckPlan.model_validate(
         {

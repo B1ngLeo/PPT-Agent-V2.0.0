@@ -417,7 +417,11 @@ def author_slide(
             )
         )
         for body_index, item in enumerate(body):
-            x = start_x + body_index * gap
+            x = (
+                (start_x + end_x) / 2
+                if count == 1
+                else start_x + body_index * gap
+            )
             lines.extend(
                 [
                     _element(

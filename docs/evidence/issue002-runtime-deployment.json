@@ -1,8 +1,8 @@
 {
   "apiHealth": {
     "runtime": {
-      "buildRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "containerVersion": "instant-ppt-runtime@35f5084461c4a77ffcef177f3f64f312681b77a7",
+      "buildRevision": "e842fea3675439dac1658688743574bd67034351",
+      "containerVersion": "instant-ppt-runtime@e842fea3675439dac1658688743574bd67034351",
       "engineVersion": "ppt-master@v4.7.0+e8323bfa",
       "runtimeContractVersion": "instant-ppt-runtime@v2",
       "workflowContractVersion": "instant-ppt-default@v2.0.0"
@@ -11,11 +11,11 @@
   },
   "diagnosticDirtyBuild": false,
   "dirtyRuntimeInputs": [],
-  "expectedRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
+  "expectedRevision": "e842fea3675439dac1658688743574bd67034351",
   "providerHealth": {
     "runtime": {
-      "buildRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "containerVersion": "instant-ppt-runtime@35f5084461c4a77ffcef177f3f64f312681b77a7",
+      "buildRevision": "e842fea3675439dac1658688743574bd67034351",
+      "containerVersion": "instant-ppt-runtime@e842fea3675439dac1658688743574bd67034351",
       "engineVersion": "ppt-master@v4.7.0+e8323bfa",
       "runtimeContractVersion": "instant-ppt-runtime@v2",
       "workflowContractVersion": "instant-ppt-default@v2.0.0"
@@ -27,46 +27,46 @@
   "schemaVersion": 1,
   "services": {
     "agent-worker": {
-      "buildRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "containerId": "246a34b2393c91d3feecf39109e5db5f2d6a555e9a73f294d30c94e142e44860",
+      "buildRevision": "e842fea3675439dac1658688743574bd67034351",
+      "containerId": "5e8c8c40392930c62c3a5bfbaf8819b9b22b440927dd637af98e218396152720",
       "environmentContract": "instant-ppt-runtime@v2",
-      "environmentRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "imageId": "sha256:8b8d75b27a4ecc91c28a2a7edb62a304003c7d6a873bbca4ea119b8ba3bce04b",
+      "environmentRevision": "e842fea3675439dac1658688743574bd67034351",
+      "imageId": "sha256:d22d58de785ae5a26c77780417e4de3071c3c3ec7509c82c7d0aa142a209f6fc",
       "runtimeContractVersion": "instant-ppt-runtime@v2"
     },
     "api": {
-      "buildRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "containerId": "ca2f4aba023f3089791d72b0442cc3cdbda53546cc1c113deac2bcdd256b0b0d",
+      "buildRevision": "e842fea3675439dac1658688743574bd67034351",
+      "containerId": "c837efede69cda8ed8da94a032594446d0bc4b35374275e692529222aca5f943",
       "environmentContract": "instant-ppt-runtime@v2",
-      "environmentRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "imageId": "sha256:ed6f2c0cfa4ea90ea090f8bc4af6507f6489bec803e51bc3ce98e2db6624b6ba",
+      "environmentRevision": "e842fea3675439dac1658688743574bd67034351",
+      "imageId": "sha256:6316044552684bee7a21f5f17fb24dbead2a93cf3a3f4ceb3dc849f76bbb8e2e",
       "runtimeContractVersion": "instant-ppt-runtime@v2"
     },
     "outbox": {
-      "buildRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "containerId": "348c3968bd159fed0cfa723accb37b315eb9d3f6503e3de605f0bdfcf8b67c85",
+      "buildRevision": "e842fea3675439dac1658688743574bd67034351",
+      "containerId": "89afe3fe05546c238d703e9bf442535e50fcdf8f25936dcc0b9122587eadbd85",
       "environmentContract": "instant-ppt-runtime@v2",
-      "environmentRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "imageId": "sha256:8b8d75b27a4ecc91c28a2a7edb62a304003c7d6a873bbca4ea119b8ba3bce04b",
+      "environmentRevision": "e842fea3675439dac1658688743574bd67034351",
+      "imageId": "sha256:d22d58de785ae5a26c77780417e4de3071c3c3ec7509c82c7d0aa142a209f6fc",
       "runtimeContractVersion": "instant-ppt-runtime@v2"
     },
     "provider-gateway": {
-      "buildRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "containerId": "bb6c2726315135dca36ea514b2b084a7adb2470c8daac8229a18880b5913ea63",
+      "buildRevision": "e842fea3675439dac1658688743574bd67034351",
+      "containerId": "ac6d8eebfad883419c95ddcc6bd4a3d088f062d5a77022400f258ee27df973c8",
       "environmentContract": "instant-ppt-runtime@v2",
-      "environmentRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "imageId": "sha256:8b8d75b27a4ecc91c28a2a7edb62a304003c7d6a873bbca4ea119b8ba3bce04b",
+      "environmentRevision": "e842fea3675439dac1658688743574bd67034351",
+      "imageId": "sha256:d22d58de785ae5a26c77780417e4de3071c3c3ec7509c82c7d0aa142a209f6fc",
       "runtimeContractVersion": "instant-ppt-runtime@v2"
     },
     "worker": {
-      "buildRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "containerId": "672ca16d8900bc1a25e3e90fc45ce7f0908a6d14889ff95660759120e312e258",
+      "buildRevision": "e842fea3675439dac1658688743574bd67034351",
+      "containerId": "54084d0d894deb663863baed210476f64f58afb01215e3f9f06a1c1e45f422c5",
       "environmentContract": "instant-ppt-runtime@v2",
-      "environmentRevision": "35f5084461c4a77ffcef177f3f64f312681b77a7",
-      "imageId": "sha256:8b8d75b27a4ecc91c28a2a7edb62a304003c7d6a873bbca4ea119b8ba3bce04b",
+      "environmentRevision": "e842fea3675439dac1658688743574bd67034351",
+      "imageId": "sha256:d22d58de785ae5a26c77780417e4de3071c3c3ec7509c82c7d0aa142a209f6fc",
       "runtimeContractVersion": "instant-ppt-runtime@v2"
     }
   },
   "status": "passed",
-  "workerFamilyImageId": "sha256:8b8d75b27a4ecc91c28a2a7edb62a304003c7d6a873bbca4ea119b8ba3bce04b"
+  "workerFamilyImageId": "sha256:d22d58de785ae5a26c77780417e4de3071c3c3ec7509c82c7d0aa142a209f6fc"
 }
