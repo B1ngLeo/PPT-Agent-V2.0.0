@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 
 DEFAULT_DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/instant_ppt"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/instant_ppt"
 )
 DEFAULT_REDIS_EVENTS_URL = "redis://localhost:6379/0"
 DEFAULT_CELERY_BROKER_URL = "redis://localhost:6379/1"

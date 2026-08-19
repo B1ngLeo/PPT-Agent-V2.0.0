@@ -80,7 +80,7 @@ Goal 完成时追加：
 - 不删除用户现有文件或无关改动；
 - 依赖版本必须锁定并记录来源，不能使用浮动 `latest/main` 进入可重复构建；
 - 外部 Provider 不可用时用合同一致的 Fake Provider 验证，不得伪造“生产集成已完成”。
-- 当前真实开发文本 Provider 使用 Kimi API：`model=kimi-k3`、`base_url=https://api.moonshot.cn/v1`；预配置图片 Provider 使用 OpenAI Images API：`model=gpt-image-2`、`base_url=https://api.openai.com/v1`。密钥仅从 Worker 侧 `MOONSHOT_API_KEY`、`OPENAI_API_KEY` 或 Secret Manager 读取，不得读取后打印、写入 `.env.example`、日志、测试快照或前端 bundle。P1 产品流程仍保持图片调用为 0，图片 Provider 仅为后续明确批准的生图流程提供能力。
+- 2026-08-16 经 Product/Security/Legal 批准，真实产品文本 Provider 使用 Kimi `model=kimi-k3`，GPT Image 适配器使用 OpenAI Images `model=gpt-image-2`，两者均可路由 `base_url=https://cf.api.fan/v1`。Kimi 密钥仅由私有 Provider Gateway 读取；图片密钥只能在用户显式选择图片、租户配额/费用预占成功、快照冻结受控配置且运行时开关开启时按最小白名单注入 Worker 子进程。密钥不得打印或写入 `.env.example`、日志、测试快照、公开 API 或前端 bundle。默认 `image_scope=none`且环境变量不能单独开启生图；`cover_only/selective` 按 ISSUE-002 图片 Release Gate 执行严格路径、Needs-Manual、资产分析、独立 PPTX 对象和 whole-deck final QA。
 
 ### 1.4 稳定验证入口
 
@@ -689,9 +689,9 @@ pnpm verify
 - Kimi K3 真实 smoke test 与 Fake Provider 回归测试各自留有脱敏证据；
 - 当前尚未启动真实生成，UI 明确停在确认边界。
 
-### 9.8 暂停条件
+### 9.8 暂停条件（历史；Provider 项已于 2026-08-16 解除）
 
-- Kimi/OpenAI 供应商条款、数据流向或生产使用尚未批准；开发可继续使用 Fake Provider，但不得宣称生产集成完成；
+- Kimi/OpenAI 供应商条款、数据流向或生产使用尚未批准时，开发可继续使用 Fake Provider，但不得宣称生产集成完成；该项已由 ADR-005 的具名批准和风险接受解除。生产 KES/KMS 在当前仅本地范围不适用，但必须在任何对外、多人、托管、QA/预发布或生产部署前恢复为必选发布控制；
 - 产品要求把 visual/template mode 提升到 P1 Core；
 - 版本语义只能通过原地覆盖实现。
 

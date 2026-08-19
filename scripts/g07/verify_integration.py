@@ -11,7 +11,7 @@ def main() -> int:
     environment = os.environ.copy()
     environment.setdefault(
         "G07_TEST_DATABASE_URL",
-        "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/instant_ppt",
+        "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/instant_ppt",
     )
     command = [
         sys.executable,

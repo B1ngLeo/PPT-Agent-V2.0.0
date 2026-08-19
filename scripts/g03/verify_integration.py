@@ -25,20 +25,20 @@ from redis import Redis
 
 ROOT = Path(__file__).resolve().parents[2]
 ADMIN_DATABASE_URL = (
-    "postgresql://instant_ppt:local-development-only@localhost:5432/postgres"
+    "postgresql://instant_ppt:local-development-only@127.0.0.1:5432/postgres"
 )
 TEST_DATABASE = "instant_ppt_g03_test"
 MIGRATION_DATABASE = "instant_ppt_g03_migration_test"
 TEST_DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/"
     f"{TEST_DATABASE}"
 )
 MIGRATION_DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/"
     f"{MIGRATION_DATABASE}"
 )
 MIGRATION_PSYCOPG_URL = (
-    "postgresql://instant_ppt:local-development-only@localhost:5432/"
+    "postgresql://instant_ppt:local-development-only@127.0.0.1:5432/"
     f"{MIGRATION_DATABASE}"
 )
 EVENTS_URL = "redis://localhost:6379/12"

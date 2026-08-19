@@ -29,6 +29,11 @@ from instant_ppt_domain.models import (
     ServiceActor,
     UsageReservation,
     User,
+    WorkflowRun,
+)
+from instant_ppt_domain.runtime_contract import (
+    PROCESS_GENERATION_TASK,
+    RUNTIME_CONTRACT_VERSION,
 )
 from instant_ppt_domain.state import (
     InvalidTransition,
@@ -201,6 +206,12 @@ def serialize_job_snapshot(session: Session, job: GenerationJob) -> dict[str, An
     presentation = session.scalar(
         select(Presentation).where(Presentation.generation_job_id == job.id)
     )
+    workflow_run = session.scalar(
+        select(WorkflowRun).where(
+            WorkflowRun.generation_job_id == job.id,
+            WorkflowRun.organization_id == job.organization_id,
+        )
+    )
     generation_artifacts = list(
         session.execute(
             select(GenerationArtifact, Artifact)
@@ -241,6 +252,23 @@ def serialize_job_snapshot(session: Session, job: GenerationJob) -> dict[str, An
                 "status": presentation.status,
             }
             if presentation is not None
+            else None
+        ),
+        "workflow": (
+            {
+                "workflowRunId": workflow_run.id,
+                "status": workflow_run.status,
+                "stage": workflow_run.stage,
+                "attempt": workflow_run.attempt,
+                "checkpointSetId": workflow_run.current_checkpoint_set_id,
+                "errorCode": workflow_run.error.get("code"),
+                "recoveryAction": (
+                    workflow_run.error.get("message")
+                    if workflow_run.status == "needs_manual"
+                    else None
+                ),
+            }
+            if workflow_run is not None
             else None
         ),
         "artifacts": [
@@ -301,8 +329,7 @@ def _append_event(
         progress_completed=job.progress_completed,
         progress_total=job.progress_total,
         data=data or {},
-        trace_id=trace_id
-        or hashlib.sha256(f"instant-ppt-job:{job.id}".encode()).hexdigest()[:32],
+        trace_id=trace_id or hashlib.sha256(f"instant-ppt-job:{job.id}".encode()).hexdigest()[:32],
         occurred_at=now,
     )
     session.add(event)
@@ -326,7 +353,7 @@ def _append_event(
 
 def _add_task_outbox(session: Session, job: GenerationJob, reason: str) -> None:
     destination = (
-        "instant_ppt.process_generation_job"
+        PROCESS_GENERATION_TASK
         if job.processor == "real"
         else "instant_ppt.process_fake_job"
     )
@@ -339,7 +366,15 @@ def _add_task_outbox(session: Session, job: GenerationJob, reason: str) -> None:
             aggregate_id=job.id,
             dedupe_key=f"task:{job.id}:{reason}",
             destination=destination,
-            payload={"jobId": job.id, "organizationId": job.organization_id},
+            payload={
+                "jobId": job.id,
+                "organizationId": job.organization_id,
+                **(
+                    {"runtimeContractVersion": RUNTIME_CONTRACT_VERSION}
+                    if job.processor == "real"
+                    else {}
+                ),
+            },
             status="pending",
             available_at=utc_now(),
         )

@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from instant_ppt_worker.workflow_models import GeneratePptxDefaultRequest
+
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(
@@ -45,13 +47,14 @@ class RenderDeckRequest(ContractModel):
     operation: Literal["renderDeck"]
     workspace_root: str = Field(min_length=1)
     deck_plan_key: str = Field(min_length=1)
+    cover_image_key: str | None = None
     output_key: str = Field(min_length=1)
     organization_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
     created_at: str = "2026-08-16T00:00:00Z"
 
 
 AdapterRequest = Annotated[
-    ScanSourceRequest | ParseSourceRequest | RenderDeckRequest,
+    ScanSourceRequest | ParseSourceRequest | RenderDeckRequest | GeneratePptxDefaultRequest,
     Field(discriminator="operation"),
 ]
 
@@ -72,7 +75,7 @@ class ErrorDetail(ContractModel):
 class AdapterResponse(ContractModel):
     schema_version: Literal[1] = 1
     request_id: str
-    operation: Literal["scanSource", "parseSource", "renderDeck"]
+    operation: Literal["scanSource", "parseSource", "renderDeck", "generatePptxDefault"]
     status: Literal["succeeded", "failed"]
     artifacts: list[ArtifactRef] = Field(default_factory=list)
     error: ErrorDetail | None = None

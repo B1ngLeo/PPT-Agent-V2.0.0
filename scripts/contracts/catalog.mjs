@@ -278,47 +278,82 @@ const schemas = {
     latestSeq: { type: "integer", minimum: 0 },
     terminal: { type: "boolean" },
   }),
-  QaReport: schema("QaReport", {
-    reportId: ulid,
-    subjectType: { enum: ["slide", "deck", "package"] },
-    subjectId: ulid,
-    passed: { type: "boolean" },
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["code", "severity", "message"],
-        properties: {
-          code: nonEmptyString,
-          severity: { enum: ["info", "warning", "sev2", "sev1"] },
-          message: nonEmptyString,
+  QaReport: schema(
+    "QaReport",
+    {
+      reportId: ulid,
+      subjectType: { enum: ["slide", "deck", "package"] },
+      subjectId: ulid,
+      profile: { enum: ["quick-engineering", "default-agentic"] },
+      quickGenerate: { type: "boolean" },
+      passed: { type: "boolean" },
+      findings: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["code", "severity", "message"],
+          properties: {
+            code: nonEmptyString,
+            severity: { enum: ["info", "warning", "sev2", "sev1"] },
+            message: nonEmptyString,
+          },
         },
       },
+      contentQa: {
+        type: "object",
+        additionalProperties: false,
+        required: ["preRender", "finalSvg", "compiledPptx"],
+        properties: {
+          preRender: { type: "object", additionalProperties: true },
+          finalSvg: { type: "object", additionalProperties: true },
+          compiledPptx: { type: "object", additionalProperties: true },
+        },
+      },
+      checkedAt: timestamp,
     },
-    checkedAt: timestamp,
-  }),
-  ArtifactManifest: schema("ArtifactManifest", {
-    artifactId: ulid,
-    organizationId: ulid,
-    artifactType: {
-      enum: [
-        "generation_source_bundle",
-        "generation_baseline_pptx",
-        "presentation_revision_manifest",
-        "export_pptx",
-      ],
+    ["reportId", "subjectType", "subjectId", "passed", "findings", "checkedAt"],
+  ),
+  ArtifactManifest: schema(
+    "ArtifactManifest",
+    {
+      artifactId: ulid,
+      organizationId: ulid,
+      artifactType: {
+        enum: [
+          "generation_source_bundle",
+          "generation_baseline_pptx",
+          "presentation_revision_manifest",
+          "export_pptx",
+        ],
+      },
+      objectKey,
+      sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+      mimeType: nonEmptyString,
+      sizeBytes: { type: "integer", minimum: 0 },
+      engineVersion: nonEmptyString,
+      fontPackVersion: nonEmptyString,
+      engineProfile: { enum: ["quick-engineering", "default-agentic"] },
+      quickGenerate: { type: "boolean" },
+      snapshotId: { anyOf: [ulid, { type: "null" }] },
+      presentationRevisionId: { anyOf: [ulid, { type: "null" }] },
+      createdAt: timestamp,
     },
-    objectKey,
-    sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
-    mimeType: nonEmptyString,
-    sizeBytes: { type: "integer", minimum: 0 },
-    engineVersion: nonEmptyString,
-    fontPackVersion: nonEmptyString,
-    snapshotId: { anyOf: [ulid, { type: "null" }] },
-    presentationRevisionId: { anyOf: [ulid, { type: "null" }] },
-    createdAt: timestamp,
-  }),
+    [
+      "artifactId",
+      "organizationId",
+      "artifactType",
+      "objectKey",
+      "sha256",
+      "mimeType",
+      "sizeBytes",
+      "engineVersion",
+      "fontPackVersion",
+      "snapshotId",
+      "presentationRevisionId",
+      "createdAt",
+    ],
+  ),
   SlideVersion: schema("SlideVersion", {
     slideVersionId: ulid,
     slideId: ulid,
@@ -1159,7 +1194,12 @@ function openApiDocument() {
               required: true,
               content: {
                 "application/json": {
-                  schema: { $ref: "#/components/schemas/MutationRequest" },
+                  schema: {
+                    $ref:
+                      endpoint.operationId === "createGenerationJob"
+                        ? "#/components/schemas/CreateGenerationJobRequest"
+                        : "#/components/schemas/MutationRequest",
+                  },
                 },
               },
             },
@@ -1231,6 +1271,118 @@ function openApiDocument() {
             },
           },
         },
+        GenerationImagePolicy: {
+          title: "GenerationImagePolicy",
+          oneOf: [
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["scope", "usage", "notes"],
+              properties: {
+                scope: { const: "none" },
+                usage: { const: ["none"] },
+                notes: { type: "object", maxProperties: 0 },
+                aiPath: { type: "null" },
+                aiPathChain: { type: "array", maxItems: 0 },
+              },
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["scope", "usage", "notes", "aiPath", "aiPathChain"],
+              properties: {
+                scope: { const: "cover_only" },
+                usage: { const: ["ai"] },
+                notes: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["cover"],
+                  properties: { cover: nonEmptyString },
+                },
+                aiPath: { enum: ["auto", "api", "host-native", "manual"] },
+                aiPathChain: {
+                  type: "array",
+                  minItems: 1,
+                  maxItems: 3,
+                  uniqueItems: true,
+                  items: { enum: ["api", "host-native", "manual"] },
+                },
+              },
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["scope", "usage", "notes", "aiPath", "aiPathChain"],
+              properties: {
+                scope: { const: "selective" },
+                usage: { const: ["ai"] },
+                notes: {
+                  type: "object",
+                  minProperties: 1,
+                  propertyNames: { pattern: ULID_PATTERN },
+                  additionalProperties: nonEmptyString,
+                },
+                aiPath: { enum: ["auto", "api", "host-native", "manual"] },
+                aiPathChain: {
+                  type: "array",
+                  minItems: 1,
+                  maxItems: 3,
+                  uniqueItems: true,
+                  items: { enum: ["api", "host-native", "manual"] },
+                },
+              },
+            },
+          ],
+        },
+        CreateGenerationJobData: {
+          title: "CreateGenerationJobData",
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            intentRevisionId: { anyOf: [ulid, { type: "null" }] },
+            outlineRevisionId: { anyOf: [ulid, { type: "null" }] },
+            templateVersionId: { anyOf: [ulid, { type: "null" }] },
+            slideCount: {
+              type: "integer",
+              minimum: 1,
+              maximum: 30,
+              default: 3,
+            },
+            sourceHashes: {
+              type: "array",
+              items: { type: "string", pattern: "^[a-f0-9]{64}$" },
+            },
+            failureModes: {
+              type: "object",
+              additionalProperties: { enum: ["none", "once", "always"] },
+            },
+            stepDelayMs: {
+              type: "integer",
+              minimum: 0,
+              maximum: 10000,
+              default: 0,
+            },
+            crashOnceAtPosition: {
+              anyOf: [
+                { type: "integer", minimum: 1, maximum: 30 },
+                { type: "null" },
+              ],
+            },
+            continueLimitedDraft: { type: "boolean", default: false },
+            imagePolicy: { $ref: "#/components/schemas/GenerationImagePolicy" },
+          },
+        },
+        CreateGenerationJobRequest: {
+          title: "CreateGenerationJobRequest",
+          type: "object",
+          additionalProperties: false,
+          required: ["schemaVersion", "data"],
+          properties: {
+            schemaVersion: { type: "integer", const: 1 },
+            data: { $ref: "#/components/schemas/CreateGenerationJobData" },
+            baseRevisionId: { anyOf: [ulid, { type: "null" }] },
+          },
+        },
         ResourceResponse: {
           type: "object",
           additionalProperties: false,
@@ -1268,11 +1420,25 @@ function endpointFixture(endpoint) {
         ? { "Idempotency-Key": `fixture-${endpoint.operationId}` }
         : {},
       body: isWrite
-        ? {
-            schemaVersion: 1,
-            data: { fixture: endpoint.operationId },
-            baseRevisionId: null,
-          }
+        ? endpoint.operationId === "createGenerationJob"
+          ? {
+              schemaVersion: 1,
+              data: {
+                imagePolicy: {
+                  scope: "none",
+                  usage: ["none"],
+                  notes: {},
+                  aiPath: null,
+                  aiPathChain: [],
+                },
+              },
+              baseRevisionId: null,
+            }
+          : {
+              schemaVersion: 1,
+              data: { fixture: endpoint.operationId },
+              baseRevisionId: null,
+            }
         : null,
     },
     response: {

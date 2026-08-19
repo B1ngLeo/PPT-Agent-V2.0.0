@@ -59,6 +59,19 @@ class GeneratedImage:
     model: str
 
 
+class ImageProvider(Protocol):
+    provider_name: str
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        size: str | None = None,
+        quality: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> GeneratedImage: ...
+
+
 def _endpoint(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
@@ -78,16 +91,21 @@ class KimiProvider:
             raise ProviderConfigurationError("MOONSHOT_API_KEY is not configured")
         if settings.model != "kimi-k3":
             raise ProviderConfigurationError("KIMI_MODEL must be kimi-k3")
+        if settings.protocol not in {"openai", "anthropic"}:
+            raise ProviderConfigurationError("KIMI_PROTOCOL must be openai or anthropic")
         if settings.reasoning_effort not in {"low", "high", "max"}:
             raise ProviderConfigurationError("KIMI_REASONING_EFFORT must be low, high, or max")
         self._settings = settings
+        headers = {
+            "Authorization": f"Bearer {settings.api_key}",
+            "Content-Type": "application/json",
+        }
+        if settings.protocol == "anthropic":
+            headers["anthropic-version"] = "2023-06-01"
         self._client = httpx.Client(
             timeout=settings.timeout_seconds,
             transport=transport,
-            headers={
-                "Authorization": f"Bearer {settings.api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
         )
 
     def close(self) -> None:
@@ -100,6 +118,54 @@ class KimiProvider:
         response_format: dict[str, Any] | None = None,
         max_completion_tokens: int | None = None,
     ) -> TextCompletion:
+        try:
+            if self._settings.protocol == "anthropic":
+                response = self._complete_anthropic(messages, max_completion_tokens)
+            else:
+                response = self._complete_openai(
+                    messages, response_format, max_completion_tokens
+                )
+            response.raise_for_status()
+            body = response.json()
+            if self._settings.protocol == "anthropic":
+                content = "".join(
+                    str(block.get("text") or "")
+                    for block in body["content"]
+                    if isinstance(block, dict) and block.get("type") == "text"
+                )
+                usage = body.get("usage") or {}
+                prompt_tokens = int(usage.get("input_tokens") or 0)
+                completion_tokens = int(usage.get("output_tokens") or 0)
+            else:
+                message = body["choices"][0]["message"]
+                content = message.get("content") or ""
+                usage = body.get("usage") or {}
+                prompt_tokens = int(usage.get("prompt_tokens") or 0)
+                completion_tokens = int(usage.get("completion_tokens") or 0)
+            return TextCompletion(
+                content=content,
+                model=body.get("model") or self._settings.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
+            response = getattr(error, "response", None)
+            status_code = response.status_code if response is not None else None
+            request_id = (
+                response.headers.get("msh-request-id")
+                or response.headers.get("x-request-id")
+                or response.headers.get("request-id")
+                if response is not None
+                else None
+            )
+            raise ProviderRequestError("kimi", status_code, request_id) from error
+
+    def _complete_openai(
+        self,
+        messages: list[dict[str, Any]],
+        response_format: dict[str, Any] | None,
+        max_completion_tokens: int | None,
+    ) -> httpx.Response:
         payload: dict[str, Any] = {
             "model": self._settings.model,
             "messages": messages,
@@ -109,29 +175,34 @@ class KimiProvider:
             payload["response_format"] = response_format
         if max_completion_tokens is not None:
             payload["max_completion_tokens"] = max_completion_tokens
-        try:
-            response = self._client.post(
-                _endpoint(self._settings.base_url, "chat/completions"), json=payload
-            )
-            response.raise_for_status()
-            body = response.json()
-            message = body["choices"][0]["message"]
-            usage = body.get("usage") or {}
-            return TextCompletion(
-                content=message.get("content") or "",
-                model=body.get("model") or self._settings.model,
-                prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                completion_tokens=int(usage.get("completion_tokens") or 0),
-            )
-        except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
-            response = getattr(error, "response", None)
-            status_code = response.status_code if response is not None else None
-            request_id = (
-                response.headers.get("msh-request-id") or response.headers.get("x-request-id")
-                if response is not None
-                else None
-            )
-            raise ProviderRequestError("kimi", status_code, request_id) from error
+        return self._client.post(
+            _endpoint(self._settings.base_url, "chat/completions"), json=payload
+        )
+
+    def _complete_anthropic(
+        self,
+        messages: list[dict[str, Any]],
+        max_completion_tokens: int | None,
+    ) -> httpx.Response:
+        system_parts: list[str] = []
+        converted: list[dict[str, Any]] = []
+        for message in messages:
+            role = message.get("role")
+            content = message.get("content") or ""
+            if role == "system":
+                system_parts.append(str(content))
+            elif role in {"user", "assistant"}:
+                converted.append({"role": role, "content": content})
+            else:
+                raise ValueError("Anthropic-compatible Kimi messages require known roles")
+        payload: dict[str, Any] = {
+            "model": self._settings.model,
+            "messages": converted,
+            "max_tokens": max_completion_tokens or 4096,
+        }
+        if system_parts:
+            payload["system"] = "\n\n".join(system_parts)
+        return self._client.post(_endpoint(self._settings.base_url, "messages"), json=payload)
 
 
 class DeterministicFakeProvider:
@@ -242,6 +313,14 @@ class OpenAIImageProvider:
             raise ProviderConfigurationError("OPENAI_MODEL must be gpt-image-2")
         if settings.output_format not in self._MEDIA_TYPES:
             raise ProviderConfigurationError("OPENAI_OUTPUT_FORMAT must be png, jpeg, or webp")
+        if settings.size not in {"1024x1024", "1536x1024", "1024x1536"}:
+            raise ProviderConfigurationError("OPENAI_IMAGE_SIZE is not supported by gpt-image-2")
+        if settings.quality not in {"low", "medium", "high", "auto"}:
+            raise ProviderConfigurationError("OPENAI_IMAGE_QUALITY is invalid")
+        if settings.max_images_per_deck not in {0, 1}:
+            raise ProviderConfigurationError("IMAGE_MAX_PER_DECK must be 0 or 1")
+        if settings.cost_microunits_per_image < 0:
+            raise ProviderConfigurationError("IMAGE_COST_MICROUNITS must be nonnegative")
         self._settings = settings
         self._client = httpx.Client(
             timeout=settings.timeout_seconds,
@@ -259,19 +338,22 @@ class OpenAIImageProvider:
         self,
         prompt: str,
         *,
-        size: str = "1536x1024",
-        quality: str = "auto",
+        size: str | None = None,
+        quality: str | None = None,
+        idempotency_key: str | None = None,
     ) -> GeneratedImage:
         try:
+            headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
             response = self._client.post(
                 _endpoint(self._settings.base_url, "images/generations"),
                 json={
                     "model": self._settings.model,
                     "prompt": prompt,
-                    "size": size,
-                    "quality": quality,
+                    "size": size or self._settings.size,
+                    "quality": quality or self._settings.quality,
                     "output_format": self._settings.output_format,
                 },
+                headers=headers,
             )
             response.raise_for_status()
             encoded = response.json()["data"][0]["b64_json"]

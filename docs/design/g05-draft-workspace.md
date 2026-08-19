@@ -49,18 +49,18 @@ snapshot and revision lists. The URL contains only the Draft ID.
 ## Provider boundary
 
 Planning defaults to `DeterministicFakeProvider` for repeatable contracts and offline
-development. The Worker-only provider adapter reads `MOONSHOT_API_KEY` and targets the
+development. The private Provider Gateway adapter reads `MOONSHOT_API_KEY` and targets the
 frozen PLAN setting `kimi-k3`; its structured gateway accepts JSON object output and
 performs at most two schema-repair attempts. The neutral completion object excludes
 reasoning content. Sanitized exceptions expose only provider, status, and safe request
 ID.
 
-The image adapter is preconfigured for the frozen `gpt-image-2` setting, but G05 never
-invokes it. As checked on 2026-08-16, the current official public model lists used in
-implementation research did not establish either frozen model name. The repository
-therefore preserves the specified names without claiming production availability. A
-real text smoke is conditional on both a locally supplied secret and provider support;
-the deterministic provider remains the P1 regression baseline.
+G05 itself never invokes the image adapter. A later 2026-08-16 approved product change
+connects `gpt-image-2` in the G06 Worker publication path with a one-image-per-deck cap;
+OpenAI's official documentation now lists the exact image model. The selected gateway's
+credential-scoped model catalog and redacted live product integration establish technical
+availability for `kimi-k3` without representing that gateway metadata as upstream Kimi
+documentation. The deterministic provider remains the regression baseline.
 
 ## Web interaction and responsive behavior
 

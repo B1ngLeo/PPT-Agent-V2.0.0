@@ -1,0 +1,374 @@
+{
+  "$defs": {
+    "WorkflowArtifactRef": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "minimum": 0,
+          "title": "Sizebytes",
+          "type": "integer"
+        },
+        "mimeType": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Mimetype",
+          "type": "string"
+        },
+        "stage": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "key",
+        "sha256",
+        "sizeBytes",
+        "mimeType",
+        "stage"
+      ],
+      "title": "WorkflowArtifactRef",
+      "type": "object"
+    },
+    "WorkflowError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "owner": {
+          "enum": [
+            "strategist",
+            "executor",
+            "runtime",
+            "provider",
+            "user"
+          ],
+          "title": "Owner",
+          "type": "string"
+        },
+        "recoveryStage": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recoverystage"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "owner",
+        "retryable"
+      ],
+      "title": "WorkflowError",
+      "type": "object"
+    },
+    "WorkflowReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "receiptId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Receiptid",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "attribution",
+            "stage1-confirmation",
+            "template-handoff",
+            "stage2-confirmation",
+            "image-resources",
+            "design-spec-gate1",
+            "refine-spec-approval",
+            "spec-lock-gate2",
+            "design-parameter-confirmation",
+            "live-preview",
+            "first-page-gate",
+            "final-svg-gate",
+            "chart-gate",
+            "content-gate",
+            "final-svg-content-gate",
+            "speaker-notes",
+            "custom-animations",
+            "step7-finalize",
+            "step7-export",
+            "pptx-content-gate",
+            "postflight",
+            "narration-audio",
+            "publication"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "passed-with-warnings",
+            "failed",
+            "pending",
+            "stale"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "subjectSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Subjectsha256",
+          "type": "string"
+        },
+        "payloadSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Payloadsha256",
+          "type": "string"
+        },
+        "actorId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "delegated": {
+          "title": "Delegated",
+          "type": "boolean"
+        },
+        "delegationScope": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Delegationscope",
+          "type": "array"
+        },
+        "policyVersion": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Policyversion",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "receiptId",
+        "kind",
+        "status",
+        "subjectSha256",
+        "payloadSha256",
+        "actorId",
+        "delegated",
+        "delegationScope",
+        "policyVersion",
+        "expiresAt",
+        "createdAt"
+      ],
+      "title": "WorkflowReceipt",
+      "type": "object"
+    },
+    "WorkflowUsage": {
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": {
+          "minimum": 0,
+          "title": "Inputtokens",
+          "type": "integer"
+        },
+        "outputTokens": {
+          "minimum": 0,
+          "title": "Outputtokens",
+          "type": "integer"
+        },
+        "imageCount": {
+          "minimum": 0,
+          "title": "Imagecount",
+          "type": "integer"
+        },
+        "renderSeconds": {
+          "minimum": 0,
+          "title": "Renderseconds",
+          "type": "integer"
+        },
+        "costMicrounits": {
+          "minimum": 0,
+          "title": "Costmicrounits",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "imageCount",
+        "renderSeconds",
+        "costMicrounits"
+      ],
+      "title": "WorkflowUsage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 2,
+      "default": 2,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "workflowRunId": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Workflowrunid",
+      "type": "string"
+    },
+    "requestSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Requestsha256",
+      "type": "string"
+    },
+    "route": {
+      "const": "generate_pptx",
+      "default": "generate_pptx",
+      "title": "Route",
+      "type": "string"
+    },
+    "profile": {
+      "enum": [
+        "default-agentic",
+        "quick-engineering"
+      ],
+      "title": "Profile",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "awaiting_stage1_confirmation",
+        "template_handoff_ready",
+        "awaiting_stage2_confirmation",
+        "final_confirmed",
+        "awaiting_refine_spec_approval",
+        "running",
+        "needs_manual",
+        "failed",
+        "partially_succeeded",
+        "succeeded",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "stage": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Stage",
+      "type": "string"
+    },
+    "checkpointSetId": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checkpointsetid"
+    },
+    "receipts": {
+      "items": {
+        "$ref": "#/$defs/WorkflowReceipt"
+      },
+      "title": "Receipts",
+      "type": "array"
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/WorkflowArtifactRef"
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "errors": {
+      "items": {
+        "$ref": "#/$defs/WorkflowError"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "usage": {
+      "$ref": "#/$defs/WorkflowUsage"
+    },
+    "canonicalBundleSha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Canonicalbundlesha256"
+    }
+  },
+  "required": [
+    "workflowRunId",
+    "requestSha256",
+    "profile",
+    "status",
+    "stage",
+    "receipts",
+    "artifacts",
+    "errors",
+    "usage"
+  ],
+  "title": "WorkflowResultV2",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v2/workflow-result.v2.schema.json"
+}

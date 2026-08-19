@@ -59,7 +59,7 @@
 | 编辑能力 | 文本修改、页面排序、删除、单页重生成；不做 PowerPoint 级自由画布。 |
 | 取消语义 | P1 支持安全取消，不支持“暂停后继续”。UI 必须使用“取消任务/取消请求中”，不得复用原型的“暂停/继续”措辞。 |
 | 租户模型 | 每个用户自动拥有 personal organization；所有资源仍按 `organization_id` 隔离。 |
-| AI/图片供应商 | 通过 Provider Gateway 接入；当前开发文本模型使用 Kimi API 的 `kimi-k3`，`base_url=https://api.moonshot.cn/v1`，生图后端使用 OpenAI Images API 的 `gpt-image-2`；密钥只从服务端 `MOONSHOT_API_KEY`、`OPENAI_API_KEY`/Secret Manager 读取，合同和回归测试继续使用确定性 Fake Provider。P1 产品流程仍不触发生图，图片 Provider 仅作为后续能力预配置。生产数据区域、保留策略与供应商条款仍须由 ADR 固定。 |
+| AI/图片供应商 | 通过服务端 Provider Gateway 接入；文本使用 Kimi `kimi-k3`，图片使用 OpenAI `gpt-image-2`。图片默认为 `image_scope=none`，只有用户确认 `cover_only/selective`、组织额度可用、快照冻结受控配置且 Worker 运行时开关/密钥同时就绪时才可请求 Provider；仅设置环境变量不得开启图片。当前每稿上限 1 张，AI 图片仅用于封面/章节/抽象非证据型页面，以独立可替换 PPTX 图片对象嵌入；显式路径失败不可换 Provider 或静默省略 required 资源，未批准的 fallback 必须进入 `Needs-Manual`。密钥只在明确图片任务的子进程中按白名单注入；合同和回归默认使用确定性 Fake Provider。ADR-005 记录具名批准、披露和无法独立验证的代理/上游风险接受。当前仅本地版本将生产 KES/KMS 控制记为不适用/延后；任何对外、多人、托管、QA/预发布或生产部署前必须恢复为必选门禁并补齐机器证据与 Security 签署。 |
 | 生成结果定位 | 明确标注为“可编辑初稿”；结果仍需用户核验事实、数据、图表和图片。 |
 
 ## 2. 产品定义
@@ -106,12 +106,13 @@
 5. 不可变生成快照、持久任务、逐页进度、取消和单页重试；
 6. 结果预览、有限编辑、PPTX 导出与历史恢复；
 7. 审计、配额占位、观测、响应式和 WCAG 2.1 AA 基线。
+8. 明确可选的封面/选定页图片资源流程，包含资产分析、路径恢复、Needs-Manual、独立 PPTX 对象、配额/费用和审计。
 
 ### 3.3 非目标
 
 - 任意旧 PPT 一键美化；
 - 图片、截图或 PDF 完整反向还原为可编辑图层；
-- 视觉创意模式、AI 图片增强和图片化页面；
+- 视觉创意模式和图片化页面；受控图片资源不扩展为整页位图或事实证据生成；
 - PowerPoint 级元素自由画布；
 - 多人实时协作、评论和复杂版本合并；
 - 多源文档合并、URL 抓取、EPUB、DOC、PPT、MD 输入；
@@ -607,10 +608,10 @@ P1 事件类型至少包含：
 #### FR-QUOTA-001
 
 - P1 不实现支付，但必须有 `entitlements`、`usage_reservations`、`usage_ledger`；
-- 创建生成任务前预占预计页数/Worker 资源；
+- 创建生成任务前在组织级锁内预占预计页数、图片数、图片费用/Worker 资源；
 - 终态按实际消耗结算，取消释放未使用预占；
 - 相同幂等任务不得重复预占或结算；
-- 用量记录页数、模型 token、图片次数（P1 应为 0）、Worker 秒数和导出次数。
+- 用量记录页数、模型 token、图片次数（当前每稿 0 或 1）、图片微单位费用、Worker 秒数和导出次数。
 
 #### 验收
 
@@ -1006,7 +1007,7 @@ P1 Core 通过后才可启动。范围包括：
 
 P1.1 不包含公开市场、组织治理、旧 `.ppt` 转换和任意模板“百分百兼容”承诺。
 
-## 16. 待 P0 记录的 ADR
+## 16. P0 ADR 记录
 
 以下事项不阻塞本 SPEC 成文，但必须在对应 Goal 的暂停点前形成 ADR：
 
@@ -1014,7 +1015,7 @@ P1.1 不包含公开市场、组织治理、旧 `.ppt` 转换和任意模板“�
 2. ADR-002：生产身份提供方与 Web/API 令牌交换；
 3. ADR-003：PDF 商业许可或替代解析栈；
 4. ADR-004：固定 `ppt-master` commit、vendor 方式与升级流程；
-5. ADR-005：记录开发文本 Provider 为 Kimi API `kimi-k3`、预配置图片 Provider 为 OpenAI `gpt-image-2`，并在发布前批准生产模型、数据区域、保留策略与供应商条款；
+5. ADR-005：已接受 Kimi `kimi-k3`、OpenAI `gpt-image-2`与选定网关的服务端策略；记录明确图片授权、Needs-Manual、最小化 prompt、配额/费用、隐私披露和未独立验证的网关/上游风险接受；
 6. ADR-006：对象存储、扫描器和环境拓扑；
 7. ADR-007：数据保留、删除与下载 URL 策略；
 8. ADR-008：PowerPoint/WPS 目标版本与视觉回归门槛；

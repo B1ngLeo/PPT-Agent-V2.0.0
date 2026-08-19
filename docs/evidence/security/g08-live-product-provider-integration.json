@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "goal": "G08",
+  "generatedAt": "2026-08-16T21:29:03+08:00",
+  "result": "passed",
+  "results": {
+    "kimiIntent": {
+      "status": "passed",
+      "provider": "kimi",
+      "model": "kimi-k3",
+      "promptTokens": 266,
+      "completionTokens": 233,
+      "repairCount": 0,
+      "schemaValidated": true
+    },
+    "kimiOutline": {
+      "status": "passed",
+      "provider": "kimi",
+      "model": "kimi-k3",
+      "promptTokens": 382,
+      "completionTokens": 790,
+      "repairCount": 0,
+      "slideCount": 4,
+      "schemaValidated": true
+    },
+    "gptImageCover": {
+      "status": "passed",
+      "provider": "openai-image",
+      "model": "gpt-image-2",
+      "mediaType": "image/png",
+      "bytes": 1594060,
+      "sha256": "bf7aa8fce883b11f0f7c1e976cb6d5b520b161c37f313e22b72638707c465cd7",
+      "imageCallCount": 1
+    },
+    "pptxEmbedding": {
+      "status": "passed",
+      "pptxSha256": "e098d2aba8edb4167a7610ce93250b243e7e007bc27fc2b5d2d2e4f70b54b5f6",
+      "mediaPartCount": 1,
+      "allMediaReferenced": true,
+      "unreferencedMediaPartCount": 0,
+      "editableTextMatched": true,
+      "fullSlidePictureCount": 0
+    }
+  },
+  "errorType": null,
+  "security": {
+    "secretValuesPersisted": false,
+    "authorizationHeadersPersisted": false,
+    "providerResponseContentPersisted": false,
+    "promptContentPersisted": false,
+    "generatedArtifactsPersisted": false,
+    "syntheticInputOnly": true
+  }
+}

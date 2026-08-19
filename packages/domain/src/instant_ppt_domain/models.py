@@ -92,7 +92,52 @@ DRAFT_STATUSES = (
 )
 REVISION_ACTORS = ("user", "ai", "system")
 PROVIDER_CALL_STATUSES = ("succeeded", "failed", "rate_limited", "timed_out")
+WORKFLOW_RUN_STATUSES = (
+    "created",
+    "running",
+    "awaiting_stage1_confirmation",
+    "template_handoff_ready",
+    "awaiting_stage2_confirmation",
+    "final_confirmed",
+    "awaiting_refine_spec_approval",
+    "needs_manual",
+    "partially_succeeded",
+    "succeeded",
+    "failed",
+    "cancel_requested",
+    "cancelled",
+)
+WORKFLOW_STAGES = (
+    "attribution_guard",
+    "source_import",
+    "template_candidates",
+    "stage1",
+    "template_handoff",
+    "stage2",
+    "image_resources",
+    "design_spec_gate1",
+    "refine_spec",
+    "spec_lock_gate2",
+    "design_parameters",
+    "live_preview",
+    "executor_p01",
+    "first_page_gate",
+    "executor_remaining",
+    "final_svg_gate",
+    "chart_gate",
+    "final_svg_content_gate",
+    "notes",
+    "animations",
+    "visual_review",
+    "step7_finalize",
+    "step7_export",
+    "postflight",
+    "pptx_content_gate",
+    "narration",
+    "publish",
+)
 TERMINAL_JOB_STATUSES = frozenset({"cancelled", "succeeded", "partially_succeeded", "failed"})
+TERMINAL_WORKFLOW_STATUSES = frozenset({"cancelled", "succeeded", "partially_succeeded", "failed"})
 
 
 class Base(DeclarativeBase):
@@ -471,6 +516,14 @@ class UsageReservation(Base):
         CheckConstraint("status IN ('reserved', 'settled', 'released')", name="valid_status"),
         CheckConstraint("reserved_units >= 0", name="reserved_units_nonnegative"),
         CheckConstraint("settled_units >= 0", name="settled_units_nonnegative"),
+        CheckConstraint("reserved_images >= 0", name="reserved_images_nonnegative"),
+        CheckConstraint("settled_images >= 0", name="settled_images_nonnegative"),
+        CheckConstraint(
+            "reserved_cost_microunits >= 0", name="reserved_cost_microunits_nonnegative"
+        ),
+        CheckConstraint(
+            "settled_cost_microunits >= 0", name="settled_cost_microunits_nonnegative"
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
@@ -479,6 +532,14 @@ class UsageReservation(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="reserved")
     reserved_units: Mapped[int] = mapped_column(Integer, nullable=False)
     settled_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reserved_images: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    settled_images: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    reserved_cost_microunits: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
+    settled_cost_microunits: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -493,6 +554,12 @@ class Entitlement(Base):
         UniqueConstraint("organization_id", name="uq_entitlements_organization"),
         CheckConstraint("max_slides_per_deck BETWEEN 1 AND 100", name="slides_bounded"),
         CheckConstraint("monthly_slide_limit >= 0", name="monthly_slides_nonnegative"),
+        CheckConstraint("max_images_per_deck BETWEEN 0 AND 32", name="images_bounded"),
+        CheckConstraint("monthly_image_limit >= 0", name="monthly_images_nonnegative"),
+        CheckConstraint(
+            "monthly_image_cost_limit_microunits >= 0",
+            name="monthly_image_cost_nonnegative",
+        ),
         CheckConstraint("max_concurrent_jobs >= 1", name="concurrency_positive"),
     )
 
@@ -503,6 +570,11 @@ class Entitlement(Base):
     plan_code: Mapped[str] = mapped_column(String(64), nullable=False, default="p1-default")
     max_slides_per_deck: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     monthly_slide_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
+    max_images_per_deck: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    monthly_image_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    monthly_image_cost_limit_microunits: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=3_000_000
+    )
     max_concurrent_jobs: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     allowed_modes: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1297,6 +1369,288 @@ class ExportJob(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowRun(Base):
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["generation_job_id", "organization_id"],
+            ["generation_jobs.id", "generation_jobs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_runs_generation_job_org",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_id", "organization_id"],
+            ["generation_snapshots.id", "generation_snapshots.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_workflow_runs_snapshot_org",
+        ),
+        UniqueConstraint("id", "organization_id", name="uq_workflow_runs_id_organization"),
+        UniqueConstraint("generation_job_id", name="uq_workflow_runs_generation_job"),
+        UniqueConstraint("request_sha256", name="uq_workflow_runs_request_sha256"),
+        CheckConstraint(f"status IN ({_values(WORKFLOW_RUN_STATUSES)})", name="valid_status"),
+        CheckConstraint(f"stage IN ({_values(WORKFLOW_STAGES)})", name="valid_stage"),
+        CheckConstraint("route = 'generate_pptx'", name="valid_route"),
+        CheckConstraint(
+            "profile IN ('default-agentic', 'quick-engineering')", name="valid_profile"
+        ),
+        CheckConstraint("attempt BETWEEN 0 AND max_attempts", name="attempt_bounded"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 5", name="max_attempts_bounded"),
+        Index("ix_workflow_runs_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    generation_job_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    route: Mapped[str] = mapped_column(String(40), nullable=False, default="generate_pptx")
+    profile: Mapped[str] = mapped_column(String(40), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    engine_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    request_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="created")
+    stage: Mapped[str] = mapped_column(String(48), nullable=False, default="attribution_guard")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    fencing_token: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    lease_owner: Mapped[str | None] = mapped_column(String(160))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_checkpoint_set_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    runtime_policy: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    usage: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    error: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowStageAttempt(Base):
+    __tablename__ = "workflow_stage_attempts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_stage_attempts_run_org",
+        ),
+        UniqueConstraint(
+            "workflow_run_id", "stage", "attempt", name="uq_workflow_stage_attempts_run_stage"
+        ),
+        CheckConstraint(f"stage IN ({_values(WORKFLOW_STAGES)})", name="valid_stage"),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed', 'cancelled')", name="valid_status"
+        ),
+        CheckConstraint("attempt BETWEEN 1 AND 5", name="attempt_bounded"),
+        Index("ix_workflow_stage_attempts_run_created", "workflow_run_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    stage: Mapped[str] = mapped_column(String(48), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
+    fencing_token: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str | None] = mapped_column(String(64))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    error_detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowCheckpointSet(Base):
+    __tablename__ = "workflow_checkpoint_sets"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_checkpoint_sets_run_org",
+        ),
+        UniqueConstraint("id", "organization_id", name="uq_workflow_checkpoint_sets_id_org"),
+        UniqueConstraint(
+            "workflow_run_id", "sequence", name="uq_workflow_checkpoint_sets_run_sequence"
+        ),
+        CheckConstraint(f"stage IN ({_values(WORKFLOW_STAGES)})", name="valid_stage"),
+        CheckConstraint("sequence >= 1", name="sequence_positive"),
+        Index("ix_workflow_checkpoint_sets_run_created", "workflow_run_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    stage_attempt_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    stage: Mapped[str] = mapped_column(String(48), nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    checkpoint_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class WorkflowGateReceipt(Base):
+    __tablename__ = "workflow_gate_receipts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_gate_receipts_run_org",
+        ),
+        UniqueConstraint("receipt_sha256", name="uq_workflow_gate_receipts_sha256"),
+        CheckConstraint(
+            "status IN ('pending', 'passed', 'passed-with-warnings', 'failed', 'stale')",
+            name="valid_status",
+        ),
+        Index("ix_workflow_gate_receipts_run_kind", "workflow_run_id", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    receipt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    delegated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    delegation_scope: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    policy_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class WorkflowIntermediateArtifact(Base):
+    __tablename__ = "workflow_intermediate_artifacts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_intermediate_artifacts_run_org",
+        ),
+        ForeignKeyConstraint(
+            ["artifact_id", "organization_id"],
+            ["artifacts.id", "artifacts.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_workflow_intermediate_artifacts_artifact_org",
+        ),
+        UniqueConstraint("artifact_id", name="uq_workflow_intermediate_artifacts_artifact"),
+        Index("ix_workflow_intermediate_artifacts_run_kind", "workflow_run_id", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    checkpoint_set_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    stage: Mapped[str] = mapped_column(String(48), nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    stale_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class EffectiveDesignSpecRevision(Base):
+    __tablename__ = "effective_design_spec_revisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_effective_design_spec_revisions_run_org",
+        ),
+        UniqueConstraint("id", "organization_id", name="uq_effective_design_spec_revisions_id_org"),
+        UniqueConstraint(
+            "workflow_run_id", "revision_number", name="uq_effective_design_spec_revisions_number"
+        ),
+        UniqueConstraint(
+            "presentation_revision_id",
+            name="uq_effective_design_spec_revisions_presentation_revision",
+        ),
+        CheckConstraint("revision_number >= 1", name="revision_number_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    presentation_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    based_on_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    base_design_spec_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    effective_spec_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    spec_lock_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    roster: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DesignSpecEditPatch(Base):
+    __tablename__ = "design_spec_edit_patches"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_design_spec_edit_patches_run_org",
+        ),
+        ForeignKeyConstraint(
+            ["effective_spec_revision_id"],
+            ["effective_design_spec_revisions.id"],
+            ondelete="CASCADE",
+            name="fk_design_spec_edit_patches_effective_revision",
+        ),
+        UniqueConstraint("patch_sha256", name="uq_design_spec_edit_patches_sha256"),
+        UniqueConstraint(
+            "effective_spec_revision_id",
+            "sequence",
+            name="uq_design_spec_edit_patches_revision_sequence",
+        ),
+        CheckConstraint("sequence >= 1", name="sequence_positive"),
+        Index("ix_design_spec_edit_patches_run_created", "workflow_run_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    base_effective_spec_revision_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), nullable=False
+    )
+    effective_spec_revision_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    slide_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    object_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    old_value_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    new_value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    new_value_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    touches_lock_owned_field: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    actor_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    patch_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class DataExport(Base):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -32,6 +33,7 @@ from instant_ppt_domain.models import (
     UsageLedger,
     UsageReservation,
 )
+from instant_ppt_domain.runtime_contract import ENGINE_VERSION, RuntimeIdentity
 from instant_ppt_domain.service import (
     CreateJobResult,
     IdempotencyConflict,
@@ -48,10 +50,32 @@ from instant_ppt_domain.tenancy import TenantContext, append_audit
 from instant_ppt_domain.workspace import get_draft
 
 PROMPT_VERSION = "approved-outline-to-deck-plan@1"
-ENGINE_VERSION = "ppt-master@v4.7.0+e8323bfa"
-CONTAINER_VERSION = "instant-ppt-worker@g06"
 FONT_PACK_VERSION = "system-safe-fonts@1"
-PROVIDER_CONFIG_VERSION = "deterministic-fake-v1"
+PROVIDER_CONFIG_VERSION = os.getenv("PROVIDER_CONFIG_VERSION", "deterministic-fake-v1").strip()
+
+
+def _provider_configuration() -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "planning": {
+            "backend": os.getenv("PLANNING_BACKEND", "fake").strip().lower(),
+            "model": os.getenv("KIMI_MODEL", "kimi-k3").strip(),
+        },
+        "image": {
+            "enabled": os.getenv("IMAGE_GENERATION_ENABLED", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
+            "backend": os.getenv("IMAGE_BACKEND", "openai").strip().lower(),
+            "baseUrl": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip(),
+            "model": os.getenv("OPENAI_MODEL", "gpt-image-2").strip(),
+            "outputFormat": os.getenv("OPENAI_OUTPUT_FORMAT", "png").strip().lower(),
+            "size": os.getenv("OPENAI_IMAGE_SIZE", "1536x1024").strip(),
+            "quality": os.getenv("OPENAI_IMAGE_QUALITY", "low").strip().lower(),
+            "maxImagesPerDeck": int(os.getenv("IMAGE_MAX_PER_DECK", "0")),
+            "costMicrounitsPerImage": int(
+                os.getenv("IMAGE_COST_MICROUNITS", "100000")
+            ),
+        },
+    }
 
 
 class GenerationApprovalRequired(ValueError):
@@ -59,6 +83,10 @@ class GenerationApprovalRequired(ValueError):
 
 
 class GenerationTemplateUnavailable(ValueError):
+    pass
+
+
+class GenerationSourceDecisionRequired(ValueError):
     pass
 
 
@@ -80,6 +108,10 @@ class CreateApprovedJobCommand:
     failure_modes: dict[int, str] = field(default_factory=dict)
     step_delay_ms: int = 0
     crash_once_at_position: int | None = None
+    continue_limited_draft: bool = False
+    image_policy: dict[str, Any] = field(
+        default_factory=lambda: {"scope": "none", "usage": ["none"], "notes": {}}
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +134,8 @@ def _check_quota(
     organization_id: str,
     *,
     slide_count: int,
+    image_count: int,
+    image_cost_microunits: int,
 ) -> Entitlement:
     now = datetime.now(UTC)
     entitlement = session.scalar(
@@ -117,6 +151,8 @@ def _check_quota(
         raise GenerationQuotaExceeded("native generation mode is not entitled")
     if slide_count > entitlement.max_slides_per_deck:
         raise GenerationQuotaExceeded("slide count exceeds the per-deck entitlement")
+    if image_count > entitlement.max_images_per_deck:
+        raise GenerationQuotaExceeded("image count exceeds the per-deck entitlement")
     active_jobs = session.scalar(
         select(func.count(GenerationJob.id)).where(
             GenerationJob.organization_id == organization_id,
@@ -132,14 +168,55 @@ def _check_quota(
             UsageLedger.occurred_at >= _month_start(now),
         )
     )
-    reserved = session.scalar(
+    reserved_slides = session.scalar(
         select(func.coalesce(func.sum(UsageReservation.reserved_units), 0)).where(
             UsageReservation.organization_id == organization_id,
             UsageReservation.status == "reserved",
         )
     )
-    if int(settled or 0) + int(reserved or 0) + slide_count > entitlement.monthly_slide_limit:
+    if (
+        int(settled or 0) + int(reserved_slides or 0) + slide_count
+        > entitlement.monthly_slide_limit
+    ):
         raise GenerationQuotaExceeded("monthly slide entitlement would be exceeded")
+    settled_images = session.scalar(
+        select(func.coalesce(func.sum(UsageLedger.quantity), 0)).where(
+            UsageLedger.organization_id == organization_id,
+            UsageLedger.metric == "images",
+            UsageLedger.occurred_at >= _month_start(now),
+        )
+    )
+    reserved_images = session.scalar(
+        select(func.coalesce(func.sum(UsageReservation.reserved_images), 0)).where(
+            UsageReservation.organization_id == organization_id,
+            UsageReservation.status == "reserved",
+        )
+    )
+    if (
+        int(settled_images or 0) + int(reserved_images or 0) + image_count
+        > entitlement.monthly_image_limit
+    ):
+        raise GenerationQuotaExceeded("monthly image entitlement would be exceeded")
+    settled_image_cost = session.scalar(
+        select(func.coalesce(func.sum(UsageLedger.quantity), 0)).where(
+            UsageLedger.organization_id == organization_id,
+            UsageLedger.metric == "image_cost_microunits",
+            UsageLedger.occurred_at >= _month_start(now),
+        )
+    )
+    reserved_image_cost = session.scalar(
+        select(func.coalesce(func.sum(UsageReservation.reserved_cost_microunits), 0)).where(
+            UsageReservation.organization_id == organization_id,
+            UsageReservation.status == "reserved",
+        )
+    )
+    if (
+        int(settled_image_cost or 0)
+        + int(reserved_image_cost or 0)
+        + image_cost_microunits
+        > entitlement.monthly_image_cost_limit_microunits
+    ):
+        raise GenerationQuotaExceeded("monthly image cost entitlement would be exceeded")
     return entitlement
 
 
@@ -228,20 +305,97 @@ def create_approved_generation_job(
 
     draft = get_draft(session, command.draft_id, context.organization_id, for_update=True)
     approval, intent, outline, outline_slides, template = _approved_inputs(session, draft)
-    _check_quota(session, context.organization_id, slide_count=len(outline_slides))
+    has_approved_source = bool(approval.source_summary.get("sourceId"))
+    if not has_approved_source and not command.continue_limited_draft:
+        raise GenerationSourceDecisionRequired(
+            "没有已批准来源；请补充来源，或明确选择继续受限通用初稿"
+        )
+    provider_configuration = _provider_configuration()
+    runtime_identity = RuntimeIdentity.from_env()
+    requested_image_policy = dict(command.image_policy)
+    requested_image_count = (
+        len(dict(requested_image_policy.get("notes") or {}))
+        if "ai" in list(requested_image_policy.get("usage") or [])
+        else 0
+    )
+    requested_image_cost = requested_image_count * int(
+        provider_configuration["image"]["costMicrounitsPerImage"]
+    )
+    _check_quota(
+        session,
+        context.organization_id,
+        slide_count=len(outline_slides),
+        image_count=requested_image_count,
+        image_cost_microunits=requested_image_cost,
+    )
     now = datetime.now(UTC)
     snapshot_id = new_ulid()
     slide_ids = [new_ulid() for _ in outline_slides]
     source_hashes = sorted(
-        value for value in [str(approval.source_summary.get("sha256") or "")] if len(value) == 64
+        {
+            value
+            for value in [
+                str(approval.source_summary.get("sha256") or ""),
+                *[
+                    str(item.get("sha256") or "")
+                    for item in approval.source_summary.get("artifactDescriptors") or []
+                ],
+            ]
+            if len(value) == 64
+        }
     )
+    engineering_quick = bool(
+        command.failure_modes
+        or command.step_delay_ms
+        or command.crash_once_at_position is not None
+    )
+    image_scope = str(requested_image_policy.get("scope") or "none")
+    image_usage = list(requested_image_policy.get("usage") or ["none"])
+    raw_image_notes = dict(requested_image_policy.get("notes") or {})
+    outline_to_slide = {
+        slide.outline_slide_id: slide_id
+        for slide, slide_id in zip(outline_slides, slide_ids, strict=True)
+    }
+    image_notes = {
+        ("cover" if key == "cover" else outline_to_slide.get(str(key), "")): str(value)
+        for key, value in raw_image_notes.items()
+    }
+    if "" in image_notes:
+        raise ValueError("image notes must reference an approved outline slide")
+    if image_scope == "none":
+        image_policy = {"scope": "none", "usage": ["none"], "notes": {}}
+    else:
+        image_policy = {
+            "scope": image_scope,
+            "usage": image_usage,
+            "notes": image_notes,
+            "aiPath": requested_image_policy.get("aiPath"),
+            "aiPathChain": list(requested_image_policy.get("aiPathChain") or []),
+            "providedAssets": [],
+            "officeNativeFallbacks": [],
+        }
+    template_candidate = {
+        "candidateId": template.id,
+        "kind": "deck",
+        "provenance": "library",
+        "workspaceRoot": f"templates/catalog/{template.id}",
+        "templateId": template.template_id,
+        "engineCompatibility": template.engine_compatibility,
+        "contentAccessed": False,
+        "installed": False,
+    }
+    template_candidate["descriptorSha256"] = canonical_sha256(template_candidate)
     snapshot_payload: dict[str, Any] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "snapshotId": snapshot_id,
         "organizationId": context.organization_id,
         "draftId": draft.id,
         "approvalId": approval.id,
         "approvalInputHash": approval.snapshot_input_hash,
+        "approval": {
+            "approvedBy": approval.approved_by,
+            "approvedAt": approval.approved_at.isoformat().replace("+00:00", "Z"),
+        },
         "intentRevisionId": approval.intent_revision_id,
         "intent": intent.payload,
         "outlineRevisionId": approval.outline_revision_id,
@@ -262,21 +416,25 @@ def create_approved_generation_job(
             ],
         },
         "templateVersionId": template.id,
-        "template": {
-            "templateId": template.template_id,
-            "contentSha256": template.content_sha256,
-            "themeSpec": template.theme_spec,
-            "pageRoles": template.page_roles,
-            "engineCompatibility": template.engine_compatibility,
-        },
+        "templateCandidate": template_candidate,
+        "template": template_candidate,
         "modeId": "native",
+        "route": "generate_pptx",
+        "engineProfile": "quick-engineering" if engineering_quick else "default-agentic",
         "sourceHashes": source_hashes,
         "sourceSummary": approval.source_summary,
+        "sourceDecision": (
+            "approved-artifacts" if has_approved_source else "continue-limited-general-draft"
+        ),
         "promptVersion": PROMPT_VERSION,
         "engineVersion": ENGINE_VERSION,
-        "containerVersion": CONTAINER_VERSION,
+        "containerVersion": runtime_identity.container_version,
+        "runtimeContractVersion": runtime_identity.runtime_contract_version,
+        "workflowContractVersion": runtime_identity.workflow_contract_version,
         "fontPackVersion": FONT_PACK_VERSION,
         "providerConfigVersion": PROVIDER_CONFIG_VERSION,
+        "providerConfiguration": provider_configuration,
+        "imagePolicy": image_policy,
         "createdAt": now.isoformat().replace("+00:00", "Z"),
     }
     snapshot_sha = canonical_sha256(snapshot_payload)
@@ -293,7 +451,7 @@ def create_approved_generation_job(
         source_hashes=source_hashes,
         prompt_version=PROMPT_VERSION,
         engine_version=ENGINE_VERSION,
-        container_version=CONTAINER_VERSION,
+        container_version=runtime_identity.container_version,
         font_pack_version=FONT_PACK_VERSION,
         provider_config_version=PROVIDER_CONFIG_VERSION,
         snapshot_sha256=snapshot_sha,
@@ -352,6 +510,10 @@ def create_approved_generation_job(
             status="reserved",
             reserved_units=len(outline_slides),
             settled_units=0,
+            reserved_images=requested_image_count,
+            settled_images=0,
+            reserved_cost_microunits=requested_image_cost,
+            settled_cost_microunits=0,
         )
     )
     draft.status = "generating"
@@ -601,6 +763,8 @@ def _settle_usage(
     ready_count: int,
     worker_seconds: int,
     publication_version: int,
+    image_count: int = 0,
+    image_cost_microunits: int = 0,
 ) -> None:
     reservation = session.scalar(
         select(UsageReservation).where(UsageReservation.job_id == job.id).with_for_update()
@@ -608,6 +772,11 @@ def _settle_usage(
     if reservation is not None and reservation.status in {"reserved", "settled"}:
         reservation.status = "settled"
         reservation.settled_units = max(reservation.settled_units, ready_count)
+        reservation.settled_images = max(reservation.settled_images, image_count)
+        reservation.settled_cost_microunits = max(
+            reservation.settled_cost_microunits,
+            image_cost_microunits,
+        )
     now = datetime.now(UTC)
     previously_billed_slides = int(
         session.scalar(
@@ -622,7 +791,8 @@ def _settle_usage(
     metrics = {
         "slides": max(0, ready_count - previously_billed_slides),
         "model_tokens": 0,
-        "images": 0,
+        "images": max(0, image_count),
+        "image_cost_microunits": max(0, image_cost_microunits),
         "worker_seconds": max(0, worker_seconds),
     }
     for metric, quantity in metrics.items():
@@ -820,6 +990,7 @@ def publish_generation_result(
         "generationJobId": job.id,
         "snapshotId": job.snapshot_id,
         "publicationVersion": publication_version,
+        "contentMode": manifest_payload.get("contentMode"),
         "partial": target == "partially_succeeded",
         "slides": [
             {
@@ -898,6 +1069,13 @@ def publish_generation_result(
         ready_count=ready_count,
         worker_seconds=worker_seconds,
         publication_version=publication_version,
+        image_count=sum(
+            item.kind in {"generation_ai_cover_image", "generation_image_asset"}
+            for item in artifacts
+        ),
+        image_cost_microunits=int(
+            manifest_payload.get("imageGeneration", {}).get("costMicrounits") or 0
+        ),
     )
     _append_event(
         session,

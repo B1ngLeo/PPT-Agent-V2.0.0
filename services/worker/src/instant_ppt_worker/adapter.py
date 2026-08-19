@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
+from instant_ppt_worker.agentic_workflow import run_default_workflow
 from instant_ppt_worker.artifacts import artifact_ref
 from instant_ppt_worker.errors import INVALID_REQUEST, UNSAFE_SOURCE, AdapterError
 from instant_ppt_worker.models import (
@@ -24,6 +25,7 @@ from instant_ppt_worker.paths import resolve_key
 from instant_ppt_worker.renderer import render_deck
 from instant_ppt_worker.security import scan_source
 from instant_ppt_worker.source_parser import parse_source
+from instant_ppt_worker.workflow_models import GeneratePptxDefaultRequest
 
 REQUEST_ADAPTER = TypeAdapter(AdapterRequest)
 
@@ -33,14 +35,24 @@ def _write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _workspace(request: ScanSourceRequest | ParseSourceRequest | RenderDeckRequest) -> Path:
+def _workspace(
+    request: ScanSourceRequest
+    | ParseSourceRequest
+    | RenderDeckRequest
+    | GeneratePptxDefaultRequest,
+) -> Path:
     root = Path(request.workspace_root).resolve()
     if not root.is_dir():
         raise AdapterError(INVALID_REQUEST, "workspaceRoot must be an existing directory")
     return root
 
 
-def execute(request: ScanSourceRequest | ParseSourceRequest | RenderDeckRequest) -> AdapterResponse:
+def execute(
+    request: ScanSourceRequest
+    | ParseSourceRequest
+    | RenderDeckRequest
+    | GeneratePptxDefaultRequest,
+) -> AdapterResponse:
     root = _workspace(request)
     artifacts = []
     if isinstance(request, ScanSourceRequest):
@@ -70,17 +82,28 @@ def execute(request: ScanSourceRequest | ParseSourceRequest | RenderDeckRequest)
         )
         for path in result["paths"]:
             artifacts.append(artifact_ref(root, path, "sourceArtifact"))
-    else:
+    elif isinstance(request, RenderDeckRequest):
         deck_plan = resolve_key(root, request.deck_plan_key, must_exist=True)
+        cover_image = (
+            resolve_key(root, request.cover_image_key, must_exist=True)
+            if request.cover_image_key
+            else None
+        )
         output = resolve_key(root, request.output_key)
         result = render_deck(
             deck_plan,
             output,
             organization_id=request.organization_id,
             created_at=request.created_at,
+            cover_image_path=cover_image,
         )
         for path in result["paths"]:
             artifacts.append(artifact_ref(root, path, "renderArtifact"))
+    else:
+        project = resolve_key(root, request.output_key)
+        result = run_default_workflow(root, project, request.workflow)
+        for path in result["paths"]:
+            artifacts.append(artifact_ref(root, path, "workflowArtifact"))
     return AdapterResponse(
         request_id=request.request_id,
         operation=request.operation,
@@ -90,7 +113,13 @@ def execute(request: ScanSourceRequest | ParseSourceRequest | RenderDeckRequest)
 
 
 def run_request(payload: str) -> tuple[AdapterResponse, int]:
-    request: ScanSourceRequest | ParseSourceRequest | RenderDeckRequest | None = None
+    request: (
+        ScanSourceRequest
+        | ParseSourceRequest
+        | RenderDeckRequest
+        | GeneratePptxDefaultRequest
+        | None
+    ) = None
     try:
         request = REQUEST_ADAPTER.validate_json(payload)
         return execute(request), 0

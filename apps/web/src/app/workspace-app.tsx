@@ -97,13 +97,23 @@ type Entitlement = {
   planCode: string;
   maxSlidesPerDeck: number;
   monthlySlideLimit: number;
+  maxImagesPerDeck: number;
+  monthlyImageLimit: number;
+  monthlyImageCostLimitMicrounits: number;
   maxConcurrentJobs: number;
   allowedModes: string[];
 };
 
 type Usage = {
-  metrics: { slides: number; images: number; modelTokens: number };
+  metrics: {
+    slides: number;
+    images: number;
+    modelTokens: number;
+    imageCostMicrounits?: number;
+  };
   reservedSlides: number;
+  reservedImages: number;
+  reservedImageCostMicrounits: number;
 };
 
 type TemplateVersion = {
@@ -168,6 +178,8 @@ type GenerationSummary = {
   boundary: "generation_not_started";
 };
 
+type GenerationImageScope = "none" | "cover_only" | "selective";
+
 type DraftSnapshot = {
   draftId: string;
   title: string;
@@ -213,6 +225,7 @@ type PresentationRevision = {
   operation: string;
   partial: boolean;
   acceptedMissing: boolean;
+  contentMode: "source-grounded" | "limited-general-draft" | null;
   manifestArtifactId: string;
   slides: PresentationSlide[];
   createdAt: string;
@@ -308,6 +321,15 @@ type GenerationJob = {
     presentationId: string;
     currentRevisionId: string;
     status: "ready" | "partial";
+  } | null;
+  workflow: {
+    workflowRunId: string;
+    status: string;
+    stage: string;
+    attempt: number;
+    checkpointSetId: string | null;
+    errorCode: string | null;
+    recoveryAction: string | null;
   } | null;
 };
 
@@ -515,6 +537,12 @@ export function WorkspaceApp() {
   const [intent, setIntent] = useState<IntentRevision | null>(null);
   const [outline, setOutline] = useState<OutlineRevision | null>(null);
   const [summary, setSummary] = useState<GenerationSummary | null>(null);
+  const [continueLimitedDraft, setContinueLimitedDraft] = useState(false);
+  const [generationImageScope, setGenerationImageScope] =
+    useState<GenerationImageScope>("none");
+  const [selectedImageOutlineIds, setSelectedImageOutlineIds] = useState<
+    string[]
+  >([]);
   const [generationJob, setGenerationJob] = useState<GenerationJob | null>(
     null,
   );
@@ -1123,6 +1151,7 @@ export function WorkspaceApp() {
         },
       );
       setSummary(response.data);
+      setContinueLimitedDraft(false);
       setDraft((current) =>
         current
           ? {
@@ -1151,6 +1180,21 @@ export function WorkspaceApp() {
     setBusyMessage("正在创建真实生成任务…");
     setError(null);
     try {
+      const imageNotes =
+        generationImageScope === "cover_only"
+          ? { cover: "封面使用非证据型编辑插画，并为原生标题保留安静区域" }
+          : generationImageScope === "selective"
+            ? Object.fromEntries(
+                (outline?.slides ?? [])
+                  .filter((slide) =>
+                    selectedImageOutlineIds.includes(slide.outlineSlideId),
+                  )
+                  .map((slide) => [
+                    slide.outlineSlideId,
+                    `${slide.title} 的非证据型编辑插画，不承载数字、参数或事实结论`,
+                  ]),
+              )
+            : {};
       const response = await api<GenerationJob>(
         `/v1/drafts/${draft.draftId}/generation-jobs`,
         {
@@ -1159,7 +1203,20 @@ export function WorkspaceApp() {
             "Content-Type": "application/json",
             "Idempotency-Key": crypto.randomUUID(),
           },
-          body: mutation({}),
+          body: mutation({
+            continueLimitedDraft:
+              summary.sourceSummary.sourceId === null && continueLimitedDraft,
+            imagePolicy:
+              generationImageScope === "none"
+                ? { scope: "none", usage: ["none"], notes: {} }
+                : {
+                    scope: generationImageScope,
+                    usage: ["ai"],
+                    notes: imageNotes,
+                    aiPath: "auto",
+                    aiPathChain: ["api", "manual"],
+                  },
+          }),
         },
       );
       setGenerationJob(response.data);
@@ -1505,7 +1562,8 @@ export function WorkspaceApp() {
           {entitlement ? (
             <span className="quota-chip">
               本月 {usage?.metrics.slides ?? 0} /{" "}
-              {entitlement.monthlySlideLimit} 页
+              {entitlement.monthlySlideLimit} 页 · {usage?.metrics.images ?? 0}{" "}
+              / {entitlement.monthlyImageLimit} 图
             </span>
           ) : null}
           <button
@@ -1635,6 +1693,22 @@ export function WorkspaceApp() {
                   ? "已明确接受缺页"
                   : "明确接受缺页并允许导出"}
               </button>
+            </section>
+          ) : null}
+
+          {presentation.currentRevision.contentMode ===
+          "limited-general-draft" ? (
+            <section
+              className="partial-warning limited-draft-warning"
+              aria-labelledby="limited-draft-title"
+            >
+              <div>
+                <p className="eyebrow">LIMITED GENERAL DRAFT</p>
+                <h2 id="limited-draft-title">这是无可信来源的受限通用初稿</h2>
+                <p>
+                  当前内容未完成外部事实核验，也没有执行网页研究；请补充已批准来源后再将其用于事实解读。
+                </p>
+              </div>
             </section>
           ) : null}
 
@@ -1886,18 +1960,22 @@ export function WorkspaceApp() {
             <div className="monitor-status-copy">
               <p className="eyebrow">DURABLE GENERATION · NATIVE MODE</p>
               <h1 id="monitor-title">
-                {generationStatusLabel(generationJob.status)}
+                {generationJob.workflow?.status === "needs_manual"
+                  ? "等待人工补充图片"
+                  : generationStatusLabel(generationJob.status)}
               </h1>
               <p aria-live="polite">
-                {generationJob.terminal
-                  ? generationJob.status === "succeeded"
-                    ? "全部页面、原生 PPTX 与不可变清单已经发布。"
-                    : generationJob.status === "partially_succeeded"
-                      ? "成功页面已发布；失败槽位保留，可单页重试。"
-                      : generationJob.status === "cancelled"
-                        ? "任务已安全终止，未创建演示文稿。"
-                        : "任务未发布演示文稿，可返回大纲检查输入。"
-                  : generationStageLabel(generationJob.stage)}
+                {generationJob.workflow?.status === "needs_manual"
+                  ? "必需图片尚未解决；任务已在导出前安全停止，没有静默省略资源。"
+                  : generationJob.terminal
+                    ? generationJob.status === "succeeded"
+                      ? "全部页面、原生 PPTX 与不可变清单已经发布。"
+                      : generationJob.status === "partially_succeeded"
+                        ? "成功页面已发布；失败槽位保留，可单页重试。"
+                        : generationJob.status === "cancelled"
+                          ? "任务已安全终止，未创建演示文稿。"
+                          : "任务未发布演示文稿，可返回大纲检查输入。"
+                    : generationStageLabel(generationJob.stage)}
               </p>
               <div className="progress-copy">
                 <span>
@@ -1935,6 +2013,33 @@ export function WorkspaceApp() {
               </div>
             </dl>
           </section>
+
+          {generationJob.workflow?.status === "needs_manual" ? (
+            <section
+              className="partial-warning"
+              aria-labelledby="needs-manual-title"
+            >
+              <div>
+                <p className="eyebrow">NEEDS MANUAL · NO SILENT OMISSION</p>
+                <h2 id="needs-manual-title">需要人工补充并验证图片资源</h2>
+                <p>
+                  {generationJob.workflow.errorCode ===
+                  "IMAGE_RESOURCE_NEEDS_MANUAL"
+                    ? "请按已保存的图片提示与资源计划补充文件，完成图片验证后从当前检查点恢复。"
+                    : (generationJob.workflow.recoveryAction ??
+                      "请按已保存的资源计划处理后，从当前检查点恢复。")}
+                </p>
+                <small>
+                  阶段{" "}
+                  {generationJob.workflow.stage === "image_resources"
+                    ? "图片资源"
+                    : generationJob.workflow.stage}{" "}
+                  · 错误码{" "}
+                  {generationJob.workflow.errorCode ?? "workflow_needs_manual"}
+                </small>
+              </div>
+            </section>
+          ) : null}
 
           <section
             className="monitor-slides"
@@ -2319,6 +2424,109 @@ export function WorkspaceApp() {
                 ) : (
                   <p className="revision-ok">当前内容与已批准版本一致。</p>
                 )}
+                {summary.sourceSummary.sourceId === null ? (
+                  <label className="limited-draft-choice">
+                    <input
+                      type="checkbox"
+                      checked={continueLimitedDraft}
+                      onChange={(event) =>
+                        setContinueLimitedDraft(event.target.checked)
+                      }
+                    />
+                    <span>
+                      当前没有已批准来源。我选择继续“受限通用初稿”，其中不会把事实解读伪装成已核实结论。
+                    </span>
+                  </label>
+                ) : (
+                  <p className="revision-ok">
+                    已固定 {summary.sourceSummary.artifacts}{" "}
+                    个来源工件，可追溯生成。
+                  </p>
+                )}
+                <fieldset className="image-policy-choice">
+                  <legend>图片策略（显式开启）</legend>
+                  <label>
+                    <span>页面范围</span>
+                    <select
+                      value={generationImageScope}
+                      onChange={(event) => {
+                        const value = event.target
+                          .value as GenerationImageScope;
+                        setGenerationImageScope(value);
+                        if (
+                          value === "selective" &&
+                          selectedImageOutlineIds.length === 0 &&
+                          outline?.slides[0]
+                        ) {
+                          setSelectedImageOutlineIds([
+                            outline.slides[0].outlineSlideId,
+                          ]);
+                        }
+                      }}
+                    >
+                      <option value="none">不使用图片</option>
+                      <option value="cover_only">仅封面 AI 插画</option>
+                      <option value="selective">选择页面 AI 插画</option>
+                    </select>
+                  </label>
+                  {generationImageScope === "selective" ? (
+                    <div className="image-slide-options">
+                      {(outline?.slides ?? [])
+                        .map((slide, index) => ({ slide, index }))
+                        .filter(
+                          ({ slide, index }) =>
+                            index === 0 ||
+                            [
+                              "section",
+                              "content",
+                              "closing",
+                              "ending",
+                            ].includes(slide.type),
+                        )
+                        .map(({ slide, index }) => (
+                          <label key={slide.outlineSlideId}>
+                            <input
+                              type="checkbox"
+                              checked={selectedImageOutlineIds.includes(
+                                slide.outlineSlideId,
+                              )}
+                              disabled={
+                                !selectedImageOutlineIds.includes(
+                                  slide.outlineSlideId,
+                                ) &&
+                                selectedImageOutlineIds.length >=
+                                  (entitlement?.maxImagesPerDeck ?? 0)
+                              }
+                              onChange={(event) =>
+                                setSelectedImageOutlineIds((current) =>
+                                  event.target.checked
+                                    ? [
+                                        ...new Set([
+                                          ...current,
+                                          slide.outlineSlideId,
+                                        ]),
+                                      ]
+                                    : current.filter(
+                                        (value) =>
+                                          value !== slide.outlineSlideId,
+                                      ),
+                                )
+                              }
+                            />
+                            <span>
+                              P{String(index + 1).padStart(2, "0")} ·{" "}
+                              {slide.title}
+                            </span>
+                          </label>
+                        ))}
+                    </div>
+                  ) : null}
+                  <small>
+                    图片只作非证据型视觉表达；未配置受控 Provider
+                    或额度时，任务会停在 Needs‑Manual，不会静默省略资源。
+                    当前单份演示上限为 {entitlement?.maxImagesPerDeck ?? 0} 张。
+                  </small>
+                </fieldset>
                 <button
                   className="primary-button"
                   type="button"
@@ -2326,6 +2534,14 @@ export function WorkspaceApp() {
                     draft.currentOutlineRevisionId !==
                       summary.outlineRevisionId ||
                     saveState === "saving" ||
+                    (summary.sourceSummary.sourceId === null &&
+                      !continueLimitedDraft) ||
+                    (generationImageScope === "selective" &&
+                      (selectedImageOutlineIds.length === 0 ||
+                        selectedImageOutlineIds.length >
+                          (entitlement?.maxImagesPerDeck ?? 0))) ||
+                    (generationImageScope === "cover_only" &&
+                      (entitlement?.maxImagesPerDeck ?? 0) < 1) ||
                     Boolean(busyMessage)
                   }
                   onClick={() => void startGeneration()}
@@ -2650,7 +2866,10 @@ export function WorkspaceApp() {
                   </button>
                   <div className="assistant-facts">
                     <span>Provider：deterministic fake</span>
-                    <span>图片调用：0</span>
+                    <span>
+                      图片调用：{usage?.metrics.images ?? 0} /{" "}
+                      {entitlement?.monthlyImageLimit ?? 0}
+                    </span>
                     <span>当前 rev：{outline.outlineRevisionId.slice(-6)}</span>
                   </div>
                 </div>

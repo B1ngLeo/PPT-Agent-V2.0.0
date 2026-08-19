@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import html
+import json
+import math
 import unicodedata
 from pathlib import Path
 
@@ -17,8 +19,7 @@ def _text(value: str) -> str:
 
 def _display_units(value: str) -> int:
     return sum(
-        2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
-        for character in value
+        2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1 for character in value
     )
 
 
@@ -52,9 +53,33 @@ def _element(tag: str, element_id: str, attributes: dict[str, object], content: 
     return f'  <{tag} id="{element_id}" {rendered}/>'
 
 
-def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> None:
+def _image_href(image_path: Path, svg_path: Path) -> str:
+    if image_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise ValueError("cover image must be PNG, JPEG, or WebP")
+    expected_images_dir = (svg_path.parent.parent / "images").resolve()
+    resolved = image_path.resolve(strict=True)
+    if resolved.parent != expected_images_dir:
+        raise ValueError("image must be a direct project-local images/ asset")
+    return f"../images/{resolved.name}"
+
+
+def author_slide(
+    slide: SlidePlan,
+    deck_title: str,
+    index: int,
+    path: Path,
+    *,
+    cover_image_path: Path | None = None,
+    image_path: Path | None = None,
+    image_crop_policy: str = "adaptive",
+    image_placeholder: str | None = None,
+) -> None:
     accent = COLORS[index % len(COLORS)]
-    title_preferred = 42 if _display_units(slide.title) <= 50 else 24
+    # Keep the authored SVG on the title anchor declared by the Default
+    # workflow's Design Spec/spec lock.  A non-anchor size may be tolerated as
+    # a sparse exception, but becomes a blocking typography drift on decks
+    # with three or more slides.
+    title_preferred = 38 if _display_units(slide.title) <= 50 else 24
     title_size = _font_size_for_line(
         slide.title,
         preferred=title_preferred,
@@ -64,6 +89,9 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
     page_role = (
         slide.role if slide.role in {"cover", "toc", "section", "content", "ending"} else "content"
     )
+    selected_image = image_path or (cover_image_path if slide.role == "cover" else None)
+    image_href = _image_href(selected_image, path) if selected_image is not None else None
+    has_image_slot = bool(image_href or image_placeholder)
     lines = [
         (
             '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
@@ -136,12 +164,68 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
                     {
                         "x": 112,
                         "y": 236,
-                        "width": 1056,
+                        "width": 520 if has_image_slot else 1056,
                         "height": 280,
                         "rx": 28,
                         "fill": "#FFFFFF",
                         "stroke": "#CBD5E1",
                     },
+                ),
+                *(
+                    [
+                        _element(
+                            "image",
+                            f"cover-image-{index}",
+                            {
+                                "x": 672,
+                                "y": 236,
+                                "width": 496,
+                                "height": 280,
+                                "href": image_href,
+                                "preserveAspectRatio": (
+                                    "xMidYMid meet"
+                                    if image_crop_policy == "no-crop"
+                                    else "xMidYMid slice"
+                                ),
+                            },
+                        )
+                    ]
+                    if image_href
+                    else []
+                ),
+                *(
+                    [
+                        _element(
+                            "rect",
+                            f"cover-image-placeholder-{index}",
+                            {
+                                "x": 672,
+                                "y": 236,
+                                "width": 496,
+                                "height": 280,
+                                "rx": 20,
+                                "fill": "#FFFFFF",
+                                "stroke": accent,
+                                "stroke-width": 3,
+                                "stroke-dasharray": "12,8",
+                            },
+                        ),
+                        _element(
+                            "text",
+                            f"cover-image-placeholder-label-{index}",
+                            {
+                                "x": 920,
+                                "y": 384,
+                                "text-anchor": "middle",
+                                "font-family": "Arial, Microsoft YaHei, sans-serif",
+                                "font-size": 18,
+                                "fill": "#64748B",
+                            },
+                            _text(_fit(image_placeholder, 40)),
+                        ),
+                    ]
+                    if image_placeholder and not image_href
+                    else []
                 ),
                 _element(
                     "text",
@@ -153,26 +237,326 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
                         "font-size": _font_size_for_line(
                             body[0],
                             preferred=32,
-                            available_width=920,
+                            available_width=440 if has_image_slot else 920,
                         ),
                         "fill": accent,
                     },
                     _text(body[0]),
                 ),
+            ]
+        )
+    elif image_href or image_placeholder:
+        lines.extend(
+            [
                 _element(
-                    "text",
-                    f"cover-subtitle-{index}",
+                    "rect",
+                    f"image-copy-panel-{index}",
                     {
-                        "x": 160,
-                        "y": 410,
-                        "font-family": "Arial, Microsoft YaHei, sans-serif",
-                        "font-size": 23,
-                        "fill": "#334155",
+                        "x": 112,
+                        "y": 210,
+                        "width": 500,
+                        "height": 390,
+                        "rx": 24,
+                        "fill": "#FFFFFF",
+                        "stroke": "#CBD5E1",
                     },
-                    "Editable native presentation baseline",
+                ),
+                *(
+                    [
+                        _element(
+                            "image",
+                            f"placed-image-{index}",
+                            {
+                                "x": 644,
+                                "y": 210,
+                                "width": 524,
+                                "height": 390,
+                                "href": image_href,
+                                "preserveAspectRatio": (
+                                    "xMidYMid meet"
+                                    if image_crop_policy == "no-crop"
+                                    else "xMidYMid slice"
+                                ),
+                            },
+                        )
+                    ]
+                    if image_href
+                    else [
+                        _element(
+                            "rect",
+                            f"image-placeholder-{index}",
+                            {
+                                "x": 644,
+                                "y": 210,
+                                "width": 524,
+                                "height": 390,
+                                "rx": 24,
+                                "fill": "#FFFFFF",
+                                "stroke": accent,
+                                "stroke-width": 3,
+                                "stroke-dasharray": "12,8",
+                            },
+                        ),
+                        _element(
+                            "text",
+                            f"image-placeholder-label-{index}",
+                            {
+                                "x": 906,
+                                "y": 402,
+                                "text-anchor": "middle",
+                                "font-family": "Arial, Microsoft YaHei, sans-serif",
+                                "font-size": 18,
+                                "fill": "#64748B",
+                            },
+                            _text(_fit(image_placeholder or "图片资源待处理", 44)),
+                        ),
+                    ]
                 ),
             ]
         )
+        for body_index, item in enumerate(body[:4]):
+            y = 286 + body_index * 72
+            lines.extend(
+                [
+                    _element(
+                        "circle",
+                        f"image-bullet-{index}-{body_index}",
+                        {"cx": 152, "cy": y - 8, "r": 7, "fill": accent},
+                    ),
+                    _element(
+                        "text",
+                        f"image-body-{index}-{body_index}",
+                        {
+                            "x": 178,
+                            "y": y,
+                            "font-family": "Arial, Microsoft YaHei, sans-serif",
+                            "font-size": _font_size_for_line(
+                                item,
+                                preferred=20,
+                                available_width=390,
+                            ),
+                            "fill": "#1E293B",
+                        },
+                        _text(item),
+                    ),
+                ]
+            )
+    elif slide.role == "comparison":
+        panel_gap = 32
+        panel_width = (1056 - panel_gap) // 2
+        for body_index, item in enumerate(body[:4]):
+            column = body_index % 2
+            row = body_index // 2
+            x = 112 + column * (panel_width + panel_gap)
+            y = 216 + row * 184
+            lines.extend(
+                [
+                    _element(
+                        "rect",
+                        f"comparison-panel-{index}-{body_index}",
+                        {
+                            "x": x,
+                            "y": y,
+                            "width": panel_width,
+                            "height": 152,
+                            "rx": 22,
+                            "fill": "#FFFFFF",
+                            "stroke": accent,
+                        },
+                    ),
+                    _element(
+                        "text",
+                        f"comparison-label-{index}-{body_index}",
+                        {
+                            "x": x + 28,
+                            "y": y + 44,
+                            "font-family": "Arial, Microsoft YaHei, sans-serif",
+                            "font-size": 16,
+                            "font-weight": 700,
+                            "fill": accent,
+                        },
+                        f"{body_index + 1:02d}",
+                    ),
+                    _element(
+                        "text",
+                        f"comparison-body-{index}-{body_index}",
+                        {
+                            "x": x + 28,
+                            "y": y + 92,
+                            "font-family": "Arial, Microsoft YaHei, sans-serif",
+                            "font-size": _font_size_for_line(
+                                item,
+                                preferred=20,
+                                available_width=panel_width - 56,
+                            ),
+                            "fill": "#1E293B",
+                        },
+                        _text(item),
+                    ),
+                ]
+            )
+    elif slide.role == "timeline":
+        count = max(len(body), 1)
+        # Timeline labels are centered on their nodes. Keep the endpoint nodes
+        # inside a wider safe area so useful CJK labels remain on-canvas.
+        start_x = 376
+        end_x = 904
+        gap = (end_x - start_x) / max(count - 1, 1)
+        lines.append(
+            _element(
+                "line",
+                f"timeline-line-{index}",
+                {
+                    "x1": start_x,
+                    "y1": 344,
+                    "x2": end_x,
+                    "y2": 344,
+                    "stroke": "#CBD5E1",
+                    "stroke-width": 8,
+                },
+            )
+        )
+        for body_index, item in enumerate(body):
+            x = start_x + body_index * gap
+            lines.extend(
+                [
+                    _element(
+                        "circle",
+                        f"timeline-node-{index}-{body_index}",
+                        {"cx": x, "cy": 344, "r": 18, "fill": accent},
+                    ),
+                    _element(
+                        "text",
+                        f"timeline-step-{index}-{body_index}",
+                        {
+                            "x": x,
+                            "y": 300,
+                            "text-anchor": "middle",
+                            "font-family": "Arial, sans-serif",
+                            "font-size": 16,
+                            "font-weight": 700,
+                            "fill": accent,
+                        },
+                        f"{body_index + 1:02d}",
+                    ),
+                    _element(
+                        "text",
+                        f"timeline-body-{index}-{body_index}",
+                        {
+                            "x": x,
+                            "y": 410,
+                            "text-anchor": "middle",
+                            "font-family": "Arial, Microsoft YaHei, sans-serif",
+                            "font-size": _font_size_for_line(
+                                item,
+                                preferred=18,
+                                available_width=max(150, int(gap) - 24),
+                            ),
+                            "fill": "#1E293B",
+                        },
+                        _text(item),
+                    ),
+                ]
+            )
+    elif slide.role == "risk_action":
+        for body_index, item in enumerate(body[:4]):
+            y = 226 + body_index * 92
+            lines.extend(
+                [
+                    _element(
+                        "rect",
+                        f"risk-tag-{index}-{body_index}",
+                        {
+                            "x": 112,
+                            "y": y,
+                            "width": 164,
+                            "height": 64,
+                            "rx": 16,
+                            "fill": accent,
+                        },
+                    ),
+                    _element(
+                        "text",
+                        f"risk-label-{index}-{body_index}",
+                        {
+                            "x": 194,
+                            "y": y + 40,
+                            "text-anchor": "middle",
+                            "font-family": "Arial, Microsoft YaHei, sans-serif",
+                            "font-size": 17,
+                            "font-weight": 700,
+                            "fill": "#FFFFFF",
+                        },
+                        "风险" if body_index % 2 == 0 else "行动",
+                    ),
+                    _element(
+                        "rect",
+                        f"risk-body-panel-{index}-{body_index}",
+                        {
+                            "x": 300,
+                            "y": y,
+                            "width": 868,
+                            "height": 64,
+                            "rx": 16,
+                            "fill": "#FFFFFF",
+                            "stroke": "#CBD5E1",
+                        },
+                    ),
+                    _element(
+                        "text",
+                        f"risk-body-{index}-{body_index}",
+                        {
+                            "x": 328,
+                            "y": y + 40,
+                            "font-family": "Arial, Microsoft YaHei, sans-serif",
+                            "font-size": _font_size_for_line(
+                                item,
+                                preferred=20,
+                                available_width=812,
+                            ),
+                            "fill": "#1E293B",
+                        },
+                        _text(item),
+                    ),
+                ]
+            )
+    elif slide.role == "ending":
+        for body_index, item in enumerate(body[:2]):
+            y = 236 + body_index * 172
+            lines.extend(
+                [
+                    _element(
+                        "rect",
+                        f"ending-band-{index}-{body_index}",
+                        {
+                            "x": 112,
+                            "y": y,
+                            "width": 1056 if body_index == 0 else 880,
+                            "height": 132,
+                            "rx": 26,
+                            "fill": "#FFFFFF" if body_index == 0 else accent,
+                            "stroke": accent,
+                        },
+                    ),
+                    _element(
+                        "text",
+                        f"ending-body-{index}-{body_index}",
+                        {
+                            "x": 152,
+                            "y": y + 78,
+                            "font-family": "Arial, Microsoft YaHei, sans-serif",
+                            "font-size": _font_size_for_line(
+                                item,
+                                preferred=24 if body_index == 0 else 22,
+                                available_width=800,
+                            ),
+                            "font-weight": 700 if body_index == 0 else 600,
+                            "fill": "#0F172A" if body_index == 0 else "#FFFFFF",
+                        },
+                        _text(item),
+                    ),
+                ]
+            )
     else:
         panel_width = 500 if len(body) > 3 else 1056
         lines.append(
@@ -243,12 +627,177 @@ def author_slide(slide: SlidePlan, deck_title: str, index: int, path: Path) -> N
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def author_deck(deck: DeckPlan, project_dir: Path) -> list[Path]:
+def author_chart_slide(
+    slide: SlidePlan,
+    path: Path,
+    *,
+    chart: list[tuple[str, float]],
+    unit: str,
+) -> None:
+    """Author an editable native-chart marker with a faithful SVG fallback."""
+
+    if len(chart) < 2:
+        raise ValueError("native comparison chart requires at least two values")
+    x_min, y_min, x_max, y_max = 180.0, 230.0, 1120.0, 560.0
+    axis_max = max(1.0, math.ceil(max(value for _, value in chart) / 100.0) * 100.0)
+    gap = (x_max - x_min) / len(chart)
+    bar_width = min(160.0, gap * 0.55)
+    metadata = {
+        "x": 120,
+        "y": 180,
+        "width": 1040,
+        "height": 420,
+        "plot_area": {
+            "x": x_min,
+            "y": y_min,
+            "width": x_max - x_min,
+            "height": y_max - y_min,
+        },
+        "name": "throughput-comparison",
+        "type": "column",
+        "categories": [label for label, _ in chart],
+        "series": [
+            {
+                "name": unit,
+                "values": [value for _, value in chart],
+                "point_colors": [
+                    "#2563EB" if index == 0 else "#0F766E" for index in range(len(chart))
+                ],
+            }
+        ],
+        "data_labels": {"show_value": True, "position": "outside_end", "font_size": 16},
+        "show_legend": False,
+        "axes": {
+            "category": {"kind": "text", "position": "bottom", "visible": True},
+            "value": {
+                "kind": "value",
+                "position": "left",
+                "visible": True,
+                "minimum": 0,
+                "maximum": axis_max,
+                "major_unit": axis_max / 5,
+                "major_gridlines": True,
+            },
+        },
+        "style": {
+            "font_family": "Microsoft YaHei",
+            "title_font_size": 24,
+            "axis_font_size": 14,
+            "colors": ["#2563EB"],
+            "chart_area_fill": "#FFFFFF",
+            "plot_area_fill": "#FFFFFF",
+            "text_color": "#1E293B",
+            "axis_color": "#64748B",
+            "grid_color": "#CBD5E1",
+        },
+        "source": {
+            "text": "Source: approved immutable fragments",
+            "x": 140,
+            "y": 604,
+            "width": 900,
+            "height": 28,
+            "font_size": 12,
+            "color": "#64748B",
+        },
+    }
+    lines = [
+        (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
+            'viewBox="0 0 1280 720" data-pptx-page-role="content">'
+        ),
+        (
+            '  <rect id="background" x="0" y="0" width="1280" height="720" '
+            'fill="#F8FAFC" data-pptx-role="background"/>'
+        ),
+        '  <g id="page-content" data-pptx-bounds="72 56 1136 600">',
+        (
+            '    <text id="title" x="80" y="98" '
+            'font-family="Microsoft YaHei, Arial, sans-serif" font-size="38" '
+            f'font-weight="700" fill="#0F172A">{_text(slide.title)}</text>'
+        ),
+        (
+            '    <text id="takeaway" x="80" y="148" '
+            'font-family="Microsoft YaHei, Arial, sans-serif" font-size="19" '
+            f'fill="#334155">{_text(slide.body[-1])}</text>'
+        ),
+        '    <g id="throughput-comparison" data-pptx-replace-with="chart">',
+        '      <metadata type="application/json">',
+        html.escape(json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))),
+        "      </metadata>",
+        (
+            '      <rect id="chart-panel" x="120" y="180" width="1040" '
+            'height="420" rx="12" fill="#FFFFFF" stroke="#CBD5E1"/>'
+        ),
+        '      <g id="throughput-comparison-chartArea">',
+    ]
+    for tick in range(6):
+        value = axis_max * tick / 5
+        y = y_max - (y_max - y_min) * tick / 5
+        lines.extend(
+            [
+                (
+                    f'        <line id="grid-{tick}" x1="{x_min:g}" y1="{y:g}" '
+                    f'x2="{x_max:g}" y2="{y:g}" stroke="#E2E8F0" stroke-width="1"/>'
+                ),
+                (
+                    f'        <text id="tick-{tick}" x="{x_min - 18:g}" y="{y + 5:g}" '
+                    'text-anchor="end" font-family="Arial, sans-serif" font-size="14" '
+                    f'fill="#64748B">{value:g}</text>'
+                ),
+            ]
+        )
+    lines.append(
+        "        <!-- chart-plot-area: object=throughput-comparison | "
+        f"{x_min:g},{y_min:g},{x_max:g},{y_max:g} -->"
+    )
+    for index, (label, value) in enumerate(chart):
+        center = x_min + gap * (index + 0.5)
+        height = (value / axis_max) * (y_max - y_min)
+        y = y_max - height
+        color = "#2563EB" if index == 0 else "#0F766E"
+        lines.extend(
+            [
+                (
+                    f'        <rect id="bar-{index}" x="{center - bar_width / 2:g}" '
+                    f'y="{y:g}" width="{bar_width:g}" height="{height:g}" rx="6" '
+                    f'fill="{color}"/>'
+                ),
+                (
+                    f'        <text id="value-{index}" x="{center:g}" y="{y - 12:g}" '
+                    'text-anchor="middle" font-family="Arial, sans-serif" font-size="18" '
+                    f'font-weight="700" fill="#0F172A">{value:g} {_text(unit)}</text>'
+                ),
+                (
+                    f'        <text id="label-{index}" x="{center:g}" y="590" '
+                    'text-anchor="middle" font-family="Arial, sans-serif" font-size="16" '
+                    f'fill="#334155">{_text(label)}</text>'
+                ),
+            ]
+        )
+    lines.extend(
+        [
+            "      </g>",
+            "    </g>",
+            "  </g>",
+            (
+                '  <text id="page-number" x="1190" y="676" text-anchor="end" '
+                'font-family="Arial, sans-serif" font-size="15" fill="#64748B" '
+                f'data-pptx-role="decoration">{slide.order + 1:02d}</text>'
+            ),
+            "</svg>",
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def author_deck(
+    deck: DeckPlan, project_dir: Path, *, cover_image_path: Path | None = None
+) -> list[Path]:
     svg_dir = project_dir / "svg_output"
     svg_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
     for index, slide in enumerate(sorted(deck.slides, key=lambda item: item.order)):
         path = svg_dir / f"slide_{index + 1:02d}.svg"
-        author_slide(slide, deck.title, index, path)
+        author_slide(slide, deck.title, index, path, cover_image_path=cover_image_path)
         paths.append(path)
     return paths

@@ -23,30 +23,39 @@ pnpm verify
 
 ## Provider configuration
 
-真实文本规划使用 Kimi K3，AI 生图使用 OpenAI GPT Image 2。Worker 仅从服务端环境读取以下配置：
+真实文本规划使用 Kimi K3；受控图片生成使用 GPT Image 2。公开 API 只持有内部
+Gateway token，私有 Provider Gateway 持有 Kimi 密钥；图片密钥只在明确图片任务子进程中按白名单传入：
 
 ```dotenv
-KIMI_BASE_URL=https://api.moonshot.cn/v1
+PLANNING_BACKEND=kimi
+KIMI_BASE_URL=https://cf.api.fan/v1
 KIMI_MODEL=kimi-k3
+KIMI_PROTOCOL=anthropic
 KIMI_REASONING_EFFORT=max
 IMAGE_BACKEND=openai
-OPENAI_BASE_URL=https://api.openai.com/v1
+IMAGE_GENERATION_ENABLED=false
+IMAGE_MAX_PER_DECK=0
+IMAGE_COST_MICROUNITS=100000
+OPENAI_BASE_URL=https://cf.api.fan/v1
 OPENAI_MODEL=gpt-image-2
+OPENAI_IMAGE_SIZE=1536x1024
+OPENAI_IMAGE_QUALITY=low
 ```
 
-`MOONSHOT_API_KEY` 与 `OPENAI_API_KEY` 必须通过未纳入 Git 的本地 `.env` 或 Secret Manager 提供。不要运行会展开环境值的 `docker compose config`；使用 `docker compose config --quiet` 校验配置。当前 P1 产品流程不调用图片 Provider，该后端仅作为后续生图流程的服务端能力预配置。
+`MOONSHOT_API_KEY`、`OPENAI_API_KEY` 与独立的 `PROVIDER_GATEWAY_TOKEN` 必须通过未纳入 Git 的本地 `.env` 或 Secret Manager 提供。不要运行会展开环境值的 `docker compose config`；使用 `docker compose config --quiet` 校验配置。图片默认仍关闭；要启用必须同时设置 `IMAGE_GENERATION_ENABLED=true`、`IMAGE_MAX_PER_DECK=1`、非负的单图成本和本地密钥，并由用户在批准页显式选择“仅封面”或一个“选定页”。只设置环境变量不会更改默认 `image_scope=none`。Provider 或已确认路径失败时任务进入 `Needs-Manual`，不会静默丢图。
 
 环境版本、Windows/Linux 说明和合同变更流程见 [开发文档](docs/development.md)。尚未进入对应 Goal 的测试入口会明确报告 `not-configured`；从首次实现起必须运行真实检查。
 
 G05 本地工作台使用 `http://localhost:3000`（不要改用 `127.0.0.1:3000`，后者不在默认 CORS 白名单）。启动 PostgreSQL/MinIO 并升级迁移后，可分别启动 API 与 Web：
 
 ```powershell
+docker compose --profile runtime up -d provider-gateway
 $env:PYTHONPATH='services/api/src;packages/domain/src'
 python -m uv run --package instant-ppt-api uvicorn instant_ppt_api.main:app --host 127.0.0.1 --port 8000
 pnpm --filter @instant-ppt/web dev
 ```
 
-G00–G05 与 P0 Gate 已通过；身份/租户/私有对象、安全来源流水线，以及草稿/意图/大纲/批准工作台均已形成独立验证证据，当前按 PLAN 进入 G06 真实生成。详见 [G04 证据](docs/evidence/g04-secure-source-pipeline.md)与 [G05 设计](docs/design/g05-draft-workspace.md)、[G05 证据](docs/evidence/g05-draft-workspace.md)。
+G00–G08 与 ISSUE-002 Default Agentic 内容/图片链路已形成独立验证证据。详见 [ISSUE-002](docs/issues/ISSUE-002-generated-pptx-renders-outline-placeholders-instead-of-usable-draft.md)、[G06 设计](docs/design/g06-real-generation-publication.md) 和 [发布 Gate](docs/release-gate-report.md)。
 
 ## Repository policy
 

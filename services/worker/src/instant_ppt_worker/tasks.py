@@ -9,6 +9,12 @@ from instant_ppt_domain.config import DomainSettings
 from instant_ppt_domain.database import create_domain_engine, create_session_factory
 from instant_ppt_domain.fake_worker import InjectedWorkerCrash, process_fake_job
 from instant_ppt_domain.reconciliation import reconcile_organization_objects
+from instant_ppt_domain.runtime_contract import (
+    PROCESS_EXPORT_TASK,
+    PROCESS_GENERATION_TASK,
+    PROCESS_SLIDE_REGENERATION_TASK,
+    assert_runtime_contract,
+)
 from instant_ppt_domain.service import LeaseConflict, ResourceNotFound, SlideStart
 from sqlalchemy.exc import OperationalError
 
@@ -73,14 +79,20 @@ def process_fake_job_task(self: Task, job_id: str, organization_id: str) -> str:
 @celery_app.task(
     bind=True,
     base=ObservedTask,
-    name="instant_ppt.process_generation_job",
+    name=PROCESS_GENERATION_TASK,
     acks_late=True,
     reject_on_worker_lost=True,
-    max_retries=2,
-    soft_time_limit=600,
-    time_limit=660,
+    max_retries=4,
+    soft_time_limit=3900,
+    time_limit=4200,
 )
-def process_generation_job_task(self: Task, job_id: str, organization_id: str) -> str:
+def process_generation_job_task(
+    self: Task,
+    job_id: str,
+    organization_id: str,
+    runtime_contract_version: str,
+) -> str:
+    assert_runtime_contract(runtime_contract_version)
     settings = DomainSettings.from_env()
     engine = create_domain_engine(settings.database_url)
     factory = create_session_factory(engine)
@@ -136,7 +148,7 @@ def process_source_task(self: Task, source_id: str, organization_id: str) -> str
 @celery_app.task(
     bind=True,
     base=ObservedTask,
-    name="instant_ppt.process_slide_regeneration",
+    name=PROCESS_SLIDE_REGENERATION_TASK,
     acks_late=True,
     reject_on_worker_lost=True,
     max_retries=2,
@@ -144,8 +156,12 @@ def process_source_task(self: Task, source_id: str, organization_id: str) -> str
     time_limit=210,
 )
 def process_slide_regeneration_task(
-    self: Task, job_id: str, organization_id: str
+    self: Task,
+    job_id: str,
+    organization_id: str,
+    runtime_contract_version: str,
 ) -> str:
+    assert_runtime_contract(runtime_contract_version)
     del self
     settings = DomainSettings.from_env()
     engine = create_domain_engine(settings.database_url)
@@ -159,14 +175,20 @@ def process_slide_regeneration_task(
 @celery_app.task(
     bind=True,
     base=ObservedTask,
-    name="instant_ppt.process_export",
+    name=PROCESS_EXPORT_TASK,
     acks_late=True,
     reject_on_worker_lost=True,
     max_retries=2,
     soft_time_limit=600,
     time_limit=660,
 )
-def process_export_task(self: Task, job_id: str, organization_id: str) -> str:
+def process_export_task(
+    self: Task,
+    job_id: str,
+    organization_id: str,
+    runtime_contract_version: str,
+) -> str:
+    assert_runtime_contract(runtime_contract_version)
     del self
     settings = DomainSettings.from_env()
     engine = create_domain_engine(settings.database_url)

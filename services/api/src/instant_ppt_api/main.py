@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from instant_ppt_domain.config import DomainSettings
 from instant_ppt_domain.database import create_domain_engine, create_session_factory
 from instant_ppt_domain.ids import new_ulid
+from instant_ppt_domain.runtime_contract import RuntimeIdentity
 from instant_ppt_domain.tenancy import TenantNotFound
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -30,7 +31,7 @@ from instant_ppt_api.observability import (
     observe_request_end,
     observe_request_start,
 )
-from instant_ppt_api.planning import DeterministicPlanningGateway
+from instant_ppt_api.planning import create_planning_gateway
 from instant_ppt_api.problems import problem_response
 from instant_ppt_api.routes import router
 
@@ -80,12 +81,13 @@ def create_app(
     application.state.object_store = object_store or MinioPrivateObjectStore(
         ObjectStoreSettings.from_env()
     )
-    application.state.planning_gateway = planning_gateway or DeterministicPlanningGateway()
+    application.state.planning_gateway = planning_gateway or create_planning_gateway()
     application.state.observability = create_observability(resolved_factory)
+    runtime_identity = RuntimeIdentity.from_env()
 
     @application.get("/healthz", include_in_schema=False)
     async def healthz():
-        return {"status": "ok"}
+        return {"status": "ok", "runtime": runtime_identity.as_dict()}
 
     @application.get("/readyz", include_in_schema=False)
     def readyz():
@@ -94,7 +96,7 @@ def create_app(
                 session.execute(text("SELECT 1"))
         except SQLAlchemyError:
             return JSONResponse({"status": "not_ready"}, status_code=503)
-        return {"status": "ready"}
+        return {"status": "ready", "runtime": runtime_identity.as_dict()}
 
     @application.get("/internal/metrics", include_in_schema=False)
     async def metrics():

@@ -7,15 +7,21 @@ G01 engine adapter. It owns quota reservation, an immutable generation snapshot,
 stable per-slide execution, QA, deck compilation, package QA, object upload,
 transactional publication, progress events, cancellation, and failed-slide retry.
 It intentionally stops at the generated baseline: result editing, export jobs,
-downloads, visual mode, image generation, and private templates belong to later
-goals.
+downloads, visual mode, and private templates belong to later goals.
+
+A Product/Security/Legal-approved 2026-08-16 extension, completed by the 2026-08-19
+ISSUE-002 Release Gate, adds an explicit bounded cover/selective image-resource step
+without changing slide identity or the editable native baseline invariants.
 
 ## Snapshot and state ownership
 
 Starting a native generation job locks the Draft and reads the current approval,
 Intent revision, Outline revision, template version, mode, source summary, and all
 frozen prompt/engine/container/font/provider versions in one transaction. The
-canonical approved payload is stored in `generation_snapshots`; its SHA-256 is
+snapshot also freezes the non-secret planning backend and image enablement, gateway URL,
+model, format, size, quality and per-deck cap so queue delay or Worker restart cannot pick
+up different Provider behavior. The canonical approved payload is stored in
+`generation_snapshots`; its SHA-256 is
 computed before adding the self-describing `snapshotSha256` field. PostgreSQL
 triggers reject update and delete so later Draft edits cannot change Worker input.
 
@@ -40,11 +46,28 @@ The Worker is the only component that authors and renders. It reconstructs a
 then invokes the public G01 `engine-adapter` request for full-deck compilation and
 package QA. The engine never receives a database connection or tenant credentials.
 
+The API maps the user's `image_scope=none|cover_only|selective` choice to the upstream
+source-id array, per-page notes and declared AI path chain. `none` is exclusive. Runtime
+configuration alone cannot opt a job into images. Before design, the Worker verifies and
+copies provided assets into the project, creates a fresh `analysis/image_analysis.csv`,
+and binds its inventory hash. Acquisition or replacement invalidates the old analysis.
+
+For an AI row, the Worker derives a minimal text-free visual prompt, rejects factual/data,
+UI, logo and person-evidence roles, and calls `gpt-image-2` at most once per deck under the
+current entitlement. A stable idempotency key bounds retry duplication where the gateway
+honors it. `auto` follows only the frozen path chain; explicit paths cannot switch provider.
+An approved Office-native substitute runs only for its declared trigger. Otherwise a
+required unresolved row records sanitized attempts and returns `Needs-Manual` before export.
+The image is an independent, referenced, non-full-slide PPTX picture; title, body, charts
+and evidence remain native editable objects.
+
 Successful or partial runs produce deterministic files:
 
 - `generation_source_bundle` with canonical JSON and normalized workspace paths;
 - `generation_baseline_pptx` from the native engine path;
 - `generation_preview_svg` and `generation_qa_report`;
+- optional image source asset(s), `generation_image_analysis`, `generation_image_audit`
+  and prompt-hash manifest, included in the source bundle and PPTX media as applicable;
 - one `generation_slide_svg` for each newly successful stable slide;
 - one `generation_manifest` binding the snapshot, all frozen versions, publication,
   Presentation/revision identities, artifact metadata, ready/failed slide IDs, and
@@ -74,6 +97,12 @@ Publication, Presentation, or revision row is created, and reservations are sett
 or released exactly once. Failed and cancelled jobs with no usable page create no
 Presentation. Quota is checked against settled plus reserved slides under the tenant
 lock before a job is created.
+
+Planning input/output tokens are settled when their ProviderCall succeeds. Before job
+creation, tenant-scoped locking checks and reserves image count plus configured micro-unit
+cost together with slides. Generation settles actual published generated image count/cost
+exactly once; provided/native/manual/failed paths settle no Provider image cost, and
+cancel/failure releases unused reservation.
 
 ## Monitoring and accessibility
 

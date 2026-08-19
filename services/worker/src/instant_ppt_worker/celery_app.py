@@ -6,6 +6,7 @@ import os
 
 from celery import Celery
 from instant_ppt_domain.config import DomainSettings
+from instant_ppt_domain.runtime_contract import PROCESS_GENERATION_TASK
 
 settings = DomainSettings.from_env()
 celery_app = Celery(
@@ -13,7 +14,7 @@ celery_app = Celery(
     broker=settings.celery_broker_url,
     include=["instant_ppt_worker.tasks"],
 )
-visibility_timeout = int(os.getenv("CELERY_VISIBILITY_TIMEOUT_SECONDS", "30"))
+visibility_timeout = int(os.getenv("CELERY_VISIBILITY_TIMEOUT_SECONDS", "4500"))
 celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
@@ -27,6 +28,10 @@ celery_app.conf.update(
     # deterministic after an abrupt worker exit.
     visibility_timeout=visibility_timeout,
     broker_transport_options={"visibility_timeout": visibility_timeout},
+    task_default_queue="default",
+    task_routes={
+        PROCESS_GENERATION_TASK: {"queue": "agentic"},
+    },
     task_serializer="json",
     accept_content=["json"],
     enable_utc=True,

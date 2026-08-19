@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
+import json
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -15,16 +19,28 @@ from fastapi.testclient import TestClient
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
     Artifact,
+    Draft,
+    EffectiveDesignSpecRevision,
     GenerationJob,
+    GenerationJobSlide,
     GenerationPublication,
     GenerationSnapshot,
     Presentation,
     PresentationRevision,
+    ProviderCall,
     SlideVersion,
     UsageLedger,
+    UsageReservation,
+    WorkflowCheckpointSet,
+    WorkflowGateReceipt,
+    WorkflowIntermediateArtifact,
+    WorkflowRun,
+    WorkflowStageAttempt,
 )
 from instant_ppt_worker.generation_pipeline import process_generation_job
+from instant_ppt_worker.providers import GeneratedImage
 from instant_ppt_worker.source_pipeline import WorkerObjectSettings, WorkerObjectStore
+from PIL import Image
 from redis import Redis
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
@@ -59,6 +75,34 @@ class MemoryGenerationStore:
             assert previous == payload
         self.objects[object_key] = payload
         self.put_count += 1
+
+
+class FakeCoverImageProvider:
+    provider_name = "fake-image"
+
+    def __init__(self) -> None:
+        buffer = io.BytesIO()
+        Image.new("RGB", (1536, 1024), color=(24, 72, 128)).save(buffer, format="PNG")
+        self.content = buffer.getvalue()
+        self.calls: list[dict[str, object]] = []
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        size: str | None = None,
+        quality: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> GeneratedImage:
+        self.calls.append(
+            {
+                "promptPresent": bool(prompt),
+                "size": size,
+                "quality": quality,
+                "idempotencyKey": idempotency_key,
+            }
+        )
+        return GeneratedImage(self.content, "image/png", "gpt-image-2")
 
 
 class MinioGenerationStore(MemoryGenerationStore):
@@ -142,7 +186,7 @@ def _create_job(
     response = client.post(
         f"/v1/drafts/{draft_id}/generation-jobs",
         headers={**ALICE, "Idempotency-Key": f"generation-{draft_id}"},
-        json=_mutation({"failureModes": failure_modes or {}}),
+        json=_mutation({"failureModes": failure_modes or {}, "continueLimitedDraft": True}),
     )
     assert response.status_code == 202, response.text
     assert response.json()["data"]["processor"] == "real"
@@ -222,17 +266,77 @@ def test_real_generation_crash_replay_publishes_one_immutable_revision(
     payload = response.json()["data"]
     assert payload["status"] == "succeeded"
     assert payload["presentation"]["status"] == "ready"
+    presentation_response = client.get(
+        f"/v1/presentations/{payload['presentation']['presentationId']}", headers=ALICE
+    )
+    assert presentation_response.status_code == 200
+    assert (
+        presentation_response.json()["data"]["currentRevision"]["contentMode"]
+        == "limited-general-draft"
+    )
     assert payload["publicationVersion"] == 1
-    assert len(payload["artifacts"]) == 7
+    assert len(payload["artifacts"]) == 13
+    assert {
+        "generation_design_spec",
+        "generation_spec_lock",
+        "generation_evidence_map",
+        "generation_workflow_result",
+        "generation_final_svg_qa",
+        "generation_package_qa",
+    }.issubset({artifact["artifactType"] for artifact in payload["artifacts"]})
     assert client.get(f"/v1/jobs/{job_id}", headers=BOB).status_code == 404
 
     with session_factory() as session:
         artifacts = list(session.scalars(select(Artifact).order_by(Artifact.artifact_type)))
-        assert len(artifacts) == 7
+        assert len(artifacts) == 13
+        run = session.scalar(select(WorkflowRun).where(WorkflowRun.generation_job_id == job_id))
+        assert run is not None
+        assert run.profile == "default-agentic"
+        assert run.status == "succeeded"
+        assert run.attempt == 2
+        assert session.scalar(
+            select(func.count(WorkflowStageAttempt.id)).where(
+                WorkflowStageAttempt.workflow_run_id == run.id
+            )
+        )
+        assert (
+            session.scalar(
+                select(func.count(WorkflowCheckpointSet.id)).where(
+                    WorkflowCheckpointSet.workflow_run_id == run.id
+                )
+            )
+            == 4
+        )
+        assert session.scalar(
+            select(func.count(WorkflowGateReceipt.id)).where(
+                WorkflowGateReceipt.workflow_run_id == run.id
+            )
+        )
+        assert (
+            session.scalar(
+                select(func.count(WorkflowIntermediateArtifact.id)).where(
+                    WorkflowIntermediateArtifact.workflow_run_id == run.id
+                )
+            )
+            == 13
+        )
+        effective = session.scalar(
+            select(EffectiveDesignSpecRevision).where(
+                EffectiveDesignSpecRevision.workflow_run_id == run.id
+            )
+        )
+        assert effective is not None
+        assert effective.payload["wholeDeckFinalGate"] == "passed"
         for artifact in artifacts:
             content = store.objects[artifact.object_key]
             assert hashlib.sha256(content).hexdigest() == artifact.sha256
             assert len(content) == artifact.size_bytes
+        generation_manifest = next(
+            artifact for artifact in artifacts if artifact.artifact_type == "generation_manifest"
+        )
+        manifest_payload = json.loads(store.objects[generation_manifest.object_key])
+        assert manifest_payload["contentMode"] == "limited-general-draft"
+        assert manifest_payload["sourceGroundingStatus"] == "not-applicable-limited-draft"
         baseline = next(x for x in artifacts if x.artifact_type == "generation_baseline_pptx")
         with zipfile.ZipFile(io.BytesIO(store.objects[baseline.object_key])) as package:
             assert "ppt/presentation.xml" in package.namelist()
@@ -274,6 +378,327 @@ def test_real_generation_crash_replay_publishes_one_immutable_revision(
         with session_factory() as session, pytest.raises(DBAPIError, match="immutable"):
             session.execute(text(statement), {"id": identifier})
             session.commit()
+
+
+def test_image_provider_environment_alone_cannot_enable_default_workflow_images(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("IMAGE_GENERATION_ENABLED", "true")
+    monkeypatch.setenv("IMAGE_MAX_PER_DECK", "1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://frozen.example/v1")
+    monkeypatch.setenv("OPENAI_IMAGE_QUALITY", "low")
+    approved = _approved_draft(client, slide_count=1)
+    created = _create_job(client, approved["draft"]["draftId"])
+    with session_factory() as session:
+        snapshot = session.get(GenerationSnapshot, created["snapshotId"])
+        assert snapshot is not None
+        frozen = snapshot.payload["providerConfiguration"]["image"]
+        assert frozen["enabled"] is True
+        assert frozen["baseUrl"] == "https://frozen.example/v1"
+        assert frozen["maxImagesPerDeck"] == 1
+        assert snapshot.payload["engineProfile"] == "default-agentic"
+        assert snapshot.payload["imagePolicy"] == {
+            "scope": "none",
+            "usage": ["none"],
+            "notes": {},
+        }
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://runtime-change.example/v1")
+    provider = FakeCoverImageProvider()
+    store = MemoryGenerationStore()
+    assert (
+        process_generation_job(
+            session_factory,
+            created["jobId"],
+            "g06-image-worker",
+            organization_id=created["organizationId"],
+            object_store=store,
+            image_provider=provider,
+        )
+        == "succeeded"
+    )
+    assert provider.calls == []
+
+    with session_factory() as session:
+        artifacts = list(
+            session.scalars(
+                select(Artifact).where(Artifact.organization_id == created["organizationId"])
+            )
+        )
+        assert not any(
+            artifact.artifact_type in {
+                "generation_ai_cover_image",
+                "generation_image_asset",
+            }
+            for artifact in artifacts
+        )
+        image_usage = session.scalar(
+            select(func.sum(UsageLedger.quantity)).where(
+                UsageLedger.job_id == created["jobId"],
+                UsageLedger.metric == "images",
+            )
+        )
+        assert image_usage == 0
+        provider_call_count = session.execute(
+            text(
+                "SELECT count(*) FROM provider_calls WHERE draft_id = :draft_id "
+                "AND purpose IN ('cover_image_generate', 'default_workflow_image_generate')"
+            ),
+            {"draft_id": approved["draft"]["draftId"]},
+        ).scalar_one()
+        assert provider_call_count == 0
+        baseline = next(
+            artifact
+            for artifact in artifacts
+            if artifact.artifact_type == "generation_baseline_pptx"
+        )
+        with zipfile.ZipFile(io.BytesIO(store.objects[baseline.object_key])) as package:
+            media = [name for name in package.namelist() if name.startswith("ppt/media/")]
+            assert media == []
+
+
+def test_explicit_selective_image_policy_is_frozen_against_stable_slide_ids(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    approved = _approved_draft(client, slide_count=2)
+    selected_outline_slide_id = approved["outline"]["slides"][0]["outlineSlideId"]
+    response = client.post(
+        f"/v1/drafts/{approved['draft']['draftId']}/generation-jobs",
+        headers={**ALICE, "Idempotency-Key": "explicit-selective-image-policy"},
+        json=_mutation(
+            {
+                "continueLimitedDraft": True,
+                "imagePolicy": {
+                    "scope": "selective",
+                    "usage": ["ai"],
+                    "notes": {
+                        selected_outline_slide_id: "non-evidentiary editorial hero"
+                    },
+                    "aiPath": "manual",
+                    "aiPathChain": ["manual"],
+                },
+            }
+        ),
+    )
+
+    assert response.status_code == 202, response.text
+    created = response.json()["data"]
+    with session_factory() as session:
+        snapshot = session.get(GenerationSnapshot, created["snapshotId"])
+        assert snapshot is not None
+        selected_slide_id = session.scalar(
+            select(GenerationJobSlide.slide_id).where(
+                GenerationJobSlide.job_id == created["jobId"],
+                GenerationJobSlide.outline_slide_id == selected_outline_slide_id,
+            )
+        )
+        assert selected_slide_id is not None
+        assert snapshot.payload["engineProfile"] == "default-agentic"
+        assert snapshot.payload["imagePolicy"] == {
+            "scope": "selective",
+            "usage": ["ai"],
+            "notes": {selected_slide_id: "non-evidentiary editorial hero"},
+            "aiPath": "manual",
+            "aiPathChain": ["manual"],
+            "providedAssets": [],
+            "officeNativeFallbacks": [],
+        }
+
+    store = MemoryGenerationStore()
+    assert (
+        process_generation_job(
+            session_factory,
+            created["jobId"],
+            "g06-image-needs-manual-worker",
+            organization_id=created["organizationId"],
+            object_store=store,
+        )
+        == "needs_manual"
+    )
+    with session_factory() as session:
+        job = session.get(GenerationJob, created["jobId"])
+        run = session.scalar(
+            select(WorkflowRun).where(WorkflowRun.generation_job_id == created["jobId"])
+        )
+        assert job is not None and job.status == "failed"
+        assert run is not None and run.status == "needs_manual"
+        assert run.stage == "image_resources"
+        assert session.scalar(
+            select(func.count(WorkflowCheckpointSet.id)).where(
+                WorkflowCheckpointSet.workflow_run_id == run.id
+            )
+        )
+        assert session.scalar(
+            text(
+                "SELECT count(*) FROM provider_calls WHERE draft_id = :draft_id "
+                "AND purpose = 'default_workflow_image_generate' AND status = 'failed'"
+            ),
+            {"draft_id": approved["draft"]["draftId"]},
+        ) == 1
+        assert session.scalar(
+            select(func.count(GenerationPublication.id)).where(
+                GenerationPublication.job_id == created["jobId"]
+            )
+        ) == 0
+    assert store.objects == {}
+    snapshot_response = client.get(f"/v1/jobs/{created['jobId']}", headers=ALICE)
+    assert snapshot_response.status_code == 200
+    workflow = snapshot_response.json()["data"]["workflow"]
+    assert workflow["status"] == "needs_manual"
+    assert workflow["stage"] == "image_resources"
+    assert workflow["errorCode"] == "IMAGE_RESOURCE_NEEDS_MANUAL"
+    assert "required image acquisition is unresolved" in workflow["recoveryAction"]
+
+
+def test_explicit_api_image_is_published_audited_and_billed_once(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image_bytes = FakeCoverImageProvider().content
+
+    class ImageHandler(BaseHTTPRequestHandler):
+        calls: list[dict[str, str]] = []
+
+        def do_POST(self) -> None:  # noqa: N802
+            size = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(size))
+            self.__class__.calls.append(
+                {
+                    "path": self.path,
+                    "model": str(payload.get("model")),
+                    "outputFormat": str(payload.get("output_format")),
+                }
+            )
+            body = json.dumps(
+                {"data": [{"b64_json": base64.b64encode(image_bytes).decode("ascii")}]}
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ImageHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        monkeypatch.setenv("IMAGE_GENERATION_ENABLED", "true")
+        monkeypatch.setenv("IMAGE_MAX_PER_DECK", "1")
+        monkeypatch.setenv("OPENAI_API_KEY", "local-test-only")
+        monkeypatch.setenv("OPENAI_BASE_URL", f"http://127.0.0.1:{server.server_port}/v1")
+        monkeypatch.setenv("OPENAI_MODEL", "gpt-image-2")
+        monkeypatch.setenv("OPENAI_OUTPUT_FORMAT", "png")
+        monkeypatch.setenv("OPENAI_IMAGE_QUALITY", "low")
+        monkeypatch.setenv("IMAGE_COST_MICROUNITS", "123000")
+        approved = _approved_draft(client, slide_count=1)
+        response = client.post(
+            f"/v1/drafts/{approved['draft']['draftId']}/generation-jobs",
+            headers={**ALICE, "Idempotency-Key": "explicit-api-image-policy"},
+            json=_mutation(
+                {
+                    "continueLimitedDraft": True,
+                    "imagePolicy": {
+                        "scope": "cover_only",
+                        "usage": ["ai"],
+                        "notes": {"cover": "non-evidentiary editorial hero"},
+                        "aiPath": "api",
+                        "aiPathChain": ["api", "manual"],
+                    },
+                }
+            ),
+        )
+        assert response.status_code == 202, response.text
+        created = response.json()["data"]
+        store = MemoryGenerationStore()
+
+        assert (
+            process_generation_job(
+                session_factory,
+                created["jobId"],
+                "g06-explicit-api-image-worker",
+                organization_id=created["organizationId"],
+                object_store=store,
+            )
+            == "succeeded"
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert ImageHandler.calls == [
+        {
+            "path": "/v1/images/generations",
+            "model": "gpt-image-2",
+            "outputFormat": "png",
+        }
+    ]
+    with session_factory() as session:
+        artifacts = list(
+            session.scalars(
+                select(Artifact).where(Artifact.organization_id == created["organizationId"])
+            )
+        )
+        by_type = {artifact.artifact_type: artifact for artifact in artifacts}
+        assert {
+            "generation_image_asset",
+            "generation_image_analysis",
+            "generation_image_audit",
+            "generation_image_prompts",
+        }.issubset(by_type)
+        manifest = json.loads(store.objects[by_type["generation_manifest"].object_key])
+        assert manifest["engineProfile"] == "default-agentic"
+        assert manifest["imageGeneration"]["scope"] == "cover_only"
+        assert manifest["imageGeneration"]["imageCount"] == 1
+        assert manifest["imageGeneration"]["generatedCount"] == 1
+        assert manifest["imageGeneration"]["costMicrounits"] == 123000
+        assert session.scalar(
+            select(func.sum(UsageLedger.quantity)).where(
+                UsageLedger.job_id == created["jobId"],
+                UsageLedger.metric == "images",
+            )
+        ) == 1
+        assert session.scalar(
+            select(func.sum(UsageLedger.quantity)).where(
+                UsageLedger.job_id == created["jobId"],
+                UsageLedger.metric == "image_cost_microunits",
+            )
+        ) == 123000
+        reservation = session.scalar(
+            select(UsageReservation).where(UsageReservation.job_id == created["jobId"])
+        )
+        assert reservation is not None
+        assert reservation.status == "settled"
+        assert reservation.reserved_images == reservation.settled_images == 1
+        assert (
+            reservation.reserved_cost_microunits
+            == reservation.settled_cost_microunits
+            == 123000
+        )
+        provider_call = session.execute(
+            text(
+                "SELECT provider, model, purpose, status, request_hash FROM provider_calls "
+                "WHERE draft_id = :draft_id AND purpose = 'default_workflow_image_generate'"
+            ),
+            {"draft_id": approved["draft"]["draftId"]},
+        ).one()
+        assert provider_call[:4] == (
+            "openai-image",
+            "gpt-image-2",
+            "default_workflow_image_generate",
+            "succeeded",
+        )
+        assert len(provider_call.request_hash) == 64
+        baseline = by_type["generation_baseline_pptx"]
+        with zipfile.ZipFile(io.BytesIO(store.objects[baseline.object_key])) as package:
+            assert any(name.startswith("ppt/media/") for name in package.namelist())
 
 
 def test_killed_worker_is_reclaimed_without_duplicate_publish_or_billing(
@@ -534,10 +959,7 @@ def test_redis_restart_sse_replays_postgres_events_and_hides_tenant(
     assert "text/event-stream" in replay.headers["content-type"]
     assert "event: job.completed" in replay.text
     assert f'"jobId":"{created["jobId"]}"' in replay.text
-    assert (
-        client.get(f"/v1/jobs/{created['jobId']}/events", headers=BOB).status_code
-        == 404
-    )
+    assert client.get(f"/v1/jobs/{created['jobId']}/events", headers=BOB).status_code == 404
 
 
 def test_quota_and_cross_tenant_rejection_create_no_job(
@@ -559,7 +981,7 @@ def test_quota_and_cross_tenant_rejection_create_no_job(
     quota = client.post(
         f"/v1/drafts/{draft_id}/generation-jobs",
         headers={**ALICE, "Idempotency-Key": "quota-rejected"},
-        json=_mutation({}),
+        json=_mutation({"continueLimitedDraft": True}),
     )
     assert quota.status_code == 429
     assert quota.json()["code"] == "quota_exceeded"
@@ -571,3 +993,80 @@ def test_quota_and_cross_tenant_rejection_create_no_job(
     assert foreign.status_code == 404
     with session_factory() as session:
         assert session.scalar(select(func.count(GenerationJob.id))) == 0
+
+
+def test_image_count_and_cost_quota_reject_before_job_or_provider_call(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    approved = _approved_draft(client, slide_count=1)
+    draft_id = approved["draft"]["draftId"]
+    image_policy = {
+        "continueLimitedDraft": True,
+        "imagePolicy": {
+            "scope": "cover_only",
+            "usage": ["ai"],
+            "notes": {"cover": "non-evidentiary hero"},
+            "aiPath": "manual",
+            "aiPathChain": ["manual"],
+        },
+    }
+    with session_factory.begin() as session:
+        organization_id = session.scalar(
+            select(Draft.organization_id).where(Draft.id == draft_id)
+        )
+        assert organization_id is not None
+        session.execute(
+            text(
+                "UPDATE entitlements SET max_images_per_deck=0 "
+                "WHERE organization_id=:organization_id"
+            ),
+            {"organization_id": organization_id},
+        )
+    per_deck = client.post(
+        f"/v1/drafts/{draft_id}/generation-jobs",
+        headers={**ALICE, "Idempotency-Key": "image-per-deck-quota"},
+        json=_mutation(image_policy),
+    )
+    assert per_deck.status_code == 429
+
+    with session_factory.begin() as session:
+        session.execute(
+            text(
+                "UPDATE entitlements SET max_images_per_deck=1, monthly_image_limit=0 "
+                "WHERE organization_id=:organization_id"
+            ),
+            {"organization_id": organization_id},
+        )
+    monthly = client.post(
+        f"/v1/drafts/{draft_id}/generation-jobs",
+        headers={**ALICE, "Idempotency-Key": "image-monthly-quota"},
+        json=_mutation(image_policy),
+    )
+    assert monthly.status_code == 429
+
+    with session_factory.begin() as session:
+        session.execute(
+            text(
+                "UPDATE entitlements SET monthly_image_limit=1, "
+                "monthly_image_cost_limit_microunits=1 "
+                "WHERE organization_id=:organization_id"
+            ),
+            {"organization_id": organization_id},
+        )
+    cost = client.post(
+        f"/v1/drafts/{draft_id}/generation-jobs",
+        headers={**ALICE, "Idempotency-Key": "image-cost-quota"},
+        json=_mutation(image_policy),
+    )
+    assert cost.status_code == 429
+    with session_factory() as session:
+        assert session.scalar(select(func.count(GenerationJob.id))) == 0
+        assert session.scalar(select(func.count(UsageReservation.id))) == 0
+        assert session.scalar(
+            select(func.count(ProviderCall.id)).where(
+                ProviderCall.purpose.in_(
+                    ("cover_image_generate", "default_workflow_image_generate")
+                )
+            )
+        ) == 0

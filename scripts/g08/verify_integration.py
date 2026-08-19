@@ -16,11 +16,11 @@ from minio.error import S3Error
 
 ROOT = Path(__file__).resolve().parents[2]
 ADMIN_DATABASE_URL = (
-    "postgresql://instant_ppt:local-development-only@localhost:5432/postgres"
+    "postgresql://instant_ppt:local-development-only@127.0.0.1:5432/postgres"
 )
 TEST_DATABASE = "instant_ppt_g08_test"
 TEST_DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/"
     f"{TEST_DATABASE}"
 )
 

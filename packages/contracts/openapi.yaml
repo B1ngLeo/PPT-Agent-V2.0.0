@@ -771,7 +771,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/MutationRequest"
+              $ref: "#/components/schemas/CreateGenerationJobRequest"
       responses:
         "202":
           description: Successful response
@@ -1967,6 +1967,12 @@ components:
         subjectId:
           type: string
           pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        profile:
+          enum:
+            - quick-engineering
+            - default-agentic
+        quickGenerate:
+          type: boolean
         passed:
           type: boolean
         findings:
@@ -1991,6 +1997,23 @@ components:
               message:
                 type: string
                 minLength: 1
+        contentQa:
+          type: object
+          additionalProperties: false
+          required:
+            - preRender
+            - finalSvg
+            - compiledPptx
+          properties:
+            preRender:
+              type: object
+              additionalProperties: true
+            finalSvg:
+              type: object
+              additionalProperties: true
+            compiledPptx:
+              type: object
+              additionalProperties: true
         checkedAt:
           type: string
           format: date-time
@@ -2040,6 +2063,12 @@ components:
         fontPackVersion:
           type: string
           minLength: 1
+        engineProfile:
+          enum:
+            - quick-engineering
+            - default-agentic
+        quickGenerate:
+          type: boolean
         snapshotId:
           anyOf:
             - type: string
@@ -2561,6 +2590,173 @@ components:
           anyOf:
             - type: string
               pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+    GenerationImagePolicy:
+      title: GenerationImagePolicy
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required:
+            - scope
+            - usage
+            - notes
+          properties:
+            scope:
+              const: none
+            usage:
+              const:
+                - none
+            notes:
+              type: object
+              maxProperties: 0
+            aiPath:
+              type: "null"
+            aiPathChain:
+              type: array
+              maxItems: 0
+        - type: object
+          additionalProperties: false
+          required:
+            - scope
+            - usage
+            - notes
+            - aiPath
+            - aiPathChain
+          properties:
+            scope:
+              const: cover_only
+            usage:
+              const:
+                - ai
+            notes:
+              type: object
+              additionalProperties: false
+              required:
+                - cover
+              properties:
+                cover: &a1
+                  type: string
+                  minLength: 1
+            aiPath:
+              enum:
+                - auto
+                - api
+                - host-native
+                - manual
+            aiPathChain:
+              type: array
+              minItems: 1
+              maxItems: 3
+              uniqueItems: true
+              items:
+                enum:
+                  - api
+                  - host-native
+                  - manual
+        - type: object
+          additionalProperties: false
+          required:
+            - scope
+            - usage
+            - notes
+            - aiPath
+            - aiPathChain
+          properties:
+            scope:
+              const: selective
+            usage:
+              const:
+                - ai
+            notes:
+              type: object
+              minProperties: 1
+              propertyNames:
+                pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+              additionalProperties: *a1
+            aiPath:
+              enum:
+                - auto
+                - api
+                - host-native
+                - manual
+            aiPathChain:
+              type: array
+              minItems: 1
+              maxItems: 3
+              uniqueItems: true
+              items:
+                enum:
+                  - api
+                  - host-native
+                  - manual
+    CreateGenerationJobData:
+      title: CreateGenerationJobData
+      type: object
+      additionalProperties: false
+      properties:
+        intentRevisionId:
+          anyOf:
+            - &a2
+              type: string
+              pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+            - type: "null"
+        outlineRevisionId:
+          anyOf:
+            - *a2
+            - type: "null"
+        templateVersionId:
+          anyOf:
+            - *a2
+            - type: "null"
+        slideCount:
+          type: integer
+          minimum: 1
+          maximum: 30
+          default: 3
+        sourceHashes:
+          type: array
+          items:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+        failureModes:
+          type: object
+          additionalProperties:
+            enum:
+              - none
+              - once
+              - always
+        stepDelayMs:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 0
+        crashOnceAtPosition:
+          anyOf:
+            - type: integer
+              minimum: 1
+              maximum: 30
+            - type: "null"
+        continueLimitedDraft:
+          type: boolean
+          default: false
+        imagePolicy:
+          $ref: "#/components/schemas/GenerationImagePolicy"
+    CreateGenerationJobRequest:
+      title: CreateGenerationJobRequest
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - data
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        data:
+          $ref: "#/components/schemas/CreateGenerationJobData"
+        baseRevisionId:
+          anyOf:
+            - *a2
             - type: "null"
     ResourceResponse:
       type: object

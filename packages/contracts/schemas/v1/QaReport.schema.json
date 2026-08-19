@@ -24,6 +24,15 @@
       "type": "string",
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
     },
+    "profile": {
+      "enum": [
+        "quick-engineering",
+        "default-agentic"
+      ]
+    },
+    "quickGenerate": {
+      "type": "boolean"
+    },
     "passed": {
       "type": "boolean"
     },
@@ -54,6 +63,29 @@
             "type": "string",
             "minLength": 1
           }
+        }
+      }
+    },
+    "contentQa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preRender",
+        "finalSvg",
+        "compiledPptx"
+      ],
+      "properties": {
+        "preRender": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "finalSvg": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "compiledPptx": {
+          "type": "object",
+          "additionalProperties": true
         }
       }
     },

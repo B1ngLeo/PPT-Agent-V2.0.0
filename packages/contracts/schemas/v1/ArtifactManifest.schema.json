@@ -49,6 +49,15 @@
       "type": "string",
       "minLength": 1
     },
+    "engineProfile": {
+      "enum": [
+        "quick-engineering",
+        "default-agentic"
+      ]
+    },
+    "quickGenerate": {
+      "type": "boolean"
+    },
     "snapshotId": {
       "anyOf": [
         {

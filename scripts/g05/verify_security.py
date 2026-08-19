@@ -34,6 +34,24 @@ def main() -> int:
             if "reasoning_content" in path.read_text(encoding="utf-8"):
                 reasoning_hits.append(path.relative_to(repository).as_posix())
 
+    generation_pipeline = (
+        repository / "services/worker/src/instant_ppt_worker/generation_pipeline.py"
+    ).read_text(encoding="utf-8")
+    worker_settings = (
+        repository / "services/worker/src/instant_ppt_worker/settings.py"
+    ).read_text(encoding="utf-8")
+    worker_providers = (
+        repository / "services/worker/src/instant_ppt_worker/providers.py"
+    ).read_text(encoding="utf-8")
+    image_path_integrated = all(
+        marker in generation_pipeline
+        for marker in ("OpenAIImageProvider", "generation_ai_cover_image", "imageGeneration")
+    )
+    image_call_cap = (
+        1 if "settings.max_images_per_deck not in {0, 1}" in worker_providers else -1
+    )
+    current_image_default = 0 if "max_images_per_deck: int = 0" in worker_settings else -1
+
     bundle_hits: list[str] = []
     bundle_root = repository / "apps/web/.next/static"
     if bundle_root.exists():
@@ -46,14 +64,16 @@ def main() -> int:
         "workerOnlySecretNames": not secret_hits,
         "browserBundleSecretNamesAbsent": not bundle_hits,
         "reasoningContentAbsentFromProductContracts": not reasoning_hits,
-        "p1ImageProviderCallCount": 0,
+        "imageProviderProductPathIntegrated": image_path_integrated,
+        "maxImageProviderCallsPerDeck": image_call_cap,
+        "currentDefaultImageProviderCallsPerDeck": current_image_default,
         "moonshotSmoke": (
             "eligible_secret_present"
             if os.getenv("MOONSHOT_API_KEY", "").strip()
             else "not_run_no_secret"
         ),
         "openAiImageSmoke": (
-            "not_run_p1_boundary_secret_present"
+            "eligible_secret_present"
             if os.getenv("OPENAI_API_KEY", "").strip()
             else "not_run_no_secret"
         ),
@@ -67,7 +87,9 @@ def main() -> int:
                 results["workerOnlySecretNames"],
                 results["browserBundleSecretNamesAbsent"],
                 results["reasoningContentAbsentFromProductContracts"],
-                results["p1ImageProviderCallCount"] == 0,
+                results["imageProviderProductPathIntegrated"],
+                results["maxImageProviderCallsPerDeck"] == 1,
+                results["currentDefaultImageProviderCallsPerDeck"] == 0,
             )
         ) else "failed",
         "results": results,
@@ -80,7 +102,9 @@ def main() -> int:
             "Secret presence is recorded only as a boolean-derived status; "
             "values are never read into evidence.",
             "A real kimi-k3 smoke is conditional on MOONSHOT_API_KEY and provider availability.",
-            "The P1 flow must not call the preconfigured image provider.",
+            "The image adapter supports an explicit maximum of one cover image per deck; "
+            "the current product default keeps IMAGE_GENERATION_ENABLED=false and the "
+            "per-deck quota at zero.",
         ],
     }
     output = repository / "docs/evidence/security/g05-provider-results.json"

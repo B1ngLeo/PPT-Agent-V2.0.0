@@ -757,6 +757,9 @@ export interface components {
             /** @enum {unknown} */
             subjectType: "slide" | "deck" | "package";
             subjectId: string;
+            /** @enum {unknown} */
+            profile?: "quick-engineering" | "default-agentic";
+            quickGenerate?: boolean;
             passed: boolean;
             findings: {
                 code: string;
@@ -764,6 +767,17 @@ export interface components {
                 severity: "info" | "warning" | "sev2" | "sev1";
                 message: string;
             }[];
+            contentQa?: {
+                preRender: {
+                    [key: string]: unknown;
+                };
+                finalSvg: {
+                    [key: string]: unknown;
+                };
+                compiledPptx: {
+                    [key: string]: unknown;
+                };
+            };
             /** Format: date-time */
             checkedAt: string;
         };
@@ -781,6 +795,9 @@ export interface components {
             sizeBytes: number;
             engineVersion: string;
             fontPackVersion: string;
+            /** @enum {unknown} */
+            engineProfile?: "quick-engineering" | "default-agentic";
+            quickGenerate?: boolean;
             snapshotId: string | null;
             presentationRevisionId: string | null;
             /** Format: date-time */
@@ -945,6 +962,69 @@ export interface components {
             data: {
                 [key: string]: unknown;
             };
+            baseRevisionId?: string | null;
+        };
+        /** GenerationImagePolicy */
+        GenerationImagePolicy: {
+            /** @constant */
+            scope: "none";
+            /** @constant */
+            usage: [
+                "none"
+            ];
+            notes: Record<string, never>;
+            aiPath?: null;
+            aiPathChain?: unknown[];
+        } | {
+            /** @constant */
+            scope: "cover_only";
+            /** @constant */
+            usage: [
+                "ai"
+            ];
+            notes: {
+                cover: string;
+            };
+            /** @enum {unknown} */
+            aiPath: "auto" | "api" | "host-native" | "manual";
+            aiPathChain: ("api" | "host-native" | "manual")[];
+        } | {
+            /** @constant */
+            scope: "selective";
+            /** @constant */
+            usage: [
+                "ai"
+            ];
+            notes: {
+                [key: string]: string;
+            };
+            /** @enum {unknown} */
+            aiPath: "auto" | "api" | "host-native" | "manual";
+            aiPathChain: ("api" | "host-native" | "manual")[];
+        };
+        /** CreateGenerationJobData */
+        CreateGenerationJobData: {
+            intentRevisionId?: string | null;
+            outlineRevisionId?: string | null;
+            templateVersionId?: string | null;
+            /** @default 3 */
+            slideCount: number;
+            sourceHashes?: string[];
+            failureModes?: {
+                [key: string]: "none" | "once" | "always";
+            };
+            /** @default 0 */
+            stepDelayMs: number;
+            crashOnceAtPosition?: number | null;
+            /** @default false */
+            continueLimitedDraft: boolean;
+            imagePolicy?: components["schemas"]["GenerationImagePolicy"];
+        };
+        /** CreateGenerationJobRequest */
+        CreateGenerationJobRequest: {
+            /** @constant */
+            schemaVersion: 1;
+            data: components["schemas"]["CreateGenerationJobData"];
             baseRevisionId?: string | null;
         };
         ResourceResponse: {
@@ -1741,7 +1821,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MutationRequest"];
+                "application/json": components["schemas"]["CreateGenerationJobRequest"];
             };
         };
         responses: {

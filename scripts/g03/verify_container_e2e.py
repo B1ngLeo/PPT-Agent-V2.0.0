@@ -23,7 +23,7 @@ from sqlalchemy import func, select
 
 ROOT = Path(__file__).resolve().parents[2]
 DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/instant_ppt"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/instant_ppt"
 )
 API_ROOT = "http://localhost:8000"
 

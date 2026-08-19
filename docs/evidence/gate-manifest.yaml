@@ -1,5 +1,5 @@
 schemaVersion: 1
-updatedAt: 2026-08-16T20:03:03+08:00
+updatedAt: 2026-08-16T22:45:14+08:00
 gates:
   - id: GATE-G00-CONTRACT-BASELINE
     goal: G00
@@ -190,10 +190,10 @@ gates:
   - id: GATE-G08-RELEASE
     goal: G08
     required: true
-    status: ready_for_review
+    status: passed
     ownerRole: product
-    approver: null
-    checkedAt: 2026-08-16T20:03:03+08:00
+    approver: Xiaobing Li
+    checkedAt: 2026-08-16T22:45:14+08:00
     targetVersions:
       [nextjs-16.2.11, postgresql-17.6, axe-core-4.13.0, opentelemetry-1.44.0]
     evidence:
@@ -214,9 +214,14 @@ gates:
         "docs/evidence/operations/g08-backup-restore.json",
         "docs/evidence/security/g08-dependency-audit.json",
         "docs/evidence/security/g08-object-governance.json",
+        "docs/evidence/security/g08-live-provider-smoke.json",
+        "docs/evidence/security/g08-live-product-provider-integration.json",
+        "docs/evidence/security/g08-provider-gateway-container.json",
+        "docs/evidence/g08-provider-product-decision.md",
+        "docs/evidence/g08-local-only-release-scope.md",
         "docs/privacy-and-provider-disclosure.md",
       ]
-    notes: Automated engineering evidence, storage governance and release-image health are complete. Named exact Chromium 200% plus Windows screen-reader review and product/security/legal production Provider/privacy/KES-or-KMS approval remain required; automation must not mark this Gate passed.
+    notes: Passed for the owner-operated local-only release scope. Automated engineering evidence, storage governance and release-image health are complete. Xiaobing Li approved cf.api.fan routing for kimi-k3 and gpt-image-2 in Product/Security/Legal roles and accepted the documented unverified supplier risk; live planning plus one-image PPTX embedding passed. Xiaobing Li also completed the named Windows 11 build 22631, Chrome 151.0.7922.138, 200 percent zoom and Windows Narrator 10.0.22621.4974 review. Production KES/KMS is not applicable/deferred only for this scope and must be restored before any external/shared/hosted/QA/staging/production use.
     waiver: null
   - id: GATE-G09-PRIVATE-TEMPLATE
     goal: G09

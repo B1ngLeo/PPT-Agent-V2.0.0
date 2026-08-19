@@ -112,7 +112,8 @@ def main() -> int:
 
     print(
         "G08 automated release evidence passed: E2E 12/12, recovery 5x10, "
-        "performance/restore/security/accessibility ready; human Gates remain pending"
+        "performance/restore/security/accessibility ready; final human Gate status is "
+        "verified separately from the Gate manifest"
     )
     return 0
 

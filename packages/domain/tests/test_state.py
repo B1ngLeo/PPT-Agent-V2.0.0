@@ -2,8 +2,10 @@ import pytest
 from instant_ppt_domain.state import (
     InvalidTransition,
     is_terminal_job,
+    is_terminal_workflow,
     validate_job_transition,
     validate_slide_transition,
+    validate_workflow_transition,
 )
 
 
@@ -37,3 +39,14 @@ def test_terminal_classification() -> None:
     assert is_terminal_job("failed")
     assert is_terminal_job("cancelled")
     assert not is_terminal_job("cancel_requested")
+
+
+def test_workflow_confirmation_and_manual_states_are_resumable_but_success_is_terminal() -> None:
+    validate_workflow_transition("running", "awaiting_stage1_confirmation")
+    validate_workflow_transition("awaiting_stage1_confirmation", "running")
+    validate_workflow_transition("running", "needs_manual")
+    validate_workflow_transition("needs_manual", "running")
+    assert is_terminal_workflow("succeeded")
+    assert not is_terminal_workflow("needs_manual")
+    with pytest.raises(InvalidTransition):
+        validate_workflow_transition("succeeded", "running")

@@ -183,6 +183,14 @@ def test_topic_intent_outline_refresh_approval_and_post_approval_revision(
             ("fake", "deterministic-fake-v1", provider_rows[1].request_hash, 0),
         ]
         assert all(len(row.request_hash) == 64 for row in provider_rows)
+        planning_usage = session.execute(
+            text(
+                "SELECT count(*), sum(quantity) FROM usage_ledger "
+                "WHERE metric = 'model_tokens' AND job_id IS NULL"
+            )
+        ).one()
+        assert planning_usage[0] == 2
+        assert planning_usage[1] > 0
         assert (
             session.execute(
                 text("SELECT count(*) FROM provider_calls WHERE provider LIKE '%image%'")

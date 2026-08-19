@@ -72,7 +72,8 @@
       "enum": [
         "scanSource",
         "parseSource",
-        "renderDeck"
+        "renderDeck",
+        "generatePptxDefault"
       ],
       "title": "Operation",
       "type": "string"

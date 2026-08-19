@@ -9,6 +9,8 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Callable
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -27,10 +29,12 @@ from instant_ppt_domain.models import (
     GenerationJobSlide,
     GenerationSnapshot,
     Presentation,
+    ProviderCall,
     SlideVersion,
 )
 from instant_ppt_domain.service import (
     SlideStart,
+    canonical_sha256,
     claim_job,
     complete_slide,
     heartbeat_job,
@@ -45,7 +49,14 @@ from instant_ppt_worker.adapter import execute
 from instant_ppt_worker.artifacts import sha256_file
 from instant_ppt_worker.errors import AdapterError
 from instant_ppt_worker.models import DeckPlan, RenderDeckRequest
+from instant_ppt_worker.providers import (
+    ImageProvider,
+    OpenAIImageProvider,
+    ProviderConfigurationError,
+    ProviderRequestError,
+)
 from instant_ppt_worker.renderer import render_slide_candidate
+from instant_ppt_worker.settings import OpenAIImageSettings
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.source_pipeline import WorkerObjectSettings, WorkerObjectStore
 
@@ -145,8 +156,10 @@ def _reused_slide_artifacts(
 
 
 def _template_binding(snapshot: GenerationSnapshot) -> dict[str, Any]:
-    template = dict(snapshot.payload["template"])
-    roles = [str(role) for role in template.get("pageRoles", [])]
+    template = dict(
+        snapshot.payload.get("templateCandidate") or snapshot.payload["template"]
+    )
+    roles = ["cover", "content", "ending"]
     return {
         "schemaVersion": 1,
         "templateId": template["templateId"],
@@ -213,6 +226,7 @@ def _run_adapter(
     request_id: str,
     organization_id: str,
     created_at: str,
+    cover_image_path: Path | None = None,
 ) -> Path:
     deck_key = f"requests/{request_id}.json"
     _write_canonical(root / deck_key, deck_plan)
@@ -223,6 +237,9 @@ def _run_adapter(
             operation="renderDeck",
             workspace_root=str(root),
             deck_plan_key=deck_key,
+            cover_image_key=(
+                cover_image_path.relative_to(root).as_posix() if cover_image_path else None
+            ),
             output_key=output_key,
             organization_id=organization_id,
             created_at=created_at,
@@ -243,7 +260,13 @@ def _normalize_workspace_paths(item: Any, workspace: str) -> Any:
     return item
 
 
-def _deterministic_bundle(output_dir: Path, deck_plan_path: Path, target: Path) -> None:
+def _deterministic_bundle(
+    output_dir: Path,
+    deck_plan_path: Path,
+    target: Path,
+    *,
+    extra_files: tuple[Path, ...] = (),
+) -> None:
     members = [deck_plan_path]
     members.extend(sorted((output_dir / "svg_output").glob("*.svg")))
     members.extend(
@@ -253,15 +276,17 @@ def _deterministic_bundle(output_dir: Path, deck_plan_path: Path, target: Path) 
         ]
     )
     members.extend([output_dir / "qa-report.json", output_dir / "artifact-manifest.json"])
+    members.extend(extra_files)
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for source in members:
             if not source.is_file():
                 continue
-            relative = (
-                "deck-plan.json"
-                if source == deck_plan_path
-                else source.relative_to(output_dir).as_posix()
-            )
+            if source == deck_plan_path:
+                relative = "deck-plan.json"
+            elif source in extra_files:
+                relative = f"images/{source.name}"
+            else:
+                relative = source.relative_to(output_dir).as_posix()
             info = zipfile.ZipInfo(relative, (2026, 8, 16, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
@@ -304,6 +329,177 @@ def _publish_files(
         store.put_file(spec.object_key, path, spec.media_type)
 
 
+def _cover_image_prompt(snapshot: GenerationSnapshot) -> str:
+    intent = dict(snapshot.payload.get("intent") or {})
+    outline = dict(snapshot.payload.get("outline") or {})
+    title = str(intent.get("title") or intent.get("topic") or "business presentation")[:200]
+    story = str(outline.get("storySummary") or intent.get("goal") or "")[:500]
+    return (
+        "Create a polished 3:2 landscape editorial hero illustration for a professional "
+        f"presentation about: {title}. Narrative direction: {story}. Use a restrained modern "
+        "business visual language, strong focal composition, generous negative space, realistic "
+        "lighting, and no visible text, letters, numbers, logos, watermarks, UI, or brand marks."
+    )
+
+
+def _record_image_provider_call(
+    session_factory: sessionmaker[Session],
+    snapshot: GenerationSnapshot,
+    *,
+    provider: str,
+    model: str,
+    prompt: str,
+    status: str,
+    started_at: datetime,
+    finished_at: datetime,
+    error_code: str | None = None,
+) -> None:
+    call_id = _stable_id(f"{snapshot.id}:cover-image:{canonical_sha256({'prompt': prompt})}")
+    with session_factory.begin() as session:
+        if session.get(ProviderCall, call_id) is not None:
+            return
+        session.add(
+            ProviderCall(
+                id=call_id,
+                organization_id=snapshot.organization_id,
+                draft_id=snapshot.draft_id,
+                provider=provider,
+                model=model,
+                purpose="cover_image_generate",
+                request_hash=canonical_sha256(
+                    {"snapshotId": snapshot.id, "purpose": "cover_image", "prompt": prompt}
+                ),
+                status=status,
+                input_tokens=0,
+                output_tokens=0,
+                repair_count=0,
+                error_code=error_code,
+                started_at=started_at,
+                finished_at=finished_at,
+            )
+        )
+
+
+def _generate_cover_image(
+    root: Path,
+    session_factory: sessionmaker[Session],
+    snapshot: GenerationSnapshot,
+    *,
+    job_id: str,
+    publication_version: int,
+    settings: OpenAIImageSettings,
+    provider: ImageProvider | None,
+) -> tuple[Path | None, str | None, dict[str, Any]]:
+    if not settings.enabled or settings.max_images_per_deck == 0:
+        return None, None, {"status": "disabled", "maxImagesPerDeck": settings.max_images_per_deck}
+    prompt = _cover_image_prompt(snapshot)
+    prompt_sha = canonical_sha256({"prompt": prompt})
+    started_at = datetime.now(UTC)
+    owned_provider = provider is None
+    selected = provider
+    try:
+        if selected is None:
+            selected = OpenAIImageProvider(settings)
+        image = selected.generate(
+            prompt,
+            size=settings.size,
+            quality=settings.quality,
+            idempotency_key=f"cover-{job_id}-v{publication_version}",
+        )
+        suffixes = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+        suffix = suffixes.get(image.media_type)
+        if suffix is None:
+            raise ProviderRequestError("openai-image", None, None)
+        path = root / "images" / f"generated-cover{suffix}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(image.content)
+        finished_at = datetime.now(UTC)
+        _record_image_provider_call(
+            session_factory,
+            snapshot,
+            provider=selected.provider_name,
+            model=image.model,
+            prompt=prompt,
+            status="succeeded",
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        return path, image.media_type, {
+            "status": "succeeded",
+            "provider": selected.provider_name,
+            "model": image.model,
+            "promptSha256": prompt_sha,
+            "size": settings.size,
+            "quality": settings.quality,
+            "imageCount": 1,
+            "maxImagesPerDeck": settings.max_images_per_deck,
+        }
+    except (ProviderConfigurationError, ProviderRequestError) as error:
+        finished_at = datetime.now(UTC)
+        provider_name = getattr(selected, "provider_name", "openai-image")
+        error_code = (
+            "provider_configuration_failed"
+            if isinstance(error, ProviderConfigurationError)
+            else "provider_request_failed"
+        )
+        _record_image_provider_call(
+            session_factory,
+            snapshot,
+            provider=provider_name,
+            model=settings.model,
+            prompt=prompt,
+            status="failed",
+            started_at=started_at,
+            finished_at=finished_at,
+            error_code=error_code,
+        )
+        return None, None, {
+            "status": "failed",
+            "provider": provider_name,
+            "model": settings.model,
+            "promptSha256": prompt_sha,
+            "errorCode": error_code,
+            "imageCount": 0,
+            "maxImagesPerDeck": settings.max_images_per_deck,
+        }
+    finally:
+        if owned_provider and selected is not None:
+            close = getattr(selected, "close", None)
+            if callable(close):
+                close()
+
+
+def _snapshot_image_settings(
+    snapshot: GenerationSnapshot,
+    supplied: OpenAIImageSettings | None,
+) -> OpenAIImageSettings:
+    if supplied is not None:
+        return supplied
+    settings = OpenAIImageSettings.from_env()
+    # The runtime switch is a fail-closed operational kill switch. A previously
+    # approved snapshot may narrow image use, but it cannot re-enable calls after
+    # the current deployment has disabled the provider.
+    if not settings.enabled or settings.max_images_per_deck == 0:
+        return replace(settings, enabled=False, max_images_per_deck=0)
+    configuration = dict(snapshot.payload.get("providerConfiguration") or {})
+    image = dict(configuration.get("image") or {})
+    if not image:
+        return settings
+    return replace(
+        settings,
+        enabled=bool(image.get("enabled", False)),
+        backend=str(image.get("backend") or settings.backend),
+        base_url=str(image.get("baseUrl") or settings.base_url),
+        model=str(image.get("model") or settings.model),
+        output_format=str(image.get("outputFormat") or settings.output_format),
+        size=str(image.get("size") or settings.size),
+        quality=str(image.get("quality") or settings.quality),
+        max_images_per_deck=int(
+            image.get("maxImagesPerDeck", settings.max_images_per_deck)
+        ),
+    )
+
+
 def process_generation_job(
     session_factory: sessionmaker[Session],
     job_id: str,
@@ -312,6 +508,8 @@ def process_generation_job(
     organization_id: str,
     lease_seconds: int = 30,
     object_store: GenerationObjectStore | None = None,
+    image_settings: OpenAIImageSettings | None = None,
+    image_provider: ImageProvider | None = None,
     crash_callback: Callable[[SlideStart], None] | None = None,
     before_publish_callback: Callable[[], None] | None = None,
 ) -> str:
@@ -323,6 +521,37 @@ def process_generation_job(
         claimed = claim_job(session, job_id, worker_id, lease_seconds=lease_seconds)
         if claimed is None:
             return "noop_terminal"
+
+    with session_factory() as session:
+        claimed_job, claimed_snapshot, claimed_slides = _load_generation(
+            session,
+            job_id,
+            organization_id,
+        )
+    has_engineering_behavior = bool(
+        claimed_job.test_behavior.get("crashOnceAtPosition") is not None
+        or int(claimed_job.test_behavior.get("stepDelayMs") or 0) > 0
+    )
+    is_default = (
+        claimed_snapshot.payload.get("engineProfile") == "default-agentic"
+        and not has_engineering_behavior
+        and all(slide.failure_mode == "none" for slide in claimed_slides)
+    )
+    if is_default:
+        from instant_ppt_worker.default_generation_pipeline import (
+            process_default_generation_job,
+        )
+
+        return process_default_generation_job(
+            session_factory,
+            job_id,
+            worker_id,
+            organization_id=organization_id,
+            lease_seconds=lease_seconds,
+            object_store=store,
+            started=started,
+            before_publish_callback=before_publish_callback,
+        )
 
     with tempfile.TemporaryDirectory(prefix="instant-ppt-generation-") as temporary:
         root = Path(temporary)
@@ -431,6 +660,15 @@ def process_generation_job(
             set_job_stage(session, job_id, worker_id, "deck_qa")
             set_job_stage(session, job_id, worker_id, "compiling")
             heartbeat_job(session, job_id, worker_id, lease_seconds=lease_seconds)
+        cover_image_path, cover_media_type, image_generation = _generate_cover_image(
+            root,
+            session_factory,
+            snapshot,
+            job_id=job_id,
+            publication_version=publication_version,
+            settings=_snapshot_image_settings(snapshot, image_settings),
+            provider=image_provider,
+        )
         plan = _deck_plan(snapshot, slides)
         final_plan_path = root / "deck-plan.json"
         _write_canonical(final_plan_path, plan)
@@ -442,6 +680,7 @@ def process_generation_job(
                 request_id=f"{job_id}-publication",
                 organization_id=organization_id,
                 created_at=str(snapshot.payload["createdAt"]),
+                cover_image_path=cover_image_path,
             )
         except AdapterError as error:
             with session_factory.begin() as session:
@@ -501,7 +740,12 @@ def process_generation_job(
             f"{job_id}:presentation-revision:{publication_version}"
         )
         source_bundle = root / "generation-source-bundle.zip"
-        _deterministic_bundle(final_dir, final_plan_path, source_bundle)
+        _deterministic_bundle(
+            final_dir,
+            final_plan_path,
+            source_bundle,
+            extra_files=((cover_image_path,) if cover_image_path else ()),
+        )
         specs_and_paths: list[tuple[PublishedArtifactSpec, Path]] = []
         specs_and_paths.extend(
             [
@@ -554,6 +798,20 @@ def process_generation_job(
                 ),
             ]
         )
+        if cover_image_path is not None and cover_media_type is not None:
+            specs_and_paths.append(
+                (
+                    _artifact_spec(
+                        job_id=job_id,
+                        organization_id=organization_id,
+                        publication_version=publication_version,
+                        kind="generation_ai_cover_image",
+                        path=cover_image_path,
+                        media_type=cover_media_type,
+                    ),
+                    cover_image_path,
+                )
+            )
         for index, slide in enumerate(slides, start=1):
             if slide.status != "ready" or slide.slide_id in reused_slide_ids:
                 continue
@@ -599,6 +857,7 @@ def process_generation_job(
             },
             "readySlideIds": [slide.slide_id for slide in slides if slide.status == "ready"],
             "failedSlideIds": [slide.slide_id for slide in slides if slide.status == "failed"],
+            "imageGeneration": image_generation,
             "artifacts": [
                 {
                     "artifactId": spec.artifact_id,

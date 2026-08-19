@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 API = "http://localhost:8000"
 EVIDENCE = ROOT / "docs/evidence/security/g04-container-e2e.json"
 DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/instant_ppt"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/instant_ppt"
 )
 
 

@@ -13,7 +13,15 @@
     "body": {
       "schemaVersion": 1,
       "data": {
-        "fixture": "createGenerationJob"
+        "imagePolicy": {
+          "scope": "none",
+          "usage": [
+            "none"
+          ],
+          "notes": {},
+          "aiPath": null,
+          "aiPathChain": []
+        }
       },
       "baseRevisionId": null
     }

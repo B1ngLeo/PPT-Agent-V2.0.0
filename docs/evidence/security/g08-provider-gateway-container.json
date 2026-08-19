@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "goal": "G08",
+  "checkedAt": "2026-08-16T21:41:00+08:00",
+  "result": "passed",
+  "service": "provider-gateway",
+  "imageId": "sha256:8de96939118548d0dd6a1740f4f1c6a4801651df782004843b258f749c0a4edb",
+  "platform": "linux/amd64",
+  "runtime": {
+    "state": "running",
+    "health": "healthy",
+    "user": "10001:10001",
+    "readOnlyRootFilesystem": true,
+    "capabilitiesDropped": ["ALL"],
+    "publishedHostPorts": 0,
+    "internalPort": 8090
+  },
+  "security": {
+    "modelApiKeysInPublicApi": false,
+    "authorizationHeadersPersisted": false,
+    "secretValuesPersisted": false
+  }
+}

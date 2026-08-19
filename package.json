@@ -32,6 +32,8 @@
     "verify:security:g03": "python -m uv run --package instant-ppt-api python scripts/g03/verify_security.py",
     "verify:security:g04": "python -m uv run --package instant-ppt-worker python scripts/g04/verify_security.py",
     "verify:security:g05": "python scripts/g05/verify_security.py",
+    "verify:provider-smoke": "python -m uv run --package instant-ppt-worker python scripts/g05/verify_live_providers.py",
+    "verify:provider-product": "python -m uv run --package instant-ppt-worker python scripts/g05/verify_live_product_providers.py",
     "verify:security:g08": "node scripts/g08/verify_alerts.mjs && python -m uv run --package instant-ppt-api python scripts/g08/verify_release_evidence.py",
     "verify:security": "pnpm verify:security:g01 && pnpm verify:security:g03 && pnpm verify:security:g04 && pnpm verify:security:g05 && pnpm verify:security:g08",
     "verify:supply-chain": "python -m uv run --package instant-ppt-worker python scripts/g01/generate_supply_chain.py",

@@ -11,11 +11,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from instant_ppt_domain.artifacts import tenant_object_key
+from instant_ppt_domain.effective_spec import (
+    EffectiveSpecConflict,
+    EffectiveSpecValidationError,
+    effective_for_presentation_revision,
+    persist_compilation,
+)
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
     Artifact,
     DataExport,
     Draft,
+    EffectiveDesignSpecRevision,
     ExportJob,
     GenerationJob,
     GenerationSnapshot,
@@ -28,6 +35,11 @@ from instant_ppt_domain.models import (
     ProjectCleanupJob,
     SlideRegenerationJob,
     SlideVersion,
+)
+from instant_ppt_domain.runtime_contract import (
+    PROCESS_EXPORT_TASK,
+    PROCESS_SLIDE_REGENERATION_TASK,
+    RUNTIME_CONTRACT_VERSION,
 )
 from instant_ppt_domain.service import canonical_sha256
 from instant_ppt_domain.tenancy import TenantContext, append_audit
@@ -108,7 +120,17 @@ def _revision_slides(session: Session, revision_id: str) -> list[SlideVersion]:
     )
 
 
+def _effective_for_revision(
+    session: Session, row: PresentationRevision
+) -> EffectiveDesignSpecRevision | None:
+    effective = effective_for_presentation_revision(session, row.id)
+    if effective is None and row.payload.get("effectiveSpecRevisionId"):
+        effective = session.get(EffectiveDesignSpecRevision, row.payload["effectiveSpecRevisionId"])
+    return effective
+
+
 def serialize_revision(session: Session, row: PresentationRevision) -> dict[str, Any]:
+    effective = _effective_for_revision(session, row)
     return {
         **row.payload,
         "presentationRevisionId": row.id,
@@ -121,6 +143,10 @@ def serialize_revision(session: Session, row: PresentationRevision) -> dict[str,
         "acceptedMissing": row.accepted_missing,
         "manifestArtifactId": row.manifest_artifact_id,
         "payloadSha256": row.payload_sha256,
+        "effectiveSpecRevisionId": effective.id if effective else None,
+        "effectiveSpecSha256": effective.effective_spec_sha256 if effective else None,
+        "specLockSha256": effective.spec_lock_sha256 if effective else None,
+        "wholeDeckFinalGate": (effective.payload.get("wholeDeckFinalGate") if effective else None),
         "createdAt": _utc(row.created_at),
         "slides": [serialize_slide(slide) for slide in _revision_slides(session, row.id)],
     }
@@ -269,11 +295,13 @@ def create_revision(
                         "slide title must contain 1 to 300 characters"
                     )
                 slides[index]["title"] = title
+                slides[index]["artifactId"] = None
             if "body" in operation:
                 body = operation["body"]
                 if not isinstance(body, list) or not all(isinstance(item, str) for item in body):
                     raise PresentationValidationError("slide body must be a string array")
                 slides[index]["body"] = [item[:2000] for item in body]
+                slides[index]["artifactId"] = None
         elif kind == "move":
             if index < 0:
                 raise PresentationValidationError("move slideId does not exist")
@@ -282,10 +310,14 @@ def create_revision(
                 raise PresentationValidationError("move position is outside the slide range")
             item = slides.pop(index)
             slides.insert(position - 1, item)
+            for slide in slides:
+                slide["artifactId"] = None
         elif kind == "delete":
             if index < 0:
                 raise PresentationValidationError("delete slideId does not exist")
             slides.pop(index)
+            for slide in slides:
+                slide["artifactId"] = None
         elif kind == "accept_missing":
             accepted_missing = True
         else:
@@ -307,6 +339,24 @@ def create_revision(
         + 1
     )
     revision_id = new_ulid()
+    base_effective = _effective_for_revision(session, base)
+    effective = base_effective
+    effective_operations = [
+        operation for operation in operations if operation.get("type") != "accept_missing"
+    ]
+    if base_effective is not None and effective_operations:
+        try:
+            effective = persist_compilation(
+                session,
+                base=base_effective,
+                presentation_revision_id=revision_id,
+                operations=effective_operations,
+                actor_id=context.user_id,
+            )
+        except EffectiveSpecConflict as error:
+            raise PresentationConflict(str(error)) from error
+        except EffectiveSpecValidationError as error:
+            raise PresentationValidationError(str(error)) from error
     payload = {
         "schemaVersion": 1,
         "presentationRevisionId": revision_id,
@@ -318,6 +368,10 @@ def create_revision(
         "operationSet": operations,
         "partial": partial,
         "acceptedMissing": accepted_missing,
+        "contentMode": base.payload.get("contentMode"),
+        "effectiveSpecRevisionId": effective.id if effective else None,
+        "effectiveSpecSha256": effective.effective_spec_sha256 if effective else None,
+        "wholeDeckFinalGate": (effective.payload.get("wholeDeckFinalGate") if effective else None),
         "slides": [
             {key: value for key, value in slide.items() if key != "sourceSlideVersionId"}
             for slide in slides
@@ -333,6 +387,9 @@ def create_revision(
         "presentationRevisionId": revision_id,
         "basedOnRevisionId": base.id,
         "payloadSha256": canonical_sha256(payload),
+        "effectiveSpecRevisionId": effective.id if effective else None,
+        "effectiveSpecSha256": effective.effective_spec_sha256 if effective else None,
+        "contentMode": base.payload.get("contentMode"),
         "slides": payload["slides"],
     }
     _publish_json_artifact(
@@ -416,7 +473,11 @@ def _task_outbox(
             aggregate_id=aggregate_id,
             dedupe_key=f"task:{aggregate_type}:{aggregate_id}:1",
             destination=destination,
-            payload={"jobId": aggregate_id, "organizationId": organization_id},
+            payload={
+                "jobId": aggregate_id,
+                "organizationId": organization_id,
+                "runtimeContractVersion": RUNTIME_CONTRACT_VERSION,
+            },
             status="pending",
             available_at=datetime.now(UTC),
         )
@@ -441,8 +502,19 @@ def create_regeneration_job(
     base = get_revision(
         session, base_revision_id, context.organization_id, presentation_id=presentation.id
     )
-    if not any(slide.slide_id == slide_id for slide in _revision_slides(session, base.id)):
+    base_slides = _revision_slides(session, base.id)
+    target = next((slide for slide in base_slides if slide.slide_id == slide_id), None)
+    if target is None:
         raise PresentationValidationError("slideId does not exist in the base revision")
+    effective = _effective_for_revision(session, base)
+    if effective is not None:
+        effective_target = next(
+            (slide for slide in effective.roster if slide["slideId"] == slide_id), None
+        )
+        if effective_target is None:
+            raise PresentationValidationError("slideId is absent from the effective roster")
+        if effective_target["role"] == "cover":
+            raise PresentationValidationError("single-slide regeneration cannot target cover")
     if len(instruction) > 2000:
         raise PresentationValidationError("regeneration instruction exceeds 2000 characters")
     row = SlideRegenerationJob(
@@ -461,7 +533,7 @@ def create_regeneration_job(
         organization_id=context.organization_id,
         aggregate_type="slide_regeneration_job",
         aggregate_id=row.id,
-        destination="instant_ppt.process_slide_regeneration",
+        destination=PROCESS_SLIDE_REGENERATION_TASK,
     )
     append_audit(
         session,
@@ -537,7 +609,7 @@ def create_export_job(
         organization_id=context.organization_id,
         aggregate_type="export_job",
         aggregate_id=row.id,
-        destination="instant_ppt.process_export",
+        destination=PROCESS_EXPORT_TASK,
     )
     append_audit(
         session,

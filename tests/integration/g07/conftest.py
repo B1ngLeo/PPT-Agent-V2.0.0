@@ -26,6 +26,16 @@ class MemoryObjectStore:
     def put_file(self, object_key: str, path: Path, media_type: str) -> None:
         self.put_bytes(object_key, path.read_bytes(), media_type)
 
+    def download(self, object_key: str, target: Path, *, max_bytes: int) -> str:
+        try:
+            payload = self.objects[object_key]
+        except KeyError as error:
+            raise ArtifactUnavailable("object missing") from error
+        if len(payload) > max_bytes:
+            raise ArtifactUnavailable("object exceeds download limit")
+        target.write_bytes(payload)
+        return hashlib.sha256(payload).hexdigest()
+
     def remove(self, object_key: str) -> None:
         self.objects.pop(object_key, None)
 

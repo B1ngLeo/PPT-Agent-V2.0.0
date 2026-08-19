@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "G08",
+  "generatedAt": "2026-08-16T21:01:27+08:00",
+  "result": "passed",
+  "executedProvider": "kimi",
+  "secretPresence": {
+    "MOONSHOT_API_KEY": true,
+    "OPENAI_API_KEY": true
+  },
+  "results": {
+    "kimi": {
+      "status": "passed",
+      "requestedModel": "kimi-k3",
+      "returnedModel": "kimi-k3",
+      "promptTokens": 1,
+      "completionTokens": 64,
+      "structuredJsonVerified": true
+    },
+    "openaiImage": {
+      "status": "passed",
+      "requestedModel": "gpt-image-2",
+      "returnedModel": "gpt-image-2",
+      "mediaType": "image/png",
+      "bytes": 789451,
+      "sha256": "17220e1f7460aafa64c4fae8fb3794be878af766e8071ca71613b98a0846790d",
+      "promptPersisted": false
+    }
+  },
+  "security": {
+    "secretValuesPersisted": false,
+    "authorizationHeadersPersisted": false,
+    "providerResponseContentPersisted": false,
+    "generatedImagePersisted": false
+  }
+}

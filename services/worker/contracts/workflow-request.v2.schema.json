@@ -1,0 +1,1075 @@
+{
+  "$defs": {
+    "AgentRuntimePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedTools": {
+          "items": {
+            "enum": [
+              "read-source",
+              "write-project",
+              "run-vendored-script",
+              "start-live-preview",
+              "provider-text",
+              "provider-image",
+              "approved-web"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowedtools",
+          "type": "array"
+        },
+        "allowSubagentResearch": {
+          "default": false,
+          "title": "Allowsubagentresearch",
+          "type": "boolean"
+        },
+        "allowSubagentReview": {
+          "default": false,
+          "title": "Allowsubagentreview",
+          "type": "boolean"
+        },
+        "allowSubagentSvgAuthoring": {
+          "const": false,
+          "default": false,
+          "title": "Allowsubagentsvgauthoring",
+          "type": "boolean"
+        },
+        "maxTurns": {
+          "maximum": 200,
+          "minimum": 1,
+          "title": "Maxturns",
+          "type": "integer"
+        },
+        "maxTokens": {
+          "maximum": 2000000,
+          "minimum": 1,
+          "title": "Maxtokens",
+          "type": "integer"
+        },
+        "maxCostMicrounits": {
+          "minimum": 0,
+          "title": "Maxcostmicrounits",
+          "type": "integer"
+        },
+        "softTimeoutSeconds": {
+          "maximum": 43200,
+          "minimum": 30,
+          "title": "Softtimeoutseconds",
+          "type": "integer"
+        },
+        "hardTimeoutSeconds": {
+          "maximum": 86400,
+          "minimum": 60,
+          "title": "Hardtimeoutseconds",
+          "type": "integer"
+        },
+        "previewIdleTimeoutSeconds": {
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Previewidletimeoutseconds",
+          "type": "integer"
+        },
+        "maxStageAttempts": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Maxstageattempts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "allowedTools",
+        "maxTurns",
+        "maxTokens",
+        "maxCostMicrounits",
+        "softTimeoutSeconds",
+        "hardTimeoutSeconds",
+        "previewIdleTimeoutSeconds",
+        "maxStageAttempts"
+      ],
+      "title": "AgentRuntimePolicy",
+      "type": "object"
+    },
+    "ApprovalSnapshotRef": {
+      "additionalProperties": false,
+      "properties": {
+        "snapshotId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Snapshotid",
+          "type": "string"
+        },
+        "snapshotSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Snapshotsha256",
+          "type": "string"
+        },
+        "intentRevisionId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Intentrevisionid",
+          "type": "string"
+        },
+        "outlineRevisionId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Outlinerevisionid",
+          "type": "string"
+        },
+        "approvalId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Approvalid",
+          "type": "string"
+        },
+        "approvedBy": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Approvedby",
+          "type": "string"
+        },
+        "approvedAt": {
+          "format": "date-time",
+          "title": "Approvedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "snapshotSha256",
+        "intentRevisionId",
+        "outlineRevisionId",
+        "approvalId",
+        "approvedBy",
+        "approvedAt"
+      ],
+      "title": "ApprovalSnapshotRef",
+      "type": "object"
+    },
+    "ApprovedIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "objective": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Objective",
+          "type": "string"
+        },
+        "audience": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Audience",
+          "type": "string"
+        },
+        "desiredOutcome": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Desiredoutcome",
+          "type": "string"
+        },
+        "language": {
+          "pattern": "^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})+$",
+          "title": "Language",
+          "type": "string"
+        },
+        "deliveryContext": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Deliverycontext",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "objective",
+        "audience",
+        "desiredOutcome",
+        "language",
+        "deliveryContext"
+      ],
+      "title": "ApprovedIntent",
+      "type": "object"
+    },
+    "ApprovedOutlineSlide": {
+      "additionalProperties": false,
+      "properties": {
+        "outlineSlideId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Outlineslideid",
+          "type": "string"
+        },
+        "slideId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Slideid",
+          "type": "string"
+        },
+        "pnn": {
+          "pattern": "^P\\d{2,3}$",
+          "title": "Pnn",
+          "type": "string"
+        },
+        "order": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Order",
+          "type": "integer"
+        },
+        "role": {
+          "enum": [
+            "cover",
+            "section",
+            "content",
+            "data",
+            "comparison",
+            "timeline",
+            "risk_action",
+            "ending"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "audienceQuestion": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Audiencequestion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outlineSlideId",
+        "slideId",
+        "pnn",
+        "order",
+        "role",
+        "title",
+        "audienceQuestion"
+      ],
+      "title": "ApprovedOutlineSlide",
+      "type": "object"
+    },
+    "ApprovedSourceArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "sourceArtifactId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Sourceartifactid",
+          "type": "string"
+        },
+        "sourceId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Sourceid",
+          "type": "string"
+        },
+        "organizationId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "objectSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Objectsha256",
+          "type": "string"
+        },
+        "mediaType": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Mediatype",
+          "type": "string"
+        },
+        "privateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 12,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Privatenonce"
+        },
+        "parsedAt": {
+          "format": "date-time",
+          "title": "Parsedat",
+          "type": "string"
+        },
+        "fragments": {
+          "items": {
+            "$ref": "#/$defs/SourceFragment"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Fragments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sourceArtifactId",
+        "sourceId",
+        "organizationId",
+        "objectSha256",
+        "mediaType",
+        "parsedAt",
+        "fragments"
+      ],
+      "title": "ApprovedSourceArtifact",
+      "type": "object"
+    },
+    "ConfirmationPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "explicit_user",
+            "delegated"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "delegationScope": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Delegationscope",
+          "type": "array"
+        },
+        "policyVersion": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Policyversion",
+          "type": "string"
+        },
+        "receiptTtlSeconds": {
+          "maximum": 604800,
+          "minimum": 60,
+          "title": "Receiptttlseconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "policyVersion",
+        "receiptTtlSeconds"
+      ],
+      "title": "ConfirmationPolicy",
+      "type": "object"
+    },
+    "ImagePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "enum": [
+            "none",
+            "cover_only",
+            "selective"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "usage": {
+          "items": {
+            "enum": [
+              "ai",
+              "web",
+              "provided",
+              "placeholder",
+              "none"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Usage",
+          "type": "array"
+        },
+        "notes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "object"
+        },
+        "aiPath": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "api",
+                "host-native",
+                "manual"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aipath"
+        },
+        "aiPathChain": {
+          "items": {
+            "enum": [
+              "api",
+              "host-native",
+              "manual"
+            ],
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Aipathchain",
+          "type": "array"
+        },
+        "providedAssets": {
+          "items": {
+            "$ref": "#/$defs/ProvidedImageAsset"
+          },
+          "maxItems": 32,
+          "title": "Providedassets",
+          "type": "array"
+        },
+        "officeNativeFallbacks": {
+          "items": {
+            "$ref": "#/$defs/OfficeNativeImageFallback"
+          },
+          "maxItems": 32,
+          "title": "Officenativefallbacks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scope",
+        "usage"
+      ],
+      "title": "ImagePolicy",
+      "type": "object"
+    },
+    "OfficeNativeImageFallback": {
+      "additionalProperties": false,
+      "properties": {
+        "slideId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Slideid",
+          "type": "string"
+        },
+        "construction": {
+          "enum": [
+            "native-shapes",
+            "native-diagram",
+            "native-chart"
+          ],
+          "title": "Construction",
+          "type": "string"
+        },
+        "triggerCodes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Triggercodes",
+          "type": "array"
+        },
+        "decisionReceiptSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Decisionreceiptsha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slideId",
+        "construction",
+        "triggerCodes",
+        "decisionReceiptSha256"
+      ],
+      "title": "OfficeNativeImageFallback",
+      "type": "object"
+    },
+    "ProductionPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "proactiveSpeakerNotes": {
+          "title": "Proactivespeakernotes",
+          "type": "boolean"
+        },
+        "proactiveCustomAnimations": {
+          "title": "Proactivecustomanimations",
+          "type": "boolean"
+        },
+        "proactiveNarrationAudio": {
+          "title": "Proactivenarrationaudio",
+          "type": "boolean"
+        },
+        "effectiveSpeakerNotes": {
+          "enum": [
+            "enabled",
+            "disabled"
+          ],
+          "title": "Effectivespeakernotes",
+          "type": "string"
+        },
+        "effectiveCustomAnimations": {
+          "enum": [
+            "enabled",
+            "disabled"
+          ],
+          "title": "Effectivecustomanimations",
+          "type": "string"
+        },
+        "effectiveNarrationAudio": {
+          "enum": [
+            "enabled",
+            "disabled"
+          ],
+          "title": "Effectivenarrationaudio",
+          "type": "string"
+        },
+        "visualReview": {
+          "title": "Visualreview",
+          "type": "boolean"
+        },
+        "refineSpec": {
+          "title": "Refinespec",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "proactiveSpeakerNotes",
+        "proactiveCustomAnimations",
+        "proactiveNarrationAudio",
+        "effectiveSpeakerNotes",
+        "effectiveCustomAnimations",
+        "effectiveNarrationAudio",
+        "visualReview",
+        "refineSpec"
+      ],
+      "title": "ProductionPolicy",
+      "type": "object"
+    },
+    "ProvidedImageAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "assetId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Assetid",
+          "type": "string"
+        },
+        "filename": {
+          "maxLength": 180,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "title": "Filename",
+          "type": "string"
+        },
+        "workspaceKey": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Workspacekey",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "mediaType": {
+          "enum": [
+            "image/png",
+            "image/jpeg",
+            "image/webp"
+          ],
+          "title": "Mediatype",
+          "type": "string"
+        },
+        "purpose": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Purpose",
+          "type": "string"
+        },
+        "slideIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Slideids",
+          "type": "array"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "cropPolicy": {
+          "default": "adaptive",
+          "enum": [
+            "adaptive",
+            "no-crop"
+          ],
+          "title": "Croppolicy",
+          "type": "string"
+        },
+        "layoutPattern": {
+          "default": "#P1-02",
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Layoutpattern",
+          "type": "string"
+        },
+        "license": {
+          "default": "user-provided",
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "License",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assetId",
+        "filename",
+        "workspaceKey",
+        "sha256",
+        "mediaType",
+        "purpose",
+        "slideIds"
+      ],
+      "title": "ProvidedImageAsset",
+      "type": "object"
+    },
+    "ResearchPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "closed_corpus",
+            "approved_web_research"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "allowedDomains": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Alloweddomains",
+          "type": "array"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "ResearchPolicy",
+      "type": "object"
+    },
+    "ResumeCheckpointRef": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpointSetId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Checkpointsetid",
+          "type": "string"
+        },
+        "checkpointSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Checkpointsha256",
+          "type": "string"
+        },
+        "fencingToken": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Fencingtoken",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checkpointSetId",
+        "checkpointSha256",
+        "fencingToken"
+      ],
+      "title": "ResumeCheckpointRef",
+      "type": "object"
+    },
+    "SourceFragment": {
+      "additionalProperties": false,
+      "properties": {
+        "fragmentId": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Fragmentid",
+          "type": "string"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "kind": {
+          "enum": [
+            "heading",
+            "paragraph",
+            "table",
+            "list",
+            "chart-data"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 16000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "textSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Textsha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fragmentId",
+        "kind",
+        "text",
+        "textSha256"
+      ],
+      "title": "SourceFragment",
+      "type": "object"
+    },
+    "SourceManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "approved-artifacts",
+            "no-source-limited"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/ApprovedSourceArtifact"
+          },
+          "maxItems": 8,
+          "title": "Artifacts",
+          "type": "array"
+        },
+        "manifestSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Manifestsha256",
+          "type": "string"
+        },
+        "continueLimitedDraft": {
+          "default": false,
+          "title": "Continuelimiteddraft",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "artifacts",
+        "manifestSha256"
+      ],
+      "title": "SourceManifest",
+      "type": "object"
+    },
+    "TemplateCandidateDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Candidateid",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "brand",
+            "style",
+            "layout",
+            "deck"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "provenance": {
+          "enum": [
+            "library",
+            "explicit"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "descriptorSha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Descriptorsha256",
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Workspaceroot",
+          "type": "string"
+        },
+        "contentAccessed": {
+          "const": false,
+          "default": false,
+          "title": "Contentaccessed",
+          "type": "boolean"
+        },
+        "installed": {
+          "const": false,
+          "default": false,
+          "title": "Installed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidateId",
+        "kind",
+        "provenance",
+        "descriptorSha256",
+        "workspaceRoot"
+      ],
+      "title": "TemplateCandidateDescriptor",
+      "type": "object"
+    },
+    "TemplatePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "free_design",
+            "templates"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/TemplateCandidateDescriptor"
+          },
+          "maxItems": 32,
+          "title": "Candidates",
+          "type": "array"
+        },
+        "activeTemplateVersion": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activetemplateversion"
+        }
+      },
+      "required": [
+        "mode",
+        "candidates"
+      ],
+      "title": "TemplatePolicy",
+      "type": "object"
+    },
+    "WorkflowVersions": {
+      "additionalProperties": false,
+      "properties": {
+        "workflow": {
+          "pattern": "^instant-ppt-default@v\\d+\\.\\d+\\.\\d+$",
+          "title": "Workflow",
+          "type": "string"
+        },
+        "engine": {
+          "const": "ppt-master@v4.7.0",
+          "title": "Engine",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        },
+        "reference": {
+          "const": "ppt-master-default@v4.7.0",
+          "title": "Reference",
+          "type": "string"
+        },
+        "adapter": {
+          "const": "engine-adapter@v2",
+          "default": "engine-adapter@v2",
+          "title": "Adapter",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workflow",
+        "engine",
+        "model",
+        "prompt",
+        "reference"
+      ],
+      "title": "WorkflowVersions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 2,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "workflowRunId": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Workflowrunid",
+      "type": "string"
+    },
+    "organizationId": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Organizationid",
+      "type": "string"
+    },
+    "route": {
+      "const": "generate_pptx",
+      "title": "Route",
+      "type": "string"
+    },
+    "profile": {
+      "enum": [
+        "default-agentic",
+        "quick-engineering"
+      ],
+      "title": "Profile",
+      "type": "string"
+    },
+    "versions": {
+      "$ref": "#/$defs/WorkflowVersions"
+    },
+    "approval": {
+      "$ref": "#/$defs/ApprovalSnapshotRef"
+    },
+    "intent": {
+      "$ref": "#/$defs/ApprovedIntent"
+    },
+    "outline": {
+      "items": {
+        "$ref": "#/$defs/ApprovedOutlineSlide"
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Outline",
+      "type": "array"
+    },
+    "sources": {
+      "$ref": "#/$defs/SourceManifest"
+    },
+    "template": {
+      "$ref": "#/$defs/TemplatePolicy"
+    },
+    "image": {
+      "$ref": "#/$defs/ImagePolicy"
+    },
+    "research": {
+      "$ref": "#/$defs/ResearchPolicy"
+    },
+    "production": {
+      "$ref": "#/$defs/ProductionPolicy"
+    },
+    "runtime": {
+      "$ref": "#/$defs/AgentRuntimePolicy"
+    },
+    "confirmation": {
+      "$ref": "#/$defs/ConfirmationPolicy"
+    },
+    "requestedStage": {
+      "default": "attribution_guard",
+      "enum": [
+        "attribution_guard",
+        "source_import",
+        "stage1",
+        "template_handoff",
+        "stage2",
+        "design_spec_gate1",
+        "refine_spec",
+        "spec_lock_gate2",
+        "executor_p01",
+        "executor_remaining",
+        "final_svg_gate",
+        "chart_gate",
+        "notes",
+        "animations",
+        "visual_review",
+        "step7_finalize",
+        "step7_export",
+        "postflight",
+        "narration",
+        "publish"
+      ],
+      "title": "Requestedstage",
+      "type": "string"
+    },
+    "resume": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResumeCheckpointRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "workflowRunId",
+    "organizationId",
+    "route",
+    "profile",
+    "versions",
+    "approval",
+    "intent",
+    "outline",
+    "sources",
+    "template",
+    "image",
+    "research",
+    "production",
+    "runtime",
+    "confirmation"
+  ],
+  "title": "WorkflowRequestV2",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v2/workflow-request.v2.schema.json"
+}

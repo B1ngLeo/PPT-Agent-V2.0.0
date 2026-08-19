@@ -1,13 +1,15 @@
 {
   "schemaVersion": 1,
   "goal": "G05",
-  "generatedAt": "2026-08-16T20:02:44+08:00",
+  "generatedAt": "2026-08-19T02:54:57+08:00",
   "result": "passed",
   "results": {
     "workerOnlySecretNames": true,
     "browserBundleSecretNamesAbsent": true,
     "reasoningContentAbsentFromProductContracts": true,
-    "p1ImageProviderCallCount": 0,
+    "imageProviderProductPathIntegrated": true,
+    "maxImageProviderCallsPerDeck": 1,
+    "currentDefaultImageProviderCallsPerDeck": 0,
     "moonshotSmoke": "not_run_no_secret",
     "openAiImageSmoke": "not_run_no_secret"
   },
@@ -19,6 +21,6 @@
   "notes": [
     "Secret presence is recorded only as a boolean-derived status; values are never read into evidence.",
     "A real kimi-k3 smoke is conditional on MOONSHOT_API_KEY and provider availability.",
-    "The P1 flow must not call the preconfigured image provider."
+    "The image adapter supports an explicit maximum of one cover image per deck; the current product default keeps IMAGE_GENERATION_ENABLED=false and the per-deck quota at zero."
   ]
 }

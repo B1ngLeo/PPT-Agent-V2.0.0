@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
+    Artifact,
     Draft,
     GenerationJob,
     GenerationSnapshot,
@@ -23,6 +24,7 @@ from instant_ppt_domain.models import (
     SourceArtifact,
     Template,
     TemplateVersion,
+    UsageLedger,
 )
 from instant_ppt_domain.service import canonical_sha256
 from instant_ppt_domain.tenancy import TenantContext, append_audit
@@ -581,6 +583,25 @@ def record_provider_call(
         finished_at=finished_at,
     )
     session.add(row)
+    if status == "succeeded":
+        session.add(
+            UsageLedger(
+                id=new_ulid(),
+                organization_id=context.organization_id,
+                job_id=None,
+                metric="model_tokens",
+                quantity=max(0, input_tokens) + max(0, output_tokens),
+                dedupe_key=f"provider:{row.id}:model_tokens",
+                details={
+                    "provider": provider,
+                    "model": model,
+                    "purpose": purpose,
+                    "inputTokens": max(0, input_tokens),
+                    "outputTokens": max(0, output_tokens),
+                },
+                occurred_at=finished_at,
+            )
+        )
     session.flush()
     return row
 
@@ -612,20 +633,56 @@ def approve_outline(
                 Source.organization_id == context.organization_id,
             )
         )
-        if source is not None:
-            artifact_count = session.scalar(
-                select(func.count(SourceArtifact.id)).where(
+        if source is None:
+            raise WorkspaceValidationError("the selected source is unavailable")
+        if source.status != "parsed" or source.parse_status != "succeeded":
+            raise WorkspaceValidationError(
+                "the selected source must finish immutable parsing before approval"
+            )
+        artifact_rows = list(
+            session.execute(
+                select(SourceArtifact, Artifact)
+                .join(Artifact, Artifact.id == SourceArtifact.artifact_id)
+                .where(
                     SourceArtifact.source_id == source.id,
                     SourceArtifact.organization_id == context.organization_id,
+                    Artifact.organization_id == context.organization_id,
+                    Artifact.status == "published",
+                    Artifact.retention_expires_at > datetime.now(UTC),
                 )
             )
-            source_summary = {
-                "sourceId": source.id,
-                "status": source.status,
-                "sha256": source.source_sha256,
-                "parserVersion": source.parser_version,
-                "artifacts": int(artifact_count or 0),
-            }
+        )
+        markdown_rows = [
+            (source_artifact, artifact)
+            for source_artifact, artifact in artifact_rows
+            if source_artifact.kind == "markdown"
+        ]
+        if not markdown_rows:
+            raise WorkspaceValidationError(
+                "the selected source has no retained immutable markdown artifact"
+            )
+        source_summary = {
+            "sourceId": source.id,
+            "status": source.status,
+            "sha256": source.source_sha256,
+            "parserVersion": source.parser_version,
+            "artifacts": len(artifact_rows),
+            "artifactDescriptors": [
+                {
+                    "sourceArtifactId": source_artifact.id,
+                    "artifactId": artifact.id,
+                    "kind": source_artifact.kind,
+                    "sha256": artifact.sha256,
+                    "mediaType": artifact.media_type,
+                    "sizeBytes": artifact.size_bytes,
+                    "retentionExpiresAt": artifact.retention_expires_at.astimezone(UTC)
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "parserVersion": source_artifact.parser_version,
+                }
+                for source_artifact, artifact in artifact_rows
+            ],
+        }
     snapshot_input = {
         "draftId": draft.id,
         "intentRevisionId": draft.current_intent_revision_id,

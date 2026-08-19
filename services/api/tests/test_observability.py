@@ -53,8 +53,13 @@ def test_metrics_endpoint_is_not_self_counted() -> None:
 def test_health_and_database_readiness_are_explicit_and_hidden_from_openapi() -> None:
     app = create_app()
     with TestClient(app) as client:
-        assert client.get("/healthz").json() == {"status": "ok"}
-        assert client.get("/readyz").json() == {"status": "ready"}
+        health = client.get("/healthz").json()
+        assert health["status"] == "ok"
+        assert health["runtime"]["runtimeContractVersion"] == "instant-ppt-runtime@v2"
+        assert health["runtime"]["workflowContractVersion"] == "instant-ppt-default@v2.0.0"
+        readiness = client.get("/readyz").json()
+        assert readiness["status"] == "ready"
+        assert readiness["runtime"] == health["runtime"]
         paths = client.get("/openapi.json").json()["paths"]
         assert "/healthz" not in paths
         assert "/readyz" not in paths

@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 
 ROOT = Path(__file__).resolve().parents[3]
 DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/"
     "instant_ppt_g04_test"
 )
 BUCKET = "instant-ppt-g04-test"

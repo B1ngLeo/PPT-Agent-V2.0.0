@@ -19,11 +19,11 @@ from redis import Redis
 ROOT = Path(__file__).resolve().parents[2]
 TEST_DATABASE = "instant_ppt_g02_test"
 TEST_DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/"
     f"{TEST_DATABASE}"
 )
 ADMIN_DATABASE_URL = (
-    "postgresql://instant_ppt:local-development-only@localhost:5432/postgres"
+    "postgresql://instant_ppt:local-development-only@127.0.0.1:5432/postgres"
 )
 EVENTS_URL = "redis://localhost:6379/14"
 BROKER_URL = "redis://localhost:6379/15"

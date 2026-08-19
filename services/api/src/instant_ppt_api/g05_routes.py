@@ -38,7 +38,7 @@ from instant_ppt_domain.workspace import (
 from sqlalchemy import select
 
 from instant_ppt_api.auth import AuthDependency
-from instant_ppt_api.planning import PlanningSchemaError
+from instant_ppt_api.planning import PlanningSchemaError, PlanningUnavailableError
 from instant_ppt_api.problems import problem_response
 from instant_ppt_api.schemas import (
     CreateDraftRequest,
@@ -112,6 +112,15 @@ def _problem(request: Request, error: Exception) -> JSONResponse:
             code="provider_schema_failed",
             title="AI 返回结构无法使用",
             detail="自动修复已达到上限，请手工编辑或稍后重试",
+            instance=str(request.url.path),
+            request_id=request.state.request_id,
+        )
+    if isinstance(error, PlanningUnavailableError):
+        return problem_response(
+            status=503,
+            code="provider_unavailable",
+            title="AI 服务暂时不可用",
+            detail="请求未完成，请稍后重试",
             instance=str(request.url.path),
             request_id=request.state.request_id,
         )
@@ -360,6 +369,7 @@ def infer_workspace_intent(
         WorkspaceValidationError,
         IdempotencyConflict,
         PlanningSchemaError,
+        PlanningUnavailableError,
     ) as error:
         return _problem(request, error)
 
@@ -565,6 +575,7 @@ def generate_workspace_outline(
         WorkspaceValidationError,
         IdempotencyConflict,
         PlanningSchemaError,
+        PlanningUnavailableError,
     ) as error:
         return _problem(request, error)
 

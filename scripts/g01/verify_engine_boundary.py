@@ -20,7 +20,13 @@ FORBIDDEN_PRODUCT_REFERENCES = (
     "VENDOR_ROOT",
 )
 WORKER_ROOT = REPOSITORY_ROOT / "services" / "worker" / "src" / "instant_ppt_worker"
-ENGINE_SCRIPT_ALLOWED = {"paths.py", "renderer.py", "source_parser.py"}
+ENGINE_SCRIPT_ALLOWED = {
+    "agentic_workflow.py",
+    "image_resources.py",
+    "paths.py",
+    "renderer.py",
+    "source_parser.py",
+}
 
 
 def _source_files(root: Path) -> list[Path]:

@@ -11,6 +11,7 @@ from instant_ppt_domain.generation import (
     CreateApprovedJobCommand,
     GenerationApprovalRequired,
     GenerationQuotaExceeded,
+    GenerationSourceDecisionRequired,
     GenerationTemplateUnavailable,
     create_approved_generation_job,
     request_generation_cancel_idempotent,
@@ -83,6 +84,10 @@ def create_job(
                             if _settings(request).app_environment == "test"
                             else None
                         ),
+                        continue_limited_draft=data.continue_limited_draft,
+                        image_policy=data.image_policy.model_dump(
+                            by_alias=True, mode="json"
+                        ),
                     ),
                 )
             except WorkspaceNotFound:
@@ -141,6 +146,15 @@ def create_job(
             status=422,
             code="generation_input_not_ready",
             title="生成输入尚未就绪",
+            detail=str(error),
+            instance=str(request.url.path),
+            request_id=request.state.request_id,
+        )
+    except GenerationSourceDecisionRequired as error:
+        return problem_response(
+            status=422,
+            code="source_decision_required",
+            title="需要确认事实边界",
             detail=str(error),
             instance=str(request.url.path),
             request_id=request.state.request_id,

@@ -1,9 +1,12 @@
-"""Provider-neutral deterministic planning gateway used by the G05 product flow."""
+"""Provider-neutral planning gateways used by the G05 product flow."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import os
+from dataclasses import dataclass, field
 from typing import Any
+from urllib import error, request
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +21,29 @@ class PlanningResult:
 
 class PlanningSchemaError(RuntimeError):
     pass
+
+
+class PlanningUnavailableError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningGatewaySettings:
+    backend: str = "fake"
+    gateway_url: str = "http://provider-gateway:8090/internal/v1"
+    gateway_token: str = field(default="", repr=False)
+    timeout_seconds: float = 150.0
+
+    @classmethod
+    def from_env(cls) -> PlanningGatewaySettings:
+        return cls(
+            backend=os.getenv("PLANNING_BACKEND", "fake").strip().lower(),
+            gateway_url=os.getenv(
+                "PROVIDER_GATEWAY_URL", "http://provider-gateway:8090/internal/v1"
+            ).strip(),
+            gateway_token=os.getenv("PROVIDER_GATEWAY_TOKEN", "").strip(),
+            timeout_seconds=float(os.getenv("PROVIDER_GATEWAY_TIMEOUT_SECONDS", "150")),
+        )
 
 
 class DeterministicPlanningGateway:
@@ -113,10 +139,21 @@ class DeterministicPlanningGateway:
                 "Next steps",
             ]
             titles = zh_titles if language == "zh-CN" else en_titles
+            content_roles = (
+                ("content", "data", "comparison", "content", "risk_action", "timeline")
+                if intent.get("sourceRefs")
+                else ("content", "comparison", "timeline", "risk_action")
+            )
             slides = [
                 {
                     "type": (
-                        "cover" if index == 0 else ("closing" if index == count - 1 else "content")
+                        "cover"
+                        if index == 0
+                        else (
+                            "closing"
+                            if index == count - 1
+                            else content_roles[(index - 1) % len(content_roles)]
+                        )
                     ),
                     "title": titles[index % len(titles)],
                     "keyPoints": [
@@ -145,3 +182,112 @@ class DeterministicPlanningGateway:
             ),
             output_tokens=self._tokens(data),
         )
+
+
+def _post_json(url: str, payload: bytes, headers: dict[str, str], timeout: float) -> dict[str, Any]:
+    http_request = request.Request(url, data=payload, headers=headers, method="POST")
+    with request.urlopen(http_request, timeout=timeout) as response:
+        body = response.read(512 * 1024 + 1)
+    if len(body) > 512 * 1024:
+        raise PlanningSchemaError("provider gateway response exceeds the size limit")
+    decoded = json.loads(body)
+    if not isinstance(decoded, dict):
+        raise PlanningSchemaError("provider gateway response must be an object")
+    return decoded
+
+
+class RemotePlanningGateway:
+    """Synchronous API facade over the internal, secret-holding Provider service."""
+
+    def __init__(
+        self,
+        settings: PlanningGatewaySettings,
+        *,
+        sender: Any = _post_json,
+    ) -> None:
+        if settings.backend != "kimi":
+            raise ValueError("RemotePlanningGateway requires PLANNING_BACKEND=kimi")
+        if not settings.gateway_url.startswith(("http://", "https://")):
+            raise ValueError("PROVIDER_GATEWAY_URL must be an HTTP(S) URL")
+        if not settings.gateway_token:
+            raise ValueError("PROVIDER_GATEWAY_TOKEN is required for live planning")
+        if (
+            os.getenv("APP_ENVIRONMENT", "local").strip().lower() != "local"
+            and settings.gateway_token == "local-development-provider-gateway-only"
+        ):
+            raise ValueError("the development Provider Gateway token is forbidden outside local")
+        self._settings = settings
+        self._sender = sender
+
+    def _call(self, path: str, payload: dict[str, Any]) -> PlanningResult:
+        url = f"{self._settings.gateway_url.rstrip('/')}/{path.lstrip('/')}"
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {self._settings.gateway_token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            body = self._sender(url, encoded, headers, self._settings.timeout_seconds)
+            data = body["data"]
+            if not isinstance(data, dict):
+                raise TypeError("data is not an object")
+            return PlanningResult(
+                data=data,
+                provider=str(body["provider"]),
+                model=str(body["model"]),
+                input_tokens=max(0, int(body.get("inputTokens") or 0)),
+                output_tokens=max(0, int(body.get("outputTokens") or 0)),
+                repair_count=int(body.get("repairCount") or 0),
+            )
+        except error.HTTPError as exc:
+            if exc.code in {502, 503, 504}:
+                raise PlanningUnavailableError("live planning provider is unavailable") from exc
+            raise PlanningSchemaError("provider gateway rejected the planning request") from exc
+        except (error.URLError, TimeoutError) as exc:
+            raise PlanningUnavailableError("provider gateway is unavailable") from exc
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise PlanningSchemaError("provider gateway returned an invalid response") from exc
+
+    def infer_intent(
+        self, *, topic: str, source_refs: list[str], language: str = "zh-CN"
+    ) -> PlanningResult:
+        return self._call(
+            "planning/intent",
+            {"topic": topic, "sourceRefs": source_refs, "language": language},
+        )
+
+    def generate_outline(
+        self,
+        *,
+        intent: dict[str, Any],
+        existing: dict[str, Any] | None,
+        instruction: str,
+        action: str,
+        target_slide_id: str | None,
+    ) -> PlanningResult:
+        return self._call(
+            "planning/outline",
+            {
+                "intent": intent,
+                "existing": existing,
+                "instruction": instruction,
+                "action": action,
+                "targetSlideId": target_slide_id,
+            },
+        )
+
+
+def create_planning_gateway(
+    settings: PlanningGatewaySettings | None = None,
+) -> DeterministicPlanningGateway | RemotePlanningGateway:
+    resolved = settings or PlanningGatewaySettings.from_env()
+    if resolved.backend == "fake":
+        return DeterministicPlanningGateway()
+    if resolved.backend == "kimi":
+        return RemotePlanningGateway(resolved)
+    raise ValueError("PLANNING_BACKEND must be fake or kimi")

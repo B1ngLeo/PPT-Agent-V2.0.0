@@ -16,7 +16,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -25,12 +25,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "1e2e2264e2410009d398bc4e3bfd5bed5df31ada45cd4fee1b6c4b57d1f4bcf7",
-        "4670b14190c75d91f7f9b9f73c81ccc401cd83e6903792af650adeff6a592280",
-        "073431a04a4c4e2c9f35a1395ab5d1f808474d6a03c5715c734bc12bc8a43353"
+        "ba15404fbf17d8c21b3ab0eb7f1bd6d2821f4b095c3c7e573cf3229163b1a270",
+        "e8e2fe8cb997aae9c2086955b6886f26e9a94b6519732f5e84367aac669e561c",
+        "c919b7075fc4a01b185e7032c37490289301778a3357ce0ada1eee8dffd88b67"
       ],
-      "previewSha256": "1e2e2264e2410009d398bc4e3bfd5bed5df31ada45cd4fee1b6c4b57d1f4bcf7",
-      "pptxSha256": "bd1b585fa761a2a87bf2c0cd521bdfc573bb035b3c910d2b4628e862b477dd18"
+      "previewSha256": "ba15404fbf17d8c21b3ab0eb7f1bd6d2821f4b095c3c7e573cf3229163b1a270",
+      "pptxSha256": "c2394cc72f178d57fe3478c789092630625470d315b02fa19360ee50a465fb65"
     },
     {
       "slug": "02-en-market",
@@ -43,7 +43,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -52,12 +52,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "98c03c1f4e4b5f9e835c69b49dcd1bb59e1f791aa0425af3766bd9067ec0ad94",
-        "89be92b72d76893fa5e7fb6595b442072e1fa78a41d3e86e73da3d2229083a1e",
-        "cbe6ea3b6d31fab65ee12e948f6f20f6d18107dd1e905a4496d5f633a59d75e1"
+        "46b54037bf9e6dd4072e820a6dfc08711ef5a66c528d458285eb0c4da0100411",
+        "9643b76d9121fb40520922bc2e06181d0c69a265ce8eea86b10a4bef92b0d40c",
+        "275fc6214cd3883075cd82a651f377db987ac16f904c9c6ae44d9af8dfbafbb8"
       ],
-      "previewSha256": "98c03c1f4e4b5f9e835c69b49dcd1bb59e1f791aa0425af3766bd9067ec0ad94",
-      "pptxSha256": "7b45ffbe43dbf93d56689a7eeb30017e6e5dea7e810c738f0e16eec1c51deb37"
+      "previewSha256": "46b54037bf9e6dd4072e820a6dfc08711ef5a66c528d458285eb0c4da0100411",
+      "pptxSha256": "8d40871cc4d0a6fdb584c095ab084eaf271074cc99b48877a1dddb7533098c50"
     },
     {
       "slug": "03-long-title",
@@ -70,7 +70,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -79,12 +79,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "216071b7474941b45b1297dd9e966fa410aed20a022ddf08858f1f92297fa480",
-        "42794b4410206a015060cff9168d9e8600aa825cd56f7ac92ce1c5e7e0518754",
-        "0409b48c2c3ac773c3a31561149a83aea9def04d98e02d44143c38a92c086032"
+        "b97e8d154be10c81ab9aab1d5943cb9258aaba36a0b502ecf8240e889986c244",
+        "81282c76de633aa63743226676d2de45a7bc8180f2d946f24a219c366fccb236",
+        "74925dedbf3bbf2945c1f22ae5a41b7307ab2855d770e4dd9cd5d9e7fc9bf606"
       ],
-      "previewSha256": "216071b7474941b45b1297dd9e966fa410aed20a022ddf08858f1f92297fa480",
-      "pptxSha256": "82099c6658a6a7824d9eed0a29aabe9400b3f53e2949bb6afa50a91c9aeb03dc"
+      "previewSha256": "b97e8d154be10c81ab9aab1d5943cb9258aaba36a0b502ecf8240e889986c244",
+      "pptxSha256": "d3ae2b1db2803e0dcc1052f80b301074cf7284edd3aad6ea5b448772ed0f660a"
     },
     {
       "slug": "04-table-docx",
@@ -97,7 +97,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -106,12 +106,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "c22a2192e3c3a90506fb82d5f04b37103c01db419ad6515a2cc486286562ad07",
-        "5958d3b66e5a1338c38ba52db7cdad5a6ea2fb86ef7c63542a6320a6a70f7808",
-        "7b1204129e095b15f82a89d9d5e9554c26b7ddb55fa9e2d5b2f48078af958029"
+        "b5727721db5fa94eaa50917088d192f0c1c9359e4f83dbe7661df12d962e80d3",
+        "de30d133398454bdd8e79493048d44c11e5947892a6e69bb5e7023ced7ffcd77",
+        "105535e989f3c8e15e3e18a9f1607e8668516a52d674edfa61b316fa64047225"
       ],
-      "previewSha256": "c22a2192e3c3a90506fb82d5f04b37103c01db419ad6515a2cc486286562ad07",
-      "pptxSha256": "5298a2e8a0823673f26e26a752ceabeea8bc6bfe7c8c0c829b9ad8baed33e13f"
+      "previewSha256": "b5727721db5fa94eaa50917088d192f0c1c9359e4f83dbe7661df12d962e80d3",
+      "pptxSha256": "15bd33dfd8b9431ea84e595abde8101ee8bbf22ad107fa3ca6585f8ef4abe5a1"
     },
     {
       "slug": "05-chart-pptx",
@@ -124,7 +124,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -133,12 +133,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "44f7cfc0f60c6d90554fab732bf4e775e9008bc921c435f18814dc371d5a6b04",
-        "619ff28d771368267775068037714a664b18a0bd1a0b96494a90c7fab19be2f9",
-        "921998386f871c6336f3e305ad0a1bc4b06bc80111af44f64282f2d902f29219"
+        "ef21d6e05f6013ad9eb3d0c32e7d8a850f8270ea53c156c7e0cb1154d9df22da",
+        "e1d4614c1644b090d5ee8275ea59c48de73c7ce6f45135d1225539cbec32e09b",
+        "98e0099509b48022e3d2c624c343448c9306ddd8d433139246dda86cec5f0184"
       ],
-      "previewSha256": "44f7cfc0f60c6d90554fab732bf4e775e9008bc921c435f18814dc371d5a6b04",
-      "pptxSha256": "05ff3fc2f6d953111879562c4eac50980f5899917e82eef1b77838109edcfe1d"
+      "previewSha256": "ef21d6e05f6013ad9eb3d0c32e7d8a850f8270ea53c156c7e0cb1154d9df22da",
+      "pptxSha256": "3369dc671a6fda90f6be4f1623b57d6a5f55d7f1a44f1899102cf047dd47084e"
     },
     {
       "slug": "06-mixed-fonts",
@@ -151,7 +151,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -160,12 +160,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "3ba32663a68ce06729cd1610bb9883db3cda2efa13559ec32591560daeb5db12",
-        "031a52f6ad1e8792574cd76fcfc50d3e5df9e98fc23f64be6ed7a1862f6b2764",
-        "474eda4698fd2261432f1c3853416cdf22c7d04fc009703d3620ce46a2415863"
+        "bda6eb483ca2976fbd7b2572d1eaf6ee4d188d53e8f426db0d981a2320cea90b",
+        "7fee10682ed9d814a3cb078e34971a28751d18db685dd15665081716079e2ab4",
+        "da4fbb7ad2428b1c7b6d0f681a9cdb18acdb74a6ce0b92cc5b791c8638ca1282"
       ],
-      "previewSha256": "3ba32663a68ce06729cd1610bb9883db3cda2efa13559ec32591560daeb5db12",
-      "pptxSha256": "f88cfc42e1a69442a1844ac294cb9a5494b8f5c1b2f4541c7fb89039c692d0a5"
+      "previewSha256": "bda6eb483ca2976fbd7b2572d1eaf6ee4d188d53e8f426db0d981a2320cea90b",
+      "pptxSha256": "6ea1a7a71f4b74b26930d4ecd6b7849f1adff6021dd2346b4f35c24bee089b4f"
     },
     {
       "slug": "07-template-brand",
@@ -178,7 +178,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -187,12 +187,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "ab4bfd350dc6e8002ff30f315a7961cf23a51dc6b3cd8c5a9db196127b4e758d",
-        "e32f51cc0e73251b4ec4141a4d25b8d75994488c32891fffd5fd854dd7b421ca",
-        "d95916eb95d54b3539e070930455fcd9a17b8597c17c593b602ffe5b7e0aeca3"
+        "ad28e2834177c27cf9c829e8073741a22bb5894e1f0dd6f30e3a1977756a6bcb",
+        "a992002fd3c07f4c874b7df659f959048f4261bd778d256db1cb6e0aacd3adcf",
+        "c37469f2f163231c8a59230a45dd4291d1b5d2cf63b02bc7ff4f5b03c14adc9d"
       ],
-      "previewSha256": "ab4bfd350dc6e8002ff30f315a7961cf23a51dc6b3cd8c5a9db196127b4e758d",
-      "pptxSha256": "aafa2f5efb8a54c5c1285b9892be37775f874633ff7e38d14d35e21d82992ee4"
+      "previewSha256": "ad28e2834177c27cf9c829e8073741a22bb5894e1f0dd6f30e3a1977756a6bcb",
+      "pptxSha256": "d7d3415aacfed88de7fa97f4474947c13c6c965a28527b3113386c8541e1de54"
     },
     {
       "slug": "08-dense-docx",
@@ -205,7 +205,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 35,
+      "editableTextShapeCount": 34,
       "expectedEditableTextCount": 13,
       "matchedEditableTextCount": 13,
       "editableNativeShapeCount": 15,
@@ -214,12 +214,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "5fda2d04d1361f86bef71704b5090504543bfb895e6d350195fb231db0956494",
-        "e66ec5affea68f0544530ddf27657c8bb56e7344079971211cdddcf2e025563c",
-        "ab40b668ad61b89e1831a81f7cd4b400bfda9c8e98dd1885a6f83eceb574c188"
+        "feacbab4d3aabb84972183f6218d7880011638a457d890ef6580337c4665394a",
+        "c6f8ff634143c32377fa0b36d62083d7abe47ec0d34af32d57f6a6d89e3f5c78",
+        "ab4c419ac5504740c5afaf7de08055b1b960705f028b33e1615deeba32edc492"
       ],
-      "previewSha256": "5fda2d04d1361f86bef71704b5090504543bfb895e6d350195fb231db0956494",
-      "pptxSha256": "2a4412f9ffcde2dff93fe88b07f6120308e0ef84457367cb6ba15bb30acb289c"
+      "previewSha256": "feacbab4d3aabb84972183f6218d7880011638a457d890ef6580337c4665394a",
+      "pptxSha256": "7ec5a0f9c640e1092caff5a27e44f45fcbe8e0c0450134b563d90e6c08c56afc"
     },
     {
       "slug": "09-pdf-baseline",
@@ -232,7 +232,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -241,12 +241,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "1173b69f0b934cc961b3725928f9fbe4b8402870cf2e38d1b62c99f056cbe661",
-        "63e76f1ef9c22092162d2238639b3eb7546b38c8533e40025b2e2a70c8340b71",
-        "52538285be7522171ddf4a0d72ed0460fc7f5a1c36cf201b81c1b414355d3020"
+        "441aaa57eec0bf75d1d25ac020faf9e78cf64b8c19b8f03345a8da1f436b7727",
+        "f2076a7bd868aa03b7aa6050e9294a91f74dbe3b1126c266c5259af29acf34d0",
+        "cef29c2c224959f03ce4db587387e7782b324550fe67c71a7dff33043c60fa39"
       ],
-      "previewSha256": "1173b69f0b934cc961b3725928f9fbe4b8402870cf2e38d1b62c99f056cbe661",
-      "pptxSha256": "f4c85d7a73e45d76f9361f7fd76b26ae6410fe4a4929357390cb24e057f63514"
+      "previewSha256": "441aaa57eec0bf75d1d25ac020faf9e78cf64b8c19b8f03345a8da1f436b7727",
+      "pptxSha256": "5f719f66813f996ba11dfd979ff690c6dbc2526cc86fe41fb993e30aed38a548"
     },
     {
       "slug": "10-multilingual-pptx",
@@ -259,7 +259,7 @@
       "svgQa": "passed",
       "pptxPackageQa": "passed",
       "slideCount": 3,
-      "editableTextShapeCount": 29,
+      "editableTextShapeCount": 28,
       "expectedEditableTextCount": 10,
       "matchedEditableTextCount": 10,
       "editableNativeShapeCount": 12,
@@ -268,12 +268,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "4d050e02531462bd14742908acff40f13c235627ede4821f5f7a6ad05aef06d2",
-        "0891654222530a3fff4674c49a241dbbe6a3b3bf8351bd69e948460a549a79f6",
-        "2e85593950edc86f56730e3e840eb9515575f710b136e1e8d875c62d27611b34"
+        "40abb674c5d7472ff8a9b085feeaa768d2772995722b6648bbe5ecc25aea1509",
+        "6cc425d50e07ed299045ebaaa9a10576bb0f7305c3f69daf17518347b0262663",
+        "d62c98b4a0d0c5b79430f9d93fb614727d326ae60ba5c49ef6bd2f923acc31e6"
       ],
-      "previewSha256": "4d050e02531462bd14742908acff40f13c235627ede4821f5f7a6ad05aef06d2",
-      "pptxSha256": "ffa8bf0f838f8ea90b1e90e4720f491fd97fcc919201a25925b62a77d816a4eb"
+      "previewSha256": "40abb674c5d7472ff8a9b085feeaa768d2772995722b6648bbe5ecc25aea1509",
+      "pptxSha256": "082f39f8eba417eab4c1e1011b1a8b5872f07e46d854ce7452cd9f2287b616f1"
     }
   ]
 }

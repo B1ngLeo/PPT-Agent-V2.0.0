@@ -14,10 +14,10 @@ import psycopg
 from instant_ppt_domain.migrations import upgrade
 
 ROOT = Path(__file__).resolve().parents[2]
-ADMIN_URL = "postgresql://instant_ppt:local-development-only@localhost:5432/postgres"
+ADMIN_URL = "postgresql://instant_ppt:local-development-only@127.0.0.1:5432/postgres"
 DATABASE = "instant_ppt_g04_test"
 DATABASE_URL = (
-    "postgresql+psycopg://instant_ppt:local-development-only@localhost:5432/"
+    "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/"
     f"{DATABASE}"
 )
 JUNIT = ROOT / "docs/evidence/security/g04-source-junit.xml"

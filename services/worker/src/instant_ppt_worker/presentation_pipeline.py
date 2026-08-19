@@ -10,11 +10,17 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from instant_ppt_domain.artifacts import tenant_object_key
+from instant_ppt_domain.effective_spec import (
+    compile_operations,
+    persist_compilation,
+)
 from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
     Artifact,
     DataExport,
+    DesignSpecEditPatch,
     Draft,
+    EffectiveDesignSpecRevision,
     ExportJob,
     GenerationArtifact,
     GenerationJob,
@@ -33,18 +39,31 @@ from instant_ppt_domain.service import canonical_sha256
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from instant_ppt_worker.approved_sources import resolve_approved_sources
 from instant_ppt_worker.artifacts import sha256_file
 from instant_ppt_worker.errors import AdapterError
 from instant_ppt_worker.generation_pipeline import _run_adapter, _template_binding
+from instant_ppt_worker.grounding_quality import build_evidence_map
 from instant_ppt_worker.models import DeckPlan
-from instant_ppt_worker.renderer import render_slide_candidate
+from instant_ppt_worker.renderer import render_revision_deck, render_slide_candidate
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.source_pipeline import WorkerObjectSettings, WorkerObjectStore
 
 PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+EFFECTIVE_ROLE_MAP = {
+    "cover": "cover",
+    "section": "section",
+    "data": "data",
+    "comparison": "comparison",
+    "timeline": "timeline",
+    "risk_action": "risk_action",
+    "ending": "ending",
+}
 
 
 class PresentationObjectStore(Protocol):
+    def download(self, object_key: str, target: Path, *, max_bytes: int) -> str: ...
+
     def put_file(self, object_key: str, path: Path, media_type: str) -> None: ...
 
     def remove(self, object_key: str) -> None: ...
@@ -75,7 +94,7 @@ def _deck_plan(
                 "slideId": slide["slideId"],
                 "outlineSlideId": slide["outlineSlideId"],
                 "order": index,
-                "role": "cover" if index == 0 else "content",
+                "role": slide.get("role") or ("cover" if index == 0 else "content"),
                 "title": slide["title"],
                 "body": (
                     ["；".join(slide["body"])]
@@ -87,6 +106,143 @@ def _deck_plan(
             for index, slide in enumerate(slides)
         ],
     }
+
+
+def _effective_revision(
+    session: Session, revision: PresentationRevision
+) -> EffectiveDesignSpecRevision | None:
+    row = session.scalar(
+        select(EffectiveDesignSpecRevision).where(
+            EffectiveDesignSpecRevision.presentation_revision_id == revision.id
+        )
+    )
+    if row is None and revision.payload.get("effectiveSpecRevisionId"):
+        row = session.get(EffectiveDesignSpecRevision, revision.payload["effectiveSpecRevisionId"])
+    return row
+
+
+def _effective_deck_plan(
+    snapshot: GenerationSnapshot,
+    presentation: Presentation,
+    effective: EffectiveDesignSpecRevision,
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "snapshotId": snapshot.id,
+        "title": presentation.title,
+        "modeId": "native",
+        "templateBinding": _template_binding(snapshot),
+        "slides": [
+            {
+                "schemaVersion": 1,
+                "slideId": slide["slideId"],
+                "outlineSlideId": slide["outlineSlideId"],
+                "order": index,
+                "role": EFFECTIVE_ROLE_MAP.get(str(slide["role"]), "content"),
+                "title": slide["title"],
+                "body": (
+                    ["；".join(slide["body"])]
+                    if slide["role"] == "cover" and len(slide["body"]) > 1
+                    else slide["body"]
+                ),
+                "editable": True,
+            }
+            for index, slide in enumerate(effective.roster)
+        ],
+    }
+
+
+def _source_fragments(source_manifest: Any) -> list[dict[str, Any]]:
+    return [
+        {
+            "sourceArtifactId": artifact.source_artifact_id,
+            "sourceId": artifact.source_id,
+            "objectSha256": artifact.object_sha256,
+            "fragmentId": fragment.fragment_id,
+            "page": fragment.page,
+            "kind": fragment.kind,
+            "text": fragment.text,
+            "textSha256": fragment.text_sha256,
+            "taint": "untrusted-source-data",
+        }
+        for artifact in source_manifest.artifacts
+        for fragment in artifact.fragments
+    ]
+
+
+def _revision_evidence(
+    session: Session,
+    snapshot: GenerationSnapshot,
+    effective: EffectiveDesignSpecRevision,
+    deck: DeckPlan,
+    *,
+    object_store: PresentationObjectStore,
+    workspace: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    source_manifest = resolve_approved_sources(
+        session,
+        snapshot,
+        object_store=object_store,
+        workspace=workspace / "approved-sources",
+    )
+    expected_manifest_sha256 = str(effective.payload.get("sourceManifestSha256") or "")
+    if source_manifest.manifest_sha256 != expected_manifest_sha256:
+        raise AdapterError(
+            "CONTENT_QA_FAILED",
+            "Effective Design Spec source manifest binding is stale",
+        )
+    fragments = _source_fragments(source_manifest)
+    evidence_map = build_evidence_map(
+        deck,
+        effective.roster,
+        fragments,
+        source_manifest_sha256=source_manifest.manifest_sha256,
+    )
+    chain_ids: list[str] = []
+    cursor: EffectiveDesignSpecRevision | None = effective
+    while cursor is not None:
+        chain_ids.append(cursor.id)
+        if cursor.based_on_id is None:
+            break
+        cursor = session.get(EffectiveDesignSpecRevision, cursor.based_on_id)
+    patches = list(
+        session.scalars(
+            select(DesignSpecEditPatch)
+            .where(DesignSpecEditPatch.effective_spec_revision_id.in_(chain_ids))
+            .order_by(DesignSpecEditPatch.created_at, DesignSpecEditPatch.sequence)
+        )
+    )
+    patches_by_slide: dict[str, list[DesignSpecEditPatch]] = {}
+    for patch in patches:
+        patches_by_slide.setdefault(patch.slide_id, []).append(patch)
+    for slide in evidence_map["slides"]:
+        slide_patches = patches_by_slide.get(str(slide["slideId"]), [])
+        if not slide_patches:
+            continue
+        audit = {
+            "classification": "user-authored-analysis",
+            "patchSha256s": [patch.patch_sha256 for patch in slide_patches],
+            "actorIds": sorted({patch.actor_id for patch in slide_patches}),
+        }
+        for claim in slide["claims"]:
+            claim["claimType"] = "user-authored-analysis"
+            claim["citations"] = []
+            claim.pop("derivation", None)
+            claim["audit"] = audit
+    evidence_map["revisionBinding"] = {
+        "effectiveSpecRevisionId": effective.id,
+        "effectiveSpecInputSha256": effective.effective_spec_sha256,
+        "specLockSha256": effective.spec_lock_sha256,
+        "patchSha256s": [patch.patch_sha256 for patch in patches],
+    }
+    evidence_map["evidenceMapSha256"] = canonical_sha256(
+        {
+            key: value
+            for key, value in evidence_map.items()
+            if key != "evidenceMapSha256"
+        }
+    )
+    return evidence_map, fragments, source_manifest.manifest_sha256
 
 
 def _artifact(
@@ -177,22 +333,56 @@ def process_slide_regeneration(
             job.error_code = "regeneration_input_missing"
             job.terminal_at = datetime.now(UTC)
             return "failed"
+        effective = _effective_revision(session, base)
+        effective_revision_id = (
+            _stable_id(f"regeneration:{job.id}:effective-spec") if effective else None
+        )
+        target_role = "cover" if target.position == 1 else "content"
+        target_index = target.position
+        if effective is not None:
+            effective_target = next(
+                (slide for slide in effective.roster if slide["slideId"] == target.slide_id),
+                None,
+            )
+            if effective_target is None:
+                job.status = "failed"
+                job.error_code = "effective_roster_slide_missing"
+                job.terminal_at = datetime.now(UTC)
+                return "failed"
+            target_role = EFFECTIVE_ROLE_MAP.get(str(effective_target["role"]), "content")
+            target_index = next(
+                index
+                for index, slide in enumerate(effective.roster, start=1)
+                if slide["slideId"] == target.slide_id
+            )
+            whole_plan = _effective_deck_plan(snapshot, presentation, effective)
+        else:
+            whole_plan = _deck_plan(
+                snapshot,
+                presentation,
+                [_slide_values(slide) for slide in source_slides],
+            )
         job.status = "running"
         job.attempt += 1
         instruction = job.instruction
 
     new_title = target.title
+    # Instructions are private model inputs/audit data. The legacy renderer cannot
+    # faithfully apply them, so it preserves approved visible copy instead of leaking
+    # prompts or fabricated QA claims into the slide. The Default workflow replaces
+    # this compatibility behavior with an EffectiveDesignSpecRevision patch.
     new_body = list(target.body)
-    if instruction:
-        new_body = [*new_body, f"AI 重生成指令：{instruction}"]
-    else:
-        new_body = [*new_body, "本页已由 AI 重新生成并通过质量检查。"]
     candidate = {
         "slideId": target.slide_id,
         "outlineSlideId": target.outline_slide_id,
         "title": new_title,
         "body": new_body,
+        "role": target_role,
     }
+    for whole_slide in whole_plan["slides"]:
+        if whole_slide["slideId"] == target.slide_id:
+            whole_slide["title"] = new_title
+            whole_slide["body"] = new_body
     artifact_id = _stable_id(f"regeneration:{job_id}:slide")
     manifest_id = _stable_id(f"regeneration:{job_id}:manifest")
     revision_id = _stable_id(f"regeneration:{job_id}:revision")
@@ -201,8 +391,81 @@ def process_slide_regeneration(
             root = Path(temporary)
             plan = DeckPlan.model_validate(_deck_plan(snapshot, presentation, [candidate]))
             rendered = render_slide_candidate(plan, root / "candidate", visual_index=0)
-            svg_path = rendered["svg"]
-            qa = json.loads(rendered["qa"].read_text(encoding="utf-8"))
+            candidate_qa = json.loads(rendered["qa"].read_text(encoding="utf-8"))
+            if effective is not None:
+                whole_rendered = root / "regeneration-whole-deck"
+                whole_deck = DeckPlan.model_validate(whole_plan)
+                with session_factory() as grounding_session:
+                    grounding_effective = grounding_session.get(
+                        EffectiveDesignSpecRevision, effective.id
+                    )
+                    revision_evidence, source_fragments, source_manifest_sha256 = (
+                        _revision_evidence(
+                            grounding_session,
+                            snapshot,
+                            grounding_effective,
+                            whole_deck,
+                            object_store=store,
+                            workspace=root / "regeneration-grounding",
+                        )
+                    )
+                render_revision_deck(
+                    whole_deck,
+                    whole_rendered,
+                    chart_specs={
+                        str(slide["slideId"]): dict(slide["chart"])
+                        for slide in effective.roster
+                        if slide.get("chart")
+                    },
+                    evidence_map=revision_evidence,
+                    source_fragments=source_fragments,
+                    source_manifest_sha256=source_manifest_sha256,
+                    effective_spec_revision_id=effective.id,
+                    effective_spec_sha256=effective.effective_spec_sha256,
+                    spec_lock_sha256=effective.spec_lock_sha256,
+                    organization_id=organization_id,
+                    created_at=str(snapshot.payload["createdAt"]),
+                )
+            else:
+                whole_rendered = _run_adapter(
+                    root,
+                    whole_plan,
+                    "regeneration-whole-deck",
+                    request_id=f"{job_id}-whole-deck-final",
+                    organization_id=organization_id,
+                    created_at=str(snapshot.payload["createdAt"]),
+                )
+            svg_path = whole_rendered / "svg_output" / f"slide_{target_index:02d}.svg"
+            whole_qa_path = whole_rendered / "qa-report.json"
+            whole_qa = json.loads(whole_qa_path.read_text(encoding="utf-8"))
+            whole_qa_sha256 = sha256_file(whole_qa_path)
+            whole_content_qa_sha256 = canonical_sha256(whole_qa.get("contentQa") or {})
+            expected_effective_sha256: str | None = None
+            if effective is not None and effective_revision_id is not None:
+                instruction_sha256 = hashlib.sha256(instruction.encode("utf-8")).hexdigest()
+                preview_compilation = compile_operations(
+                    effective_spec_revision_id=effective_revision_id,
+                    base_payload=effective.payload,
+                    base_effective_spec_sha256=effective.effective_spec_sha256,
+                    operations=[
+                        {
+                            "type": "regenerate",
+                            "slideId": target.slide_id,
+                            "resultTitle": new_title,
+                            "resultBody": new_body,
+                            "instructionSha256": instruction_sha256,
+                        }
+                    ],
+                    actor_id=job.created_by,
+                )
+                expected_effective_payload = {
+                    **preview_compilation.payload,
+                    "presentationRevisionId": revision_id,
+                    "wholeDeckFinalGate": "passed",
+                    "wholeDeckFinalQaSha256": whole_qa_sha256,
+                    "publicationReady": True,
+                }
+                expected_effective_sha256 = canonical_sha256(expected_effective_payload)
             artifact_row = _artifact(
                 artifact_id=artifact_id,
                 organization_id=organization_id,
@@ -219,10 +482,27 @@ def process_slide_regeneration(
                 "presentationRevisionId": revision_id,
                 "basedOnRevisionId": job.base_revision_id,
                 "regenerationJobId": job.id,
+                "instructionSha256": hashlib.sha256(instruction.encode("utf-8")).hexdigest(),
                 "slideId": job.slide_id,
                 "slideArtifactId": artifact_id,
                 "slideSha256": artifact_row.sha256,
-                "qa": qa,
+                "candidateQa": candidate_qa,
+                "wholeDeckFinalQa": whole_qa,
+                "wholeDeckFinalQaSha256": whole_qa_sha256,
+                "contentQaSha256": whole_content_qa_sha256,
+                "evidenceMapSha256": (whole_qa.get("bindings") or {}).get(
+                    "evidenceMapSha256"
+                ),
+                "engineProfile": (
+                    "default-agentic-revision" if effective is not None else "quick-engineering"
+                ),
+                "quickGenerate": effective is None,
+                "exactRoster": (
+                    [slide["pnn"] for slide in effective.roster] if effective else None
+                ),
+                "effectiveSpecRevisionId": effective_revision_id,
+                "effectiveSpecSha256": expected_effective_sha256,
+                "contentMode": base.payload.get("contentMode"),
             }
             manifest_path = root / "presentation-revision-manifest.json"
             _write_json(manifest_path, manifest)
@@ -257,6 +537,7 @@ def process_slide_regeneration(
                     locked_job.terminal_at = datetime.now(UTC)
                     return "failed"
                 base = session.get(PresentationRevision, locked_job.base_revision_id)
+                base_effective = _effective_revision(session, base)
                 rows = list(
                     session.scalars(
                         select(SlideVersion)
@@ -300,11 +581,14 @@ def process_slide_regeneration(
                         {
                             "type": "regenerate",
                             "slideId": locked_job.slide_id,
-                            "instruction": locked_job.instruction,
+                            "instructionSha256": hashlib.sha256(
+                                locked_job.instruction.encode("utf-8")
+                            ).hexdigest(),
                         }
                     ],
                     "partial": partial,
                     "acceptedMissing": base.accepted_missing,
+                    "contentMode": base.payload.get("contentMode"),
                     "slides": [
                         {
                             key: value
@@ -314,6 +598,38 @@ def process_slide_regeneration(
                         for slide in slide_values
                     ],
                 }
+                effective_row = None
+                if base_effective is not None and effective_revision_id is not None:
+                    effective_row = persist_compilation(
+                        session,
+                        base=base_effective,
+                        presentation_revision_id=revision_id,
+                        operations=[
+                            {
+                                "type": "regenerate",
+                                "slideId": locked_job.slide_id,
+                                "resultTitle": new_title,
+                                "resultBody": new_body,
+                                "instructionSha256": hashlib.sha256(
+                                    locked_job.instruction.encode("utf-8")
+                                ).hexdigest(),
+                            }
+                        ],
+                        actor_id=locked_job.created_by,
+                        effective_spec_revision_id=effective_revision_id,
+                        whole_deck_final_qa_sha256=whole_qa_sha256,
+                    )
+                    if effective_row.effective_spec_sha256 != expected_effective_sha256:
+                        raise RuntimeError("effective spec compilation changed after QA")
+                    payload.update(
+                        {
+                            "effectiveSpecRevisionId": effective_row.id,
+                            "effectiveSpecSha256": effective_row.effective_spec_sha256,
+                            "contentMode": base.payload.get("contentMode"),
+                            "wholeDeckFinalGate": "passed",
+                            "wholeDeckFinalQaSha256": whole_qa_sha256,
+                        }
+                    )
                 session.add_all([artifact_row, manifest_row])
                 revision = PresentationRevision(
                     id=revision_id,
@@ -428,6 +744,61 @@ def process_export(
             job.error_code = "snapshot_missing"
             job.terminal_at = datetime.now(UTC)
             return "failed"
+        effective = _effective_revision(session, revision)
+        if (
+            effective is not None
+            and effective.payload.get("specLockDisposition") == "derived-pending-gate2"
+        ):
+            job.status = "failed"
+            job.error_code = "spec_lock_gate2_required"
+            job.terminal_at = datetime.now(UTC)
+            return "failed"
+        reusable: dict[str, Any] | None = None
+        if (
+            effective is not None
+            and effective.based_on_id is None
+            and effective.payload.get("publicationReady") is True
+            and effective.payload.get("wholeDeckFinalGate") == "passed"
+        ):
+            canonical = effective.payload.get("canonicalArtifacts") or {}
+            canonical_pptx_id = canonical.get("pptxArtifactId")
+            canonical_pptx = (
+                session.scalar(
+                    select(Artifact).where(
+                        Artifact.id == canonical_pptx_id,
+                        Artifact.organization_id == organization_id,
+                        Artifact.status == "published",
+                    )
+                )
+                if canonical_pptx_id
+                else None
+            )
+            canonical_gates_present = all(
+                canonical.get(key)
+                for key in (
+                    "finalSvgReportSha256",
+                    "packageQaSha256",
+                    "evidenceMapSha256",
+                    "contentQaSha256",
+                )
+            )
+            if canonical_pptx is not None and canonical_gates_present and (
+                not canonical.get("pptxSha256") or canonical["pptxSha256"] == canonical_pptx.sha256
+            ):
+                reusable = {
+                    "artifactId": canonical_pptx.id,
+                    "artifactType": canonical_pptx.artifact_type,
+                    "objectKey": canonical_pptx.object_key,
+                    "sha256": canonical_pptx.sha256,
+                    "mimeType": canonical_pptx.media_type,
+                    "sizeBytes": canonical_pptx.size_bytes,
+                    "effectiveSpecRevisionId": effective.id,
+                    "effectiveSpecSha256": effective.effective_spec_sha256,
+                    "finalSvgReportSha256": canonical.get("finalSvgReportSha256"),
+                    "packageQaSha256": canonical.get("packageQaSha256"),
+                    "evidenceMapSha256": canonical.get("evidenceMapSha256"),
+                    "contentQaSha256": canonical.get("contentQaSha256"),
+                }
         job.status = "running"
         job.stage = "compiling"
         job.attempt += 1
@@ -439,19 +810,124 @@ def process_export(
     try:
         with tempfile.TemporaryDirectory(prefix="instant-ppt-export-") as temporary:
             root = Path(temporary)
-            plan = _deck_plan(snapshot, presentation, slide_values)
-            rendered = _run_adapter(
-                root,
-                plan,
-                "export",
-                request_id=f"{job_id}-exact-revision",
-                organization_id=organization_id,
-                created_at=created_at,
+            if reusable is not None:
+                manifest = {
+                    "schemaVersion": 1,
+                    "exportId": job_id,
+                    "presentationRevisionId": revision.id,
+                    "artifact": reusable,
+                    "reusedFromArtifactId": reusable["artifactId"],
+                    "effectiveSpecRevisionId": reusable["effectiveSpecRevisionId"],
+                    "effectiveSpecSha256": reusable["effectiveSpecSha256"],
+                    "contentMode": revision.payload.get("contentMode"),
+                    "evidenceMapSha256": reusable["evidenceMapSha256"],
+                    "contentQaSha256": reusable["contentQaSha256"],
+                    "compilerVersion": snapshot.engine_version,
+                    "engineProfile": "default-agentic",
+                    "quickGenerate": False,
+                    "renderSkipped": True,
+                    "reuseReason": "exact-unedited-canonical-revision",
+                    "createdAt": created_at,
+                }
+                manifest_path = root / "export-manifest.json"
+                _write_json(manifest_path, manifest)
+                manifest_artifact = _artifact(
+                    artifact_id=manifest_id,
+                    organization_id=organization_id,
+                    artifact_type="export_manifest",
+                    path=manifest_path,
+                    media_type="application/json",
+                )
+                store.put_file(
+                    manifest_artifact.object_key,
+                    manifest_path,
+                    manifest_artifact.media_type,
+                )
+                with session_factory.begin() as session:
+                    locked = session.scalar(
+                        select(ExportJob).where(ExportJob.id == job_id).with_for_update()
+                    )
+                    if locked.status != "running":
+                        return f"noop_{locked.status}"
+                    locked.stage = "publishing"
+                    locked.status = "succeeded"
+                    locked.artifact_id = reusable["artifactId"]
+                    locked.manifest_artifact_id = manifest_id
+                    locked.error_code = None
+                    locked.terminal_at = datetime.now(UTC)
+                    session.add(manifest_artifact)
+                    presentation_row = session.get(Presentation, locked.presentation_id)
+                    session.add(
+                        UsageLedger(
+                            id=new_ulid(),
+                            organization_id=organization_id,
+                            job_id=presentation_row.generation_job_id,
+                            metric="exports",
+                            quantity=1,
+                            dedupe_key=f"export:{locked.id}:exports",
+                            details={
+                                "presentationRevisionId": locked.presentation_revision_id,
+                                "renderSkipped": True,
+                            },
+                            occurred_at=datetime.now(UTC),
+                        )
+                    )
+                return "succeeded"
+            plan = (
+                _effective_deck_plan(snapshot, presentation, effective)
+                if effective is not None
+                else _deck_plan(snapshot, presentation, slide_values)
             )
+            if effective is not None:
+                rendered = root / "export"
+                effective_deck = DeckPlan.model_validate(plan)
+                with session_factory() as grounding_session:
+                    grounding_effective = grounding_session.get(
+                        EffectiveDesignSpecRevision, effective.id
+                    )
+                    revision_evidence, source_fragments, source_manifest_sha256 = (
+                        _revision_evidence(
+                            grounding_session,
+                            snapshot,
+                            grounding_effective,
+                            effective_deck,
+                            object_store=store,
+                            workspace=root / "export-grounding",
+                        )
+                    )
+                render_revision_deck(
+                    effective_deck,
+                    rendered,
+                    chart_specs={
+                        str(slide["slideId"]): dict(slide["chart"])
+                        for slide in effective.roster
+                        if slide.get("chart")
+                    },
+                    evidence_map=revision_evidence,
+                    source_fragments=source_fragments,
+                    source_manifest_sha256=source_manifest_sha256,
+                    effective_spec_revision_id=effective.id,
+                    effective_spec_sha256=effective.effective_spec_sha256,
+                    spec_lock_sha256=effective.spec_lock_sha256,
+                    organization_id=organization_id,
+                    created_at=created_at,
+                )
+            else:
+                rendered = _run_adapter(
+                    root,
+                    plan,
+                    "export",
+                    request_id=f"{job_id}-exact-revision",
+                    organization_id=organization_id,
+                    created_at=created_at,
+                )
             pptx_path = rendered / "deck.pptx"
             json.loads(
                 (rendered / "validation" / "pptx-package-qa.json").read_text(encoding="utf-8")
             )
+            whole_deck_qa_path = rendered / "qa-report.json"
+            whole_deck_qa = json.loads(whole_deck_qa_path.read_text(encoding="utf-8"))
+            whole_deck_qa_sha256 = sha256_file(whole_deck_qa_path)
             pptx_artifact = _artifact(
                 artifact_id=artifact_id,
                 organization_id=organization_id,
@@ -479,6 +955,23 @@ def process_export(
                     "createdAt": created_at,
                 },
                 "reusedFromArtifactId": None,
+                "effectiveSpecRevisionId": effective.id if effective else None,
+                "effectiveSpecSha256": (effective.effective_spec_sha256 if effective else None),
+                "contentMode": revision.payload.get("contentMode"),
+                "wholeDeckFinalQaSha256": whole_deck_qa_sha256,
+                "contentQaSha256": canonical_sha256(
+                    whole_deck_qa.get("contentQa") or {}
+                ),
+                "evidenceMapSha256": (whole_deck_qa.get("bindings") or {}).get(
+                    "evidenceMapSha256"
+                ),
+                "engineProfile": (
+                    "default-agentic-revision" if effective is not None else "quick-engineering"
+                ),
+                "quickGenerate": effective is None,
+                "exactRoster": (
+                    [slide["pnn"] for slide in effective.roster] if effective else None
+                ),
                 "compilerVersion": snapshot.engine_version,
                 "packageQaReportId": manifest_id,
                 "createdAt": created_at,

@@ -34,6 +34,8 @@ def _publish_task(destination: str, payload: dict, dedupe_key: str) -> None:
             "job_id": payload["jobId"],
             "organization_id": payload["organizationId"],
         }
+        if "runtimeContractVersion" in payload:
+            kwargs["runtime_contract_version"] = payload["runtimeContractVersion"]
     celery_app.send_task(
         destination,
         kwargs=kwargs,

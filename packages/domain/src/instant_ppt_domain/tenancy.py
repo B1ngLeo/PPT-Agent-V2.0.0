@@ -139,6 +139,9 @@ def _add_default_entitlement(session: Session, organization_id: str, now: dateti
         plan_code="p1-default",
         max_slides_per_deck=30,
         monthly_slide_limit=300,
+        max_images_per_deck=1,
+        monthly_image_limit=30,
+        monthly_image_cost_limit_microunits=3_000_000,
         max_concurrent_jobs=1,
         allowed_modes=["native"],
         effective_from=now,
@@ -354,6 +357,9 @@ def entitlement_snapshot(session: Session, organization_id: str) -> dict[str, An
         "planCode": row.plan_code,
         "maxSlidesPerDeck": row.max_slides_per_deck,
         "monthlySlideLimit": row.monthly_slide_limit,
+        "maxImagesPerDeck": row.max_images_per_deck,
+        "monthlyImageLimit": row.monthly_image_limit,
+        "monthlyImageCostLimitMicrounits": row.monthly_image_cost_limit_microunits,
         "maxConcurrentJobs": row.max_concurrent_jobs,
         "allowedModes": list(row.allowed_modes),
         "effectiveFrom": row.effective_from.astimezone(UTC).isoformat().replace("+00:00", "Z"),
@@ -384,6 +390,18 @@ def usage_snapshot(session: Session, organization_id: str) -> dict[str, Any]:
             UsageReservation.status == "reserved",
         )
     )
+    reserved_images = session.scalar(
+        select(func.coalesce(func.sum(UsageReservation.reserved_images), 0)).where(
+            UsageReservation.organization_id == organization_id,
+            UsageReservation.status == "reserved",
+        )
+    )
+    reserved_image_cost = session.scalar(
+        select(func.coalesce(func.sum(UsageReservation.reserved_cost_microunits), 0)).where(
+            UsageReservation.organization_id == organization_id,
+            UsageReservation.status == "reserved",
+        )
+    )
     return {
         "periodStart": period_start.isoformat().replace("+00:00", "Z"),
         "asOf": now.isoformat().replace("+00:00", "Z"),
@@ -391,8 +409,11 @@ def usage_snapshot(session: Session, organization_id: str) -> dict[str, Any]:
             "slides": int(totals.get("slides", 0)),
             "modelTokens": int(totals.get("model_tokens", 0)),
             "images": int(totals.get("images", 0)),
+            "imageCostMicrounits": int(totals.get("image_cost_microunits", 0)),
             "workerSeconds": int(totals.get("worker_seconds", 0)),
             "exports": int(totals.get("exports", 0)),
         },
         "reservedSlides": int(reserved or 0),
+        "reservedImages": int(reserved_images or 0),
+        "reservedImageCostMicrounits": int(reserved_image_cost or 0),
     }
