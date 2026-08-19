@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>GPT-5.6：随雄心扩展的前沿智能</title>
+  </head>
+  <body>
+    <article>
+      <h1>GPT-5.6：随雄心扩展的前沿智能</h1>
+      <p>OpenAI 官方公告中文译版，原文发布日期：2026 年 7 月 9 日。本文件是为本地安全测试制作的无外部关系版本，保留原公告中用于演示的核心事实与数值。</p>
+      <p>GPT-5.6 模型家族包含旗舰模型 Sol、面向日常工作的均衡型 Terra，以及速度最快、成本效率最高的 Luna。公告的主线是让每个 token 产生更多有用工作，并提高每美元性能。</p>
+
+      <h2>效率默认与最高能力</h2>
+      <p>GPT-5.6 Sol 在 Agents' Last Exam 长时专业工作流评测中达到 53.6，领先 Claude Fable 5 的自适应推理 13.1 分。在 Artificial Analysis Intelligence Index 上，Sol max 与 Fable 5 相差 1 分，但时间减少 61%，预估成本约为一半。</p>
+      <p>Sol max 在 Artificial Analysis Coding Agent Index 上以 80 分创纪录，比 Fable 5 高 2.8 分，输出 token 和用时都不到一半，成本约低三分之一。Terra 和 Luna 也以更少时间、token 和成本获得具竞争力的结果。</p>
+      <p>max 比 xhigh 提供更多推理时间；ultra 默认并行协调 4 个智能体，以更高 token 消耗换取更强结果和更短的高难度任务完成时间。</p>
+
+      <h2>工具、设计与知识工作</h2>
+      <p>Responses API 的程序化工具调用能在内存中编写和运行轻量程序，协调工具、处理中间结果并动态调整工作流，减少模型往返与 token。处于 beta 的多智能体能力可并发运行子智能体并综合结果。</p>
+      <p>GPT-5.6 在设计判断和计算机操作上进步，可以检查并优化渲染结果。Sol 在 BrowseComp 上达到 92.2%，在 OSWorld 2.0 上达到 62.6%。它能从零创建完全可编辑的演示文稿，并从模板中推断布局、字体、间距、颜色和母版规则。</p>
+
+      <h2>网络安全与安全保障</h2>
+      <p>Sol 在 ExploitBench 上达到 73.5%，GPT-5.5 为 47.9%；在 SEC-Bench Pro 上达到 71.2%，GPT-5.5 为 45.8%。这些能力适用于安全代码审查、补丁、威胁建模和蓝队防御。</p>
+      <p>GPT-5.6 的安全体系结合模型内生防护、实时检查、持续监控和账户级执行。全面开放前的自动化红队测试投入约 70 万个 NVIDIA A100 GPU 等效小时。生物学与网络安全能力均未跨过“关键”阈值。</p>
+
+      <h2>可用性与定价</h2>
+      <p>GPT-5.6 自 2026 年 7 月 9 日起在 ChatGPT、Codex 和 OpenAI API 中提供。API 支持 Sol、Terra 和 Luna，程序化工具调用兼容零数据保留。</p>
+      <table>
+        <caption>2026 年 7 月 9 日首发价格，每 100 万 token</caption>
+        <thead><tr><th>模型</th><th>输入</th><th>输出</th></tr></thead>
+        <tbody>
+          <tr><td>GPT-5.6 Sol</td><td>5 美元</td><td>30 美元</td></tr>
+          <tr><td>GPT-5.6 Terra</td><td>2.50 美元</td><td>15 美元</td></tr>
+          <tr><td>GPT-5.6 Luna</td><td>1 美元</td><td>6 美元</td></tr>
+        </tbody>
+      </table>
+      <p>提示缓存支持显式断点和至少 30 分钟生命周期；缓存写入价格为未缓存输入费率的 1.25 倍，缓存读取相对输入价格折扣 90%。</p>
+
+      <h2>主要评测摘要</h2>
+      <ul>
+        <li>Terminal-Bench 2.1：Sol 88.8%，Sol Ultra 91.9%，Terra 87.4%，Luna 84.7%，GPT-5.5 85.6%。</li>
+        <li>BrowseComp：Sol 90.4%，Sol Ultra 92.2%，Terra 87.5%，Luna 83.3%，GPT-5.5 84.4%。</li>
+        <li>SEC-Bench Pro：Sol 71.2%，Sol Ultra 74.3%，Terra 57.7%，Luna 48.9%，GPT-5.5 45.8%。</li>
+        <li>MRCR v2 8-needle 256K–512K：Sol 91.5%，Terra 89.6%，Luna 41.3%，GPT-5.5 81.5%。</li>
+      </ul>
+    </article>
+  </body>
+</html>

@@ -285,31 +285,78 @@ def _sentences(fragments: list[dict[str, Any]]) -> list[tuple[str, str]]:
     return values
 
 
-def _chart_values(fragments: list[dict[str, Any]]) -> tuple[list[tuple[str, float]], str]:
-    combined = "\n".join(str(fragment["text"]) for fragment in fragments)
-    unit_match = re.search(r"\b(req/s|tokens?/s|ms|%|倍|亿元|万元)\b", combined, re.IGNORECASE)
-    unit = unit_match.group(1) if unit_match else "value"
-    pairs: list[tuple[str, float]] = []
-    seen: dict[str, float] = {}
-    pattern = re.compile(
-        r"(?P<label>[A-Za-z][A-Za-z0-9._-]{1,24})\s*(?:[:：=]|为)\s*"
-        r"(?P<value>\d+(?:\.\d+)?)\s*(?:req/s|tokens?/s|ms|%|倍|亿元|万元)?",
-        re.IGNORECASE,
-    )
-    for match in pattern.finditer(combined):
-        label = match.group("label")
-        value = float(match.group("value"))
-        if label.lower() in {"sha256", "page", "fragment"}:
+_CHART_VALUE_PATTERN = re.compile(
+    r"(?P<label>[A-Za-z][A-Za-z0-9._-]{0,24}"
+    r"(?:\s+[A-Za-z][A-Za-z0-9._-]{0,24}){0,2})\s*"
+    r"(?:(?:[:：=]|为)\s*|\s+)"
+    r"(?P<value>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>req/s|tokens?/s|ms|%|倍|亿元|万元)",
+    re.IGNORECASE,
+)
+
+
+def _chart_context_candidate(
+    context: str,
+    *,
+    conflict_is_error: bool = True,
+) -> tuple[list[tuple[str, float]], str] | None:
+    by_unit: dict[str, list[tuple[str, float]]] = {}
+    for match in _CHART_VALUE_PATTERN.finditer(context):
+        label = " ".join(match.group("label").split())
+        if label.casefold() in {"sha256", "page", "fragment"}:
             continue
-        key = label.casefold()
-        if key in seen and not math.isclose(seen[key], value, rel_tol=1e-9, abs_tol=1e-9):
-            raise AdapterError(
-                CONTENT_QA_FAILED,
-                f"approved sources conflict for chart label {label}: {seen[key]:g} vs {value:g}",
-            )
-        if key not in seen:
-            seen[key] = value
-            pairs.append((label, value))
+        unit = match.group("unit").lower()
+        by_unit.setdefault(unit, []).append((label, float(match.group("value"))))
+
+    candidates: list[tuple[list[tuple[str, float]], str]] = []
+    for unit, raw_pairs in by_unit.items():
+        pairs: list[tuple[str, float]] = []
+        seen: dict[str, float] = {}
+        for label, value in raw_pairs:
+            key = label.casefold()
+            if key in seen and not math.isclose(
+                seen[key], value, rel_tol=1e-9, abs_tol=1e-9
+            ):
+                if not conflict_is_error:
+                    pairs = []
+                    break
+                raise AdapterError(
+                    CONTENT_QA_FAILED,
+                    (
+                        f"approved sources conflict for chart label {label} "
+                        f"inside one chart context: {seen[key]:g} vs {value:g}"
+                    ),
+                )
+            if key not in seen:
+                seen[key] = value
+                pairs.append((label, value))
+        if len(pairs) >= 2:
+            candidates.append((pairs, unit))
+    return max(candidates, key=lambda item: len(item[0]), default=None)
+
+
+def _chart_values(fragments: list[dict[str, Any]]) -> tuple[list[tuple[str, float]], str]:
+    """Select one coherent sourced series instead of merging unrelated benchmarks."""
+
+    candidates: list[tuple[list[tuple[str, float]], str]] = []
+    for fragment in fragments:
+        for raw_line in str(fragment["text"]).splitlines():
+            line = raw_line.strip().lstrip("-*+ ")
+            if not line:
+                continue
+            clauses = [value.strip() for value in re.split(r"[;；]", line) if value.strip()]
+            contexts = clauses if len(clauses) > 1 else [line]
+            for context in contexts:
+                candidate = _chart_context_candidate(context)
+                if candidate is not None:
+                    candidates.append(candidate)
+            if len(clauses) > 1:
+                combined = _chart_context_candidate(line, conflict_is_error=False)
+                if combined is not None:
+                    candidates.append(combined)
+    if not candidates:
+        return [], "value"
+    pairs, unit = max(candidates, key=lambda item: len(item[0]))
     return pairs[:6], unit
 
 

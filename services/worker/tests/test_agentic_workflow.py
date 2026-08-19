@@ -16,12 +16,23 @@ from .test_workflow_contracts import _payload
 
 def test_conflicting_approved_chart_facts_are_blocking() -> None:
     fragments = [
-        {"text": "Sol: 418 req/s"},
-        {"text": "Sol: 999 req/s"},
+        {"text": "Sol: 418 req/s, Sol: 999 req/s"},
     ]
     with pytest.raises(AdapterError) as captured:
         workflow_module._chart_values(fragments)
     assert captured.value.code == CONTENT_QA_FAILED
+
+
+def test_same_label_in_distinct_benchmarks_is_not_a_false_conflict() -> None:
+    fragments = [
+        {"text": "ExploitBench：Sol 73.5%，GPT-5.5 47.9%"},
+        {"text": "SEC-Bench Pro：Sol 71.2%，GPT-5.5 45.8%"},
+    ]
+
+    values, unit = workflow_module._chart_values(fragments)
+
+    assert values == [("Sol", 73.5), ("GPT-5.5", 47.9)]
+    assert unit == "%"
 
 
 def test_no_source_limited_draft_authors_distinct_topic_specific_copy() -> None:

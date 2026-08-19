@@ -6,15 +6,17 @@
 
 - Goal：ISSUE-002 / Default Agentic 可用初稿生成链路
 - 状态：in_progress（2026-08-19 同日运行时复测重新打开）
-- 当前检查点：R1 运行时身份与 fail-closed 协议完成；统一部署与真实队列 exact export Gate 脚本已通过静态校验，正在构建并执行真实容器验收
-- 已验证：用户下载工件 SHA-256 与数据库 export artifact 精确对应；普通 `worker` 仍运行旧镜像并重新引入 `Editable native presentation baseline`，而 `agent-worker` 与当前工作树一致；新 Default canonical PPTX 在旧 worker exact export 后 artifact/hash 改变，已证明发布链路未端到端部署修复
-- 剩余工作：运行时版本一致性与 fail-closed；真实 outbox/Redis/Celery 容器 E2E；全部代码承载服务统一重建；批准 GPT-5.6 来源的完整用户旅程；关闭审计与 Git commit
+- 当前检查点：R1/R1B/R2/R3 完成；正在使用已批准 GPT-5.6 来源执行全新 Default generation 与用户视角 E2E
+- 已验证：代码服务均来自 Git 提交 `35f5084461c4a77ffcef177f3f64f312681b77a7`；Worker/Agent Worker/outbox/Provider Gateway 共享镜像 `sha256:8b8d75b2…`；真实 HTTP→outbox→Redis→Celery exact export 复用 canonical artifact `01JTDVMY6PVRNRZPCVV8SMQ32V` 且下载 SHA-256 `255ef972…` 完全一致，legacy 工程文案命中 0
+- 剩余工作：批准 GPT-5.6 来源的全新生成与完整用户旅程；全量回归；关闭审计与最终 Git commit
 - 决策/偏离：网站成品固定 `route=generate_pptx`、`profile=default-agentic`；第一条纵向切片固定 free-design、`image_usage=["none"]`、closed-corpus、notes/动画/旁白/visual review 关闭；Quick 仅保留工程用途并受同一内容守卫
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
 ## 已完成事项
 
+- ISSUE-002 R3 / 单一提交部署：停止占用 8000 端口的宿主机 API，从干净 Git 提交 `35f5084…` 构建 API 与唯一共享 Worker 镜像，强制重建 API/Worker/Agent Worker/outbox/Provider Gateway；五服务 OCI label、env、health runtime identity 均一致，四个 Worker 家族 image ID 一致，`instant_ppt.v2.process_export` 注册通过。证据：`docs/evidence/issue002-runtime-deployment.json`。
+- ISSUE-002 R2 / 真实 exact export 队列 Gate：通过对外 HTTP 新建导出任务 `01M0D48BRDVZJW4MCRJWW47HQX`，经真实 outbox/Redis/Celery 完成；export artifact ID 与 EffectiveDesignSpecRevision canonical PPTX 均为 `01JTDVMY6PVRNRZPCVV8SMQ32V`，数据库/下载 SHA-256 均为 `255ef97203d9b10bec338dbdc03cb9abf15bd3cd736b34cf18a00612d7191a94`，证明 exact export 不再重建或污染 PPTX；47 条可见文本中 legacy 工程占位文案命中 0。证据：`docs/evidence/issue002-runtime-exact-export.json`。
 - ISSUE-002 R1B / 可重复部署与验证工具：新增 `scripts/issue002/deploy_runtime.py`、`verify_runtime_deployment.py` 与 `verify_exact_export_queue.py`；正式构建默认拒绝未提交的运行时输入，诊断性脏构建只能使用 `dev-<sha>-dirty` 身份；部署后强制校验 API/Worker/Agent Worker/outbox/Provider Gateway 的 Git revision、runtime contract、OCI label、共享 Worker image ID 和 v2 exact-export 任务注册；真实导出脚本强制 canonical artifact ID/SHA 复用且扫描 legacy 工程文案泄漏。Ruff、Python compile、Compose config 与 dirty-build fail-closed 负向验证通过。
 - ISSUE-002 R1 / 运行时身份与 fail-closed：新增共享 `instant-ppt-runtime@v2` 身份、Git build revision/container/workflow/engine 元数据及 API/Provider health 暴露；Default generation、single-slide regeneration、exact export 改用 `instant_ppt.v2.*` 任务名并强制 `runtimeContractVersion` 参数，旧 Worker 无法注册新任务或接受新签名；generation snapshot 冻结实际 container/runtime/workflow version；Worker 家族 Compose 统一引用同一 `instant-ppt-runtime:<revision>` 镜像，API/Worker 镜像写入 OCI revision/contract label。Ruff、Compose config、Domain + Worker 全量 91 项及 API health 定向测试通过。
 - ISSUE-002 运行时回归审计：将用户文件 `E:\下载\GPT5.6的官方发布公告.pptx` 与 export job/artifact/hash 精确关联；确认宿主机新 API、新 `agent-worker`/`outbox` 与旧普通 `worker` 混用，旧 export 再次执行 legacy DeckPlan；对照新 canonical generation PPTX 与被污染 export PPTX 的 artifact/hash/可见文本，撤销 Issue 的 `Resolved` 状态并写入重新关闭条件。
@@ -101,6 +103,9 @@
 
 | 问题                                                                                    | 尝试次数 | 处理结果                                                                                                                                                                                                         |
 | --------------------------------------------------------------------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 图表来源校验只按系列标签全局合并，将 GPT-5.5 在不同基准中的 47.9/45.8 误判为冲突 |        2 | 第 1 次改为分句上下文后破坏了分号分隔的单图表 fixture；第 2 次改为“单行/单基准选取一组完整系列，跨基准不合并，同一上下文内重复冲突仍 fail-closed”；8/8 工作流测试与真实解析 GPT-5.6 数据系列通过。 |
+| 原 GPT-5.6 DOCX 含 Office 外部关系，来源安全扫描 fail-closed 且无解析工件       |        1 | 保留安全拒绝，不放宽外部关系策略；从同一公告构建无外链、有限事实、可审计的 HTML 受控来源，真实上传后成功发布 2 个解析工件。 |
+| 应用内浏览器文件选择事件前 4 种直接激活方式超时                         |        5 | 第 5 次使用可见拖放区域的 DOM 节点成功捕获 chooser 并上传；未改动正确的产品上传链路，未超过防循环上限。 |
 | ISSUE-002 修复代码通过测试但运行时仍由旧普通 Worker 生成/导出相同占位稿                 |        1 | 根因已确认：不同服务来自不同构建，G07 测试又直接调用函数绕过真实队列；Issue 已重新打开。正在增加 build revision 一致性、fail-closed 与真实容器队列 Gate，之后统一重建全部服务。                                  |
 | ISSUE-002 开发前 API 全套基线运行停在第 21 项且长时间无输出                             |        1 | 主动终止该次基线，避免无界等待；Worker 25/25 与阶段 0 定向测试通过。阶段 A 后将 API 测试按文件/模块运行以定位，最终仍要求全量回归。                                                                              |
 | Needs-Manual 真实任务首次被前端泛化为“生成失败”                                         |        1 | API 返回 WorkflowRun 的安全状态/阶段/错误码，仅在 `needs_manual` 暴露可恢复动作；Web 明确显示“等待人工补充图片”和中文恢复建议，G06 与浏览器复验通过。                                                            |
