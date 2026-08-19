@@ -14,6 +14,10 @@ from instant_ppt_worker.workflow_models import WorkflowRequestV2
 from .test_workflow_contracts import _payload
 
 
+def test_nested_workflow_tools_use_a_stable_python_hash_seed() -> None:
+    assert workflow_module._safe_environment()["PYTHONHASHSEED"] == "0"
+
+
 def test_conflicting_approved_chart_facts_are_blocking() -> None:
     fragments = [
         {"text": "Sol: 418 req/s, Sol: 999 req/s"},

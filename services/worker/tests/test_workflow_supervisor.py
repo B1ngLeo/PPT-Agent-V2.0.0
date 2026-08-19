@@ -22,6 +22,7 @@ def test_minimal_workflow_environment_drops_credentials_and_forces_utf8() -> Non
     assert environment["PATH"] == "C:\\safe-bin"
     assert environment["PYTHONUTF8"] == "1"
     assert environment["PYTHONIOENCODING"] == "utf-8"
+    assert environment["PYTHONHASHSEED"] == "0"
     assert not {
         "MOONSHOT_API_KEY",
         "OPENAI_API_KEY",

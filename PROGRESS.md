@@ -6,15 +6,16 @@
 
 - Goal：ISSUE-002 / Default Agentic 可用初稿生成链路
 - 状态：in_progress（2026-08-19 同日运行时复测重新打开）
-- 当前检查点：R1/R1B/R2/R3 完成；已修复小数/版本号拆句和多数据页复用同一图表，正在基于已批准 GPT-5.6 来源执行保留工作区复现与全新 E2E
-- 已验证：已部署代码服务均来自 Git 提交 `261161c27ded57043bdcc0ef0462e2e94bd7e0f0`；Worker/Agent Worker/outbox/Provider Gateway 共享镜像 `sha256:37746977…`；真实 HTTP→outbox→Redis→Celery exact export 复用 canonical artifact `01JTDVMY6PVRNRZPCVV8SMQ32V` 且下载 SHA-256 `255ef972…` 完全一致，legacy 工程文案命中 0
-- 剩余工作：批准 GPT-5.6 来源的全新生成与完整用户旅程；全量回归；关闭审计与最终 Git commit
+- 当前检查点：R1/R1B/R2/R3、批准来源全新生产 E2E 与 crash-replay 确定性修复完成；正在执行 G06 起的受影响回归、最终部署与关闭审计
+- 已验证：生产浏览器新建任务 `01M0D74GHBVX1VF3RYV3894NAR` 一次完成 12/12 页，三张数据页分别绑定 Terminal-Bench 2.1、BrowseComp、SEC-Bench Pro，版本号/小数完整；revision `013QPDSTFFCXMM6EPA8P0G8DJ6` 的真实 exact export SHA-256 为 `96414be5…`，61 条可见文本中禁用文案命中 0；上传后崩溃重放聚焦集成测试已恢复为成功且只发布一个不可变版本
+- 剩余工作：G06 起完整受影响回归；提交 crash-replay 修复；最终干净提交部署、生产 E2E/exact export 复验；关闭审计与最终 Git commit
 - 决策/偏离：网站成品固定 `route=generate_pptx`、`profile=default-agentic`；第一条纵向切片固定 free-design、`image_usage=["none"]`、closed-corpus、notes/动画/旁白/visual review 关闭；Quick 仅保留工程用途并受同一内容守卫
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
 ## 已完成事项
 
+- ISSUE-002 crash-replay 确定性模块：定位到 Default workflow 的二级 Python 工具未继承固定 `PYTHONHASHSEED`，导致 vendored SVG flatten pass 通过 `set` 复制 XML 属性时顺序随机；视觉相同但 `svg_final`/bundle 字节哈希不同，幂等对象存储因此正确拒绝覆盖并将重放收敛为 `ENGINE_RENDER_FAILED`。顶层监督器与嵌套工具环境现均强制 `PYTHONHASHSEED=0`；监督器/Agentic 单测 14/14 及真实 PostgreSQL+MinIO 的“上传后崩溃→第二次重放→单一不可变 revision”聚焦集成通过。
 - ISSUE-002 内容质量补闭环：修正 ASCII 句点的无条件拆分，保留 `GPT-5.6`、`53.6`、`2.8` 等版本与小数，并排除 heading/table 和来源处理说明；长标题只从完整来源句按语义标点收束，不回退到已污染的旧大纲；图表改为按页绑定不同 benchmark 系列，多行文本以原生可编辑 tspan 换行且 package QA 按字符级核对。Ruff、`test_agentic_workflow.py` 11/11、同一冻结快照 12/12 页全流程复现、逐页渲染检查与 `slides_test.py` 全部通过；PPTX 54,294 bytes。
 - ISSUE-002 R3 / 单一提交部署：停止占用 8000 端口的宿主机 API，从干净 Git 提交 `35f5084…` 构建 API 与唯一共享 Worker 镜像，强制重建 API/Worker/Agent Worker/outbox/Provider Gateway；五服务 OCI label、env、health runtime identity 均一致，四个 Worker 家族 image ID 一致，`instant_ppt.v2.process_export` 注册通过。证据：`docs/evidence/issue002-runtime-deployment.json`。
 - ISSUE-002 R2 / 真实 exact export 队列 Gate：通过对外 HTTP 新建导出任务 `01M0D48BRDVZJW4MCRJWW47HQX`，经真实 outbox/Redis/Celery 完成；export artifact ID 与 EffectiveDesignSpecRevision canonical PPTX 均为 `01JTDVMY6PVRNRZPCVV8SMQ32V`，数据库/下载 SHA-256 均为 `255ef97203d9b10bec338dbdc03cb9abf15bd3cd736b34cf18a00612d7191a94`，证明 exact export 不再重建或污染 PPTX；47 条可见文本中 legacy 工程占位文案命中 0。证据：`docs/evidence/issue002-runtime-exact-export.json`。
@@ -179,7 +180,8 @@
 | 应用内浏览器 Tab/Enter 键注入不产生焦点移动或激活事件                                   |        5 | 按防循环规则停止继续尝试并固化 harness limitation；原生 button/link、label、键盘文本输入、dialog 焦点恢复、44px 目标与完整真实点击旅程作为补偿证据，clean console 为 0。                                         |
 | G06 迁移 drop check constraint 被 Alembic naming convention 再次拼接表名前缀            |        1 | 对既有约束名使用 `op.f(...)` 标记为已格式化名称；迁移双向演练与 schema drift 检查通过。                                                                                                                          |
 | G06 SSE effect 随每次 job 对象刷新重建连接                                              |        1 | effect 只绑定稳定 job ID 与 terminal 标志；普通状态刷新保持同一事件流。                                                                                                                                          |
-| G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                        |        2 | G07 根验证首次被常驻 Docker Worker 抢占租约；关闭套件外 API/Worker/outbox 后 G06 7/7、G07 4/4 及第二轮根全量验证通过。                                                                                           |
+| G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                        |        3 | 本轮全量回归再次被常驻生产 Worker 抢占两个测试任务；停止套件外 API/Worker/Agent Worker/outbox/Provider Gateway 后租约失败消失，保留基础 PostgreSQL/Redis/MinIO 继续执行隔离回归。                                  |
+| Default crash replay 的 `svg_final` XML 属性顺序跨进程漂移                              |        2 | 第 1 次只固定监督器子进程种子，发现二级工具会重建白名单环境并丢弃该值；第 2 次同时固定顶层与嵌套 `PYTHONHASHSEED=0`，相同快照 bundle 字节一致，真实崩溃重放测试通过。                                                |
 | G07 数据下载使用跨域签名 URL时浏览器导航离开编辑器                                      |        2 | 第 1 次定位原生 anchor 对跨域 `download` 不可靠；第 2 次改为授权 fetch→Blob→DOM 临时链接，PPTX/JSON 命名文件实际落盘且编辑器路由保持。                                                                           |
 | 应用内浏览器 download event 未捕获程序化 Blob 下载                                      |        2 | 两次等待均超时但页面成功消息、操作系统 Downloads 中两个 8,119-byte JSON 和 25,787-byte PPTX 均证明下载完成；记录为自动化 harness 限制，不重复修改正确产品路径。                                                  |
 | G07 export package QA 因封面多条正文没有沿用生成合并规则而失败                          |        1 | 导出 DeckPlan 对封面正文使用与 G06 一致的合并规则；真实引擎 export、manifest 与 package QA 回归通过。                                                                                                            |

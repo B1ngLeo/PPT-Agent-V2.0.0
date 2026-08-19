@@ -70,6 +70,10 @@ def minimal_subprocess_environment(source: dict[str, str] | None = None) -> dict
             "PYTHONUTF8": "1",
             "PYTHONIOENCODING": "utf-8",
             "PYTHONDONTWRITEBYTECODE": "1",
+            # The workflow launches additional Python tools (for example
+            # finalize_svg.py).  Fix their hash seed so set-backed XML
+            # attribute rewrites are byte-for-byte stable during crash replay.
+            "PYTHONHASHSEED": "0",
         }
     )
     return environment

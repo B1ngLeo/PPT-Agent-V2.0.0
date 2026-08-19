@@ -108,6 +108,7 @@ def _safe_environment() -> dict[str, str]:
         "PYTHONPATH",
         "PYTHONUTF8",
         "PYTHONDONTWRITEBYTECODE",
+        "PYTHONHASHSEED",
         "USERPROFILE",
         "HOMEDRIVE",
         "HOMEPATH",
@@ -115,6 +116,7 @@ def _safe_environment() -> dict[str, str]:
     environment = {key: value for key, value in os.environ.items() if key.upper() in allowed}
     environment["PYTHONUTF8"] = "1"
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    environment["PYTHONHASHSEED"] = "0"
     return environment
 
 
