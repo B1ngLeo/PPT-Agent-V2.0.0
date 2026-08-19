@@ -46,14 +46,19 @@ cost are included in immutable publication evidence.
 | Boundary                           | Result                                                                       |
 | ---------------------------------- | ---------------------------------------------------------------------------- |
 | Contract materialization/OpenAPI   | 26 schemas, 38 endpoints, 166 fixtures passed                                |
-| API and Domain                     | 35 passed; Ruff passed                                                       |
-| Worker and engine boundary         | 64 passed; Ruff, attribution and direct-engine allowlist passed              |
+| API and Domain                     | 38 passed; Ruff passed                                                       |
+| Worker and engine boundary         | 71 passed; Ruff, attribution and direct-engine allowlist passed              |
 | Web                                | ESLint, TypeScript and Next.js 16.2.11 production build passed               |
+| G02 recovery matrix                | 73 passed                                                                    |
 | G03 tenant/migration/object matrix | 8 passed; head downgrade/upgrade and zero drift                              |
+| G04 source-security matrix         | 14 passed                                                                    |
+| G05 workspace matrix               | 4 passed                                                                     |
 | G06 generation/image matrix        | 11 passed                                                                    |
 | G07 edit/exact-export matrix       | 5 passed                                                                     |
+| G08 release integration matrix     | 4 passed                                                                     |
 | G01 golden                         | 10/10 source and 10/10 render chains; 40 schema-bound artifacts              |
 | Long-title no-source regression    | 8/8 final SVG files, 0 errors, 0 warnings; PPTX/package/content gates passed |
+| Crash replay determinism           | Upload-then-crash replay published one immutable revision byte-identically   |
 
 The image matrix includes provided-image analysis, a real subprocess calling a controlled
 Fake HTTP image endpoint, independent picture/media embedding, idempotent quota/cost
@@ -64,21 +69,32 @@ and G07 effective-revision preservation.
 
 ## Final user journey
 
-Using the production Web build and real API/Worker/database/object-store path, the browser
-journey verified:
+Using the production Web build and real API/outbox/Redis/Celery/Worker/database/object-store
+path, the browser journey verified:
 
-1. an approved eight-page outline with no source cannot start until the user explicitly
-   chooses the limited general draft;
-2. selective image controls enforce the entitlement cap and preserve original safe-page
-   PNN values;
-3. a required image with no enabled controlled Provider stops as `needs_manual`, with no
-   silent omission and with a Chinese recovery action;
-4. the no-image path publishes 8/8 pages and eleven artifact kinds as publication v1;
-5. all eight pages contain distinct role-aware copy tied to the topic and the UI prominently
-   discloses the unverified no-source boundary;
-6. editing page 2 creates immutable revision 2 while retaining its stable slide identity;
-7. exporting that exact revision succeeds after the real engine/package checks and issues a
-   short-lived private download grant.
+1. the attached `GPT5.6的官方发布公告.pptx` was identified as the old eight-page generated
+   placeholder deck rather than a factual announcement source; when deliberately supplied
+   to three data pages, the content guard stopped before publication because it contained no
+   labelled benchmark values;
+2. the audited factual announcement copy was uploaded, parsed, attached to a new draft and
+   approved with a 12-page outline;
+3. job `01M0DA1AM1MGYVF41XRWQ6K85Q` completed on its first attempt with 12/12 stable pages,
+   event sequence 31 and publication v1;
+4. `GPT-5.6`, `91.9`, `92.2`, `74.3` and `2.8` remained intact, while the three data pages
+   bound distinct Terminal-Bench 2.1, BrowseComp and SEC-Bench Pro series;
+5. presentation `01CP2C9R1N5FDCT3XP8XWBK41B` opened in the editor as immutable revision
+   `011M8VGBKSA0K4H5CVWQV8MVG6`, with all twelve pages editable and ready;
+6. the Web export and a second independent HTTP→outbox→Redis→Celery exact-export request
+   both reused canonical artifact `01EFM3NAY8GJ1XVT2Z66T6V6XJ` rather than rebuilding it;
+7. the downloaded 54,086-byte PPTX matched canonical SHA-256
+   `c617bd0c4d0e3e05fea829f9b575839cdb045e499f2fdd577d5b89293e6c13af`, contained 61
+   visible strings with zero forbidden legacy matches, rendered all 12 pages, and passed the
+   no-overflow check.
+
+The final runtime deployment was built from clean Git commit
+`ebed9ebb884b2196842ddc4d0a5ca6a2077c55c8`. API and all Worker-family containers expose
+`instant-ppt-runtime@v2`; Worker, Agent Worker, outbox and Provider Gateway share image
+`sha256:2d98d9ad3f5839052ee42fd93555ee3cd471bb3a04bac8f53e1b92b92e79234a`.
 
 The journey used synthetic/local data. It did not send the final user topic or slide content
 to an external live Provider. Previously approved redacted live Provider checks remain

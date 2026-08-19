@@ -5,16 +5,18 @@
 ## 当前 Goal
 
 - Goal：ISSUE-002 / Default Agentic 可用初稿生成链路
-- 状态：in_progress（2026-08-19 同日运行时复测重新打开）
-- 当前检查点：R1/R1B/R2/R3、批准来源全新生产 E2E 与 crash-replay 确定性修复完成；正在执行 G06 起的受影响回归、最终部署与关闭审计
-- 已验证：生产浏览器新建任务 `01M0D74GHBVX1VF3RYV3894NAR` 一次完成 12/12 页，三张数据页分别绑定 Terminal-Bench 2.1、BrowseComp、SEC-Bench Pro，版本号/小数完整；revision `013QPDSTFFCXMM6EPA8P0G8DJ6` 的真实 exact export SHA-256 为 `96414be5…`，61 条可见文本中禁用文案命中 0；上传后崩溃重放聚焦集成测试已恢复为成功且只发布一个不可变版本
-- 剩余工作：G06 起完整受影响回归；提交 crash-replay 修复；最终干净提交部署、生产 E2E/exact export 复验；关闭审计与最终 Git commit
+- 状态：complete（2026-08-19 同日运行时复测重新关闭）
+- 当前检查点：R1/R1B/R2/R3、内容质量、crash-replay 确定性、完整回归、最终干净部署、生产浏览器 E2E、exact export 与逐页视觉验证全部完成
+- 已验证：干净提交 `ebed9ebb884b2196842ddc4d0a5ca6a2077c55c8` 已部署；生产任务 `01M0DA1AM1MGYVF41XRWQ6K85Q` 一次完成 12/12，三张数据页分别绑定 Terminal-Bench 2.1、BrowseComp、SEC-Bench Pro；revision `011M8VGBKSA0K4H5CVWQV8MVG6` 的 exact export 复用 canonical artifact `01EFM3NAY8GJ1XVT2Z66T6V6XJ`，SHA-256 `c617bd0c…`、61 条可见文本、禁用文案 0 命中，12 页渲染与越界检查通过
+- 剩余工作：无
 - 决策/偏离：网站成品固定 `route=generate_pptx`、`profile=default-agentic`；第一条纵向切片固定 free-design、`image_usage=["none"]`、closed-corpus、notes/动画/旁白/visual review 关闭；Quick 仅保留工程用途并受同一内容守卫
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
 ## 已完成事项
 
+- ISSUE-002 最终干净部署与生产用户 E2E：从 Git 提交 `ebed9eb…` 重建并校验 API/Worker/Agent Worker/outbox/Provider Gateway，Worker 家族共享镜像 `sha256:2d98d9ad…` 且 `instant-ppt.v2.process_export` 注册通过；浏览器从已批准事实来源启动任务 `01M0DA1AM1MGYVF41XRWQ6K85Q`，首次尝试 12/12 发布。编辑器显示完整 `GPT-5.6`、`91.9`、`92.2`、`74.3`、`2.8` 与三组不同图表；Web 导出及独立真实队列导出均复用 canonical artifact，下载文件 54,086 bytes / SHA-256 `c617bd0c…`，61 条可见文本无 legacy 命中；12 页逐页渲染、montage 人工检查与 `slides_test.py` 无越界通过。
+- ISSUE-002 最终受影响回归：Contracts 26 schemas/38 endpoints/166 fixtures、Web lint/typecheck/生产构建、API/Domain 38/38、Worker 71/71、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 11/11、G07 5/5、G08 4/4、G01 10/10 source + 10/10 render + 40 schema artifacts、E2E 证据、安全、链接与 G00–G08 Gate 全部通过；无 waiver。
 - ISSUE-002 crash-replay 确定性模块：定位到 Default workflow 的二级 Python 工具未继承固定 `PYTHONHASHSEED`，导致 vendored SVG flatten pass 通过 `set` 复制 XML 属性时顺序随机；视觉相同但 `svg_final`/bundle 字节哈希不同，幂等对象存储因此正确拒绝覆盖并将重放收敛为 `ENGINE_RENDER_FAILED`。顶层监督器与嵌套工具环境现均强制 `PYTHONHASHSEED=0`；监督器/Agentic 单测 14/14 及真实 PostgreSQL+MinIO 的“上传后崩溃→第二次重放→单一不可变 revision”聚焦集成通过。
 - ISSUE-002 内容质量补闭环：修正 ASCII 句点的无条件拆分，保留 `GPT-5.6`、`53.6`、`2.8` 等版本与小数，并排除 heading/table 和来源处理说明；长标题只从完整来源句按语义标点收束，不回退到已污染的旧大纲；图表改为按页绑定不同 benchmark 系列，多行文本以原生可编辑 tspan 换行且 package QA 按字符级核对。Ruff、`test_agentic_workflow.py` 11/11、同一冻结快照 12/12 页全流程复现、逐页渲染检查与 `slides_test.py` 全部通过；PPTX 54,294 bytes。
 - ISSUE-002 R3 / 单一提交部署：停止占用 8000 端口的宿主机 API，从干净 Git 提交 `35f5084…` 构建 API 与唯一共享 Worker 镜像，强制重建 API/Worker/Agent Worker/outbox/Provider Gateway；五服务 OCI label、env、health runtime identity 均一致，四个 Worker 家族 image ID 一致，`instant_ppt.v2.process_export` 注册通过。证据：`docs/evidence/issue002-runtime-deployment.json`。
@@ -30,8 +32,8 @@
 - ISSUE-002 阶段 E2 / 条件能力：notes disabled 保持零工件与 `--no-notes`；notes enabled 在 final SVG 后由 Logic Construction 编写/可视支撑校验，再严格 split→finalize→export；prepared narration 在 Gate 2 后/P01 前冻结且后置只读校验；custom animation 在 notes 后创建稀疏真实 SVG group sidecar 并经上游 validator；narration 必须由 `generate-audio` 拥有且缺少一次性音色决策时收敛到 `needs_manual`，基础 exporter 不冒领成功；visual-review 仅显式 opt-in，渲染后等待有权审阅 Agent。新 workflow stage 迁移 roundtrip/drift、E2 定向 12/12、G06 8/8、G07 5/5 和 Ruff 全部通过。
 - ISSUE-002 阶段 F / 内容、视觉、兼容与发布守卫：新增不可变 evidence map，逐 claim 绑定来源 artifact/fragment/text hash，拒绝“合法 ID 但语义不支持”、来源核心遗漏、图表标签/数值/单位/零基线冲突、结尾不闭环和连续模板化角色；Design Spec、final SVG、compiled PPTX 三层报告均绑定当前 artifact hash，缺失/失败/stale 阻断发布。G07 编辑/再生成/精确导出已改走非 Quick role-aware renderer，用户修改标为带 EditPatch 审计的 user-authored analysis，未修改事实继续受来源语义门约束；legacy fallback 取消 `passed=true` 硬编码；无来源结果以 `limited-general-draft` 写入 API、generation/export manifest 并在结果页显示明确警示。Stage F 单测 17/17、Worker 48/48、G01 10/10 双链、G06 8/8、G07 5/5、Web lint/typecheck/build 与 Ruff 全部通过。
 - ISSUE-002 阶段 D / 图片资源 Release Gate：完成 `none|cover_only|selective` 到 source-id array、`image_notes`、页面角色和 Design Spec §VIII 的严格映射；provided/acquired 资产安全拷贝、hash/media 验证、`image_analysis.csv` 新鲜度守卫；AI `auto/api/host-native` 有界路径、已批准 Office-native fallback 和 Needs-Manual 停止语义；图片以独立 PPTX media/picture 对象嵌入，关键文字/图表保持原生可编辑，无整页位图；prompt 最小化、Provider 审计、manifest、组织级图片数量/费用 reservation 与幂等结算已闭环。provided、真实子进程 Fake HTTP AI、Needs-Manual、native fallback 端到端用例通过；Worker 全套、Domain/API 35/35、Web lint/typecheck/build 与合同格式验证通过。
-- ISSUE-002 最终用户 E2E：浏览器验证 selective 图片上限与非安全页编号映射，在 Provider 不可用时明确显示 `等待人工补充图片`/错误码/中文恢复动作；随后以无来源明确授权完成 8/8 真实 Worker 发布、11 类工件、逐页主题相关可编辑正文、rev 2 修订以及该精确修订的 PPTX 导出和短时下载授权。
-- ISSUE-002 最终回归/发布证据：Contracts 26 schemas/38 endpoints/166 fixtures、API/Domain 35/35、Worker 64/64、G03 8/8、G06 11/11、G07 5/5、G01 10/10 source + 10/10 render + 40 schema artifacts、Web lint/typecheck/build、安全全套、链接、首方格式、`git diff --check` 和 G00–G08 全部 Gate 通过；Issue 状态更新为 Resolved，44 项验收清单全部勾选，独立证据为 `docs/evidence/issue002-default-agentic-release.md`。
+- ISSUE-002 最终用户 E2E：既保留既有无来源授权、Needs-Manual 图片、编辑/重生成/下载旅程，也新增批准 GPT-5.6 事实来源的 12 页生产旅程；旧附件作为来源时因没有标签化数据被发布守卫拒绝，审计事实副本则成功生成不同 benchmark 图表并精确导出。
+- ISSUE-002 最终回归/发布证据：Issue 状态更新为 Resolved，44 项验收清单全部勾选；本轮最新验证与运行时/队列证据记录在 `docs/evidence/issue002-default-agentic-release.md`、`docs/evidence/issue002-runtime-deployment.json`、`docs/evidence/issue002-runtime-exact-export.json`。
 - 初始化 Git `main` 分支，并以 `5e930bf` 固化 G00–G01 已验证基线（未推送）。
 - 建立 monorepo 目录、固定工具链文件、Next.js/FastAPI/Celery 最小边界和根 Compose 服务拓扑。
 - 建立 ADR、系统设计、合同设计、开发说明、Gate Schema/manifest 与严重级别政策。
@@ -182,6 +184,7 @@
 | G06 SSE effect 随每次 job 对象刷新重建连接                                              |        1 | effect 只绑定稳定 job ID 与 terminal 标志；普通状态刷新保持同一事件流。                                                                                                                                          |
 | G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                        |        3 | 本轮全量回归再次被常驻生产 Worker 抢占两个测试任务；停止套件外 API/Worker/Agent Worker/outbox/Provider Gateway 后租约失败消失，保留基础 PostgreSQL/Redis/MinIO 继续执行隔离回归。                                  |
 | Default crash replay 的 `svg_final` XML 属性顺序跨进程漂移                              |        2 | 第 1 次只固定监督器子进程种子，发现二级工具会重建白名单环境并丢弃该值；第 2 次同时固定顶层与嵌套 `PYTHONHASHSEED=0`，相同快照 bundle 字节一致，真实崩溃重放测试通过。                                                |
+| 最终 E2E 来源选择误用旧生成 PPT 与带内部 taint 包装的 workflow-input                    |        3 | 第 1 次旧 8 页占位 PPT 无 benchmark，内容门禁正确拒绝 data 页；第 2 次包装后的诊断输入把 taint 标记当普通来源文字；第 3 次改用已审计的纯事实来源工件，12/12 生产生成、exact export 与视觉检查全部通过。             |
 | G07 数据下载使用跨域签名 URL时浏览器导航离开编辑器                                      |        2 | 第 1 次定位原生 anchor 对跨域 `download` 不可靠；第 2 次改为授权 fetch→Blob→DOM 临时链接，PPTX/JSON 命名文件实际落盘且编辑器路由保持。                                                                           |
 | 应用内浏览器 download event 未捕获程序化 Blob 下载                                      |        2 | 两次等待均超时但页面成功消息、操作系统 Downloads 中两个 8,119-byte JSON 和 25,787-byte PPTX 均证明下载完成；记录为自动化 harness 限制，不重复修改正确产品路径。                                                  |
 | G07 export package QA 因封面多条正文没有沿用生成合并规则而失败                          |        1 | 导出 DeckPlan 对封面正文使用与 G06 一致的合并规则；真实引擎 export、manifest 与 package QA 回归通过。                                                                                                            |
