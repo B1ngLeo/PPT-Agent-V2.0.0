@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -49,6 +50,9 @@ PROMPT_INJECTION_PATTERNS = (
     re.compile(r"ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions", re.IGNORECASE),
     re.compile(r"(?:system|developer)\s*(?:prompt|message)\s*[:：]", re.IGNORECASE),
     re.compile(r"(?:读取|泄露|输出).{0,20}(?:API\s*key|密钥|密码|环境变量)", re.IGNORECASE),
+)
+SOURCE_PROCESSING_NOTE_PATTERNS = (
+    re.compile(r"本文件是为本地安全测试制作的无外部关系版本"),
 )
 
 
@@ -276,10 +280,22 @@ def _source_markdown(fragments: list[dict[str, Any]]) -> str:
 def _sentences(fragments: list[dict[str, Any]]) -> list[tuple[str, str]]:
     values: list[tuple[str, str]] = []
     for fragment in fragments:
-        for sentence in re.split(r"(?<=[。！？.!?])\s*|[;；]\s*", str(fragment["text"])):
-            normalized = " ".join(sentence.split()).strip("-• ")
+        if str(fragment.get("kind", "")).casefold() in {"heading", "table"}:
+            continue
+        for sentence in re.split(
+            r"(?<=[。！？])\s*|(?<=[.!?])(?=\s+|$)|[;；]\s*|\r?\n+",
+            str(fragment["text"]),
+        ):
+            normalized = " ".join(sentence.split())
+            normalized = re.sub(
+                r"^(?:#{1,6}\s+|[-*+•]\s*|\d+[.)、]\s*)",
+                "",
+                normalized,
+            ).strip()
             if len(normalized) >= 8 and not any(
                 pattern.search(normalized) for pattern in PROMPT_INJECTION_PATTERNS
+            ) and not any(
+                pattern.search(normalized) for pattern in SOURCE_PROCESSING_NOTE_PATTERNS
             ):
                 values.append((normalized, str(fragment["fragmentId"])))
     return values
@@ -335,10 +351,19 @@ def _chart_context_candidate(
     return max(candidates, key=lambda item: len(item[0]), default=None)
 
 
-def _chart_values(fragments: list[dict[str, Any]]) -> tuple[list[tuple[str, float]], str]:
-    """Select one coherent sourced series instead of merging unrelated benchmarks."""
+def _chart_context_label(context: str) -> str:
+    prefix, separator, _ = context.partition("：")
+    if not separator:
+        prefix, separator, _ = context.partition(":")
+    normalized = " ".join(prefix.split()).strip("-*• ")
+    return normalized[:80] if separator and normalized else ""
 
-    candidates: list[tuple[list[tuple[str, float]], str]] = []
+
+def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return distinct coherent sourced series without merging benchmark contexts."""
+
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, tuple[tuple[str, float], ...]]] = set()
     for fragment in fragments:
         for raw_line in str(fragment["text"]).splitlines():
             line = raw_line.strip().lstrip("-*+ ")
@@ -349,15 +374,78 @@ def _chart_values(fragments: list[dict[str, Any]]) -> tuple[list[tuple[str, floa
             for context in contexts:
                 candidate = _chart_context_candidate(context)
                 if candidate is not None:
-                    candidates.append(candidate)
+                    pairs, unit = candidate
+                    key = (
+                        unit,
+                        tuple((label.casefold(), value) for label, value in pairs[:6]),
+                    )
+                    if key not in seen:
+                        seen.add(key)
+                        candidates.append(
+                            {
+                                "context": _chart_context_label(context),
+                                "values": pairs[:6],
+                                "unit": unit,
+                            }
+                        )
             if len(clauses) > 1:
                 combined = _chart_context_candidate(line, conflict_is_error=False)
                 if combined is not None:
-                    candidates.append(combined)
-    if not candidates:
+                    pairs, unit = combined
+                    key = (
+                        unit,
+                        tuple((label.casefold(), value) for label, value in pairs[:6]),
+                    )
+                    if key not in seen:
+                        seen.add(key)
+                        candidates.append(
+                            {
+                                "context": _chart_context_label(line),
+                                "values": pairs[:6],
+                                "unit": unit,
+                            }
+                        )
+    return sorted(candidates, key=lambda item: -len(item["values"]))
+
+
+def _chart_values(fragments: list[dict[str, Any]]) -> tuple[list[tuple[str, float]], str]:
+    """Select the strongest coherent sourced series for compatibility callers."""
+
+    series = _chart_series(fragments)
+    if not series:
         return [], "value"
-    pairs, unit = max(candidates, key=lambda item: len(item[0]))
-    return pairs[:6], unit
+    return list(series[0]["values"]), str(series[0]["unit"])
+
+
+def _concise_title(value: str, *, max_characters: int = 66) -> str:
+    normalized = re.sub(r"^#{1,6}\s+", "", " ".join(value.split())).rstrip("。")
+    if len(normalized) <= max_characters:
+        return normalized
+    clauses = [
+        item
+        for item in re.findall(r".+?(?:[，；。！？]|$)", normalized)
+        if item.strip()
+    ]
+    selected = ""
+    for clause in clauses:
+        candidate = selected + clause
+        if selected and len(candidate) > max_characters:
+            break
+        selected = candidate
+        if len(selected) >= max_characters * 0.65:
+            break
+    if selected and len(selected) <= max_characters:
+        return selected.rstrip("。，；！？")
+    prefix = normalized[:max_characters]
+    boundary = max(
+        (prefix.rfind(token) for token in ("，", "；", "、", ",", ";", " ")),
+        default=-1,
+    )
+    if boundary >= max_characters // 2:
+        prefix = prefix[:boundary]
+    while prefix and prefix[-1] in ".-_/" and len(prefix) > max_characters // 2:
+        prefix = prefix[:-1]
+    return prefix.rstrip("。，；！？ ") + "…"
 
 
 def _assertion_title(
@@ -365,17 +453,24 @@ def _assertion_title(
     sentences: list[tuple[str, str]],
     chart: list[tuple[str, float]],
     unit: str,
+    chart_context: str = "",
 ) -> str:
     if slide.role == "data" and len(chart) >= 2:
         ranked = sorted(chart, key=lambda item: item[1], reverse=True)
         leader, runner_up = ranked[0], ranked[1]
         delta = ((leader[1] - runner_up[1]) / runner_up[1] * 100) if runner_up[1] else 0
-        return f"{leader[0]} 达到 {leader[1]:g} {unit}，领先 {runner_up[0]} {delta:.0f}%"
+        displayed_value = (
+            f"{leader[1]:g}{unit}"
+            if unit in {"%", "倍", "亿元", "万元"}
+            else f"{leader[1]:g} {unit}"
+        )
+        prefix = f"{chart_context} 中，" if chart_context else ""
+        return f"{prefix}{leader[0]} 达到 {displayed_value}，领先 {runner_up[0]} {delta:.0f}%"
     if slide.role == "cover":
         return slide.title
     if sentences:
         sentence = sentences[min(slide.order - 1, len(sentences) - 1)][0]
-        return sentence[:90].rstrip("。")
+        return _concise_title(sentence)
     return slide.title
 
 
@@ -433,20 +528,37 @@ def _build_deck(
     fragments: list[dict[str, Any]],
 ) -> tuple[DeckPlan, dict[str, Any]]:
     sentences = _sentences(fragments)
-    chart, unit = _chart_values(fragments)
-    if any(slide.role == "data" for slide in request.outline) and len(chart) < 2:
+    chart_series = _chart_series(fragments)
+    if any(slide.role == "data" for slide in request.outline) and not chart_series:
         raise AdapterError(
             CONTENT_QA_FAILED,
             "data page requires at least two sourced labeled values; no values may be invented",
         )
     slides: list[dict[str, Any]] = []
     roster: list[dict[str, Any]] = []
+    data_index = 0
     for index, outline in enumerate(request.outline):
+        chart_entry: dict[str, Any] | None = None
+        if outline.role == "data":
+            selected = chart_series[data_index % len(chart_series)]
+            data_index += 1
+            chart_entry = {
+                "objectKey": "throughput-comparison",
+                "context": selected["context"],
+                "values": selected["values"],
+                "unit": selected["unit"],
+            }
         fact_indexes = [index % len(sentences)] if sentences else []
         if outline.role == "ending" and len(sentences) > 1:
             fact_indexes.append((index + 1) % len(sentences))
         facts = [sentences[item] for item in dict.fromkeys(fact_indexes)]
-        title = _assertion_title(outline, sentences, chart, unit)
+        title = _assertion_title(
+            outline,
+            sentences,
+            list(chart_entry["values"]) if chart_entry else [],
+            str(chart_entry["unit"]) if chart_entry else "value",
+            str(chart_entry["context"]) if chart_entry else "",
+        )
         body = [item[0] for item in facts] if facts else _limited_general_body(request, outline)
         if outline.role == "data":
             body = ["对比结论直接来自已批准来源，未执行外部研究。"]
@@ -482,11 +594,7 @@ def _build_deck(
                 "title": title,
                 "body": body,
                 "factIds": [item[1] for item in facts],
-                "chart": (
-                    {"objectKey": "throughput-comparison", "values": chart, "unit": unit}
-                    if outline.role == "data"
-                    else None
-                ),
+                "chart": chart_entry,
             }
         )
     free_id = deterministic_ulid(hashlib.sha256(b"issue002-free-design").hexdigest())
@@ -509,8 +617,13 @@ def _build_deck(
             "slides": slides,
         }
     )
-    chart_values = chart if any(item["chart"] is not None for item in roster) else []
-    return deck, {"roster": roster, "chartValues": chart_values, "chartUnit": unit}
+    first_chart = next((item["chart"] for item in roster if item["chart"]), None)
+    return deck, {
+        "roster": roster,
+        "chartSeries": chart_series,
+        "chartValues": list(first_chart["values"]) if first_chart else [],
+        "chartUnit": str(first_chart["unit"]) if first_chart else "value",
+    }
 
 
 def _design_spec(
@@ -890,6 +1003,8 @@ def _author_chart_slide(
     axis_max = max(1.0, math.ceil(max(value for _, value in chart) / 100.0) * 100.0)
     gap = (x_max - x_min) / len(chart)
     bar_width = min(160.0, gap * 0.55)
+    source_label = "来源：已批准的不可变来源片段"
+    title_size = 36 if len(slide.title) > 40 else 38
     metadata = {
         "x": 120,
         "y": 180,
@@ -934,12 +1049,12 @@ def _author_chart_slide(
             "grid_color": "#CBD5E1",
         },
         "source": {
-            "text": "Source: approved immutable fragments",
+            "text": source_label,
             "x": 140,
             "y": 604,
             "width": 900,
             "height": 28,
-            "font_size": 12,
+            "font_size": 15,
             "color": "#64748B",
         },
     }
@@ -955,7 +1070,7 @@ def _author_chart_slide(
         '  <g id="page-content" data-pptx-bounds="72 56 1136 600">',
         (
             '    <text id="title" x="80" y="98" '
-            'font-family="Microsoft YaHei, Arial, sans-serif" font-size="38" '
+            f'font-family="Microsoft YaHei, Arial, sans-serif" font-size="{title_size}" '
             f'font-weight="700" fill="#0F172A">{html.escape(slide.title)}</text>'
         ),
         (
@@ -1023,6 +1138,11 @@ def _author_chart_slide(
     lines.extend(
         [
             "      </g>",
+            (
+                '      <text id="chart-source" x="140" y="624" '
+                'font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" '
+                f'fill="#64748B">{html.escape(source_label)}</text>'
+            ),
             "    </g>",
             "  </g>",
             (
@@ -1043,6 +1163,19 @@ def _svg_roster_hash(svg_paths: list[Path]) -> str:
         digest.update(path.name.encode("utf-8"))
         digest.update(path.read_bytes())
     return digest.hexdigest()
+
+
+def _svg_visible_text(svg_paths: list[Path]) -> str:
+    values: list[str] = []
+    for path in svg_paths:
+        root = ET.fromstring(path.read_text(encoding="utf-8"))
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] != "text":
+                continue
+            value = "".join(element.itertext()).strip()
+            if value:
+                values.append(value)
+    return "\n".join(values)
 
 
 def _bundle(project: Path, target: Path) -> None:
@@ -1706,8 +1839,8 @@ def run_default_workflow(
             _author_chart_slide(
                 slide,
                 path,
-                chart=plan["chartValues"],
-                unit=plan["chartUnit"],
+                chart=list(roster["chart"]["values"]),
+                unit=str(roster["chart"]["unit"]),
             )
         else:
             resource = image_resource_by_slide.get(slide.slide_id)
@@ -1770,39 +1903,39 @@ def run_default_workflow(
         },
     )
 
-    if plan["chartValues"]:
-        values = ",".join(f"{label}:{value:g}" for label, value in plan["chartValues"])
-        axis_max = max(
-            1.0,
-            math.ceil(max(value for _, value in plan["chartValues"]) / 100.0) * 100.0,
-        )
-        calculator = _run(
-            [
-                sys.executable,
-                str(ENGINE_SCRIPTS / "svg_position_calculator.py"),
-                "calc",
-                "bar",
-                "--data",
-                values,
-                "--area",
-                "180,230,1120,560",
-                "--bar-width",
-                "160",
-                f"--value-range=0,{axis_max:g}",
-            ],
-            cwd=workspace_root,
-            timeout=60,
-            error_code=RENDER_FAILED,
-        )
-        chart_report = {
-            "schema": "instant-ppt.verify-charts.v1",
-            "subjectSha256": final_svg_sha256,
-            "objects": [
+    chart_roster = [item for item in plan["roster"] if item["chart"] is not None]
+    if chart_roster:
+        chart_objects: list[dict[str, Any]] = []
+        for item in chart_roster:
+            chart = item["chart"]
+            values = ",".join(f"{label}:{value:g}" for label, value in chart["values"])
+            axis_max = max(
+                1.0,
+                math.ceil(max(value for _, value in chart["values"]) / 100.0) * 100.0,
+            )
+            calculator = _run(
+                [
+                    sys.executable,
+                    str(ENGINE_SCRIPTS / "svg_position_calculator.py"),
+                    "calc",
+                    "bar",
+                    "--data",
+                    values,
+                    "--area",
+                    "180,230,1120,560",
+                    "--bar-width",
+                    "160",
+                    f"--value-range=0,{axis_max:g}",
+                ],
+                cwd=workspace_root,
+                timeout=60,
+                error_code=RENDER_FAILED,
+            )
+            chart_objects.append(
                 {
-                    "page": next(
-                        item["pnn"] for item in plan["roster"] if item["chart"] is not None
-                    ),
-                    "object": "throughput-comparison",
+                    "page": item["pnn"],
+                    "object": chart["objectKey"],
+                    "context": chart["context"],
                     "type": "bar",
                     "mode": "direct-calc",
                     "scale": f"0-{axis_max:g} (from ticks)",
@@ -1812,7 +1945,11 @@ def run_default_workflow(
                         calculator.stdout.encode("utf-8")
                     ).hexdigest(),
                 }
-            ],
+            )
+        chart_report = {
+            "schema": "instant-ppt.verify-charts.v1",
+            "subjectSha256": final_svg_sha256,
+            "objects": chart_objects,
         }
         _write_json(project / "validation" / "chart-verification.json", chart_report)
         _receipt(
@@ -1822,7 +1959,7 @@ def run_default_workflow(
             kind="chart-gate",
             status="passed",
             subject_sha256=final_svg_sha256,
-            payload={"objectCount": 1, "reportSha256": _sha(chart_report)},
+            payload={"objectCount": len(chart_objects), "reportSha256": _sha(chart_report)},
         )
 
     final_content = evaluate_deck(
@@ -1832,7 +1969,7 @@ def run_default_workflow(
         evidence_map=evidence_map,
         source_fragments=fragments,
         source_manifest_sha256=request.sources.manifest_sha256,
-        represented_text="\n".join(path.read_text(encoding="utf-8") for path in svg_paths),
+        represented_text=_svg_visible_text(svg_paths),
     )
     _write_json(project / "validation" / "content-final-svg.json", final_content)
     if not final_content["passed"]:

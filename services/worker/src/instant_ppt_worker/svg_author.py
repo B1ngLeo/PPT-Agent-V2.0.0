@@ -39,11 +39,70 @@ def _fit(value: str, limit: int) -> str:
 
 
 def _font_size_for_line(
-    value: str, *, preferred: int, available_width: int, minimum: int = 12
+    value: str, *, preferred: int, available_width: int, minimum: int = 16
 ) -> int:
     display_units = max(_display_units(value), 1)
     fitted = (available_width * 2) // display_units
     return max(minimum, min(preferred, fitted))
+
+
+def _wrap_lines(value: str, max_units: int, *, max_lines: int = 3) -> list[str]:
+    """Wrap at semantic boundaries while preserving versions and decimals."""
+
+    remaining = value.strip()
+    lines: list[str] = []
+    while remaining and len(lines) < max_lines:
+        if _display_units(remaining) <= max_units:
+            lines.append(remaining)
+            break
+        used = 0
+        hard_cut = 0
+        preferred_cut = 0
+        for position, character in enumerate(remaining, start=1):
+            used += 2 if unicodedata.east_asian_width(character) in {"W", "F"} else 1
+            if used > max_units:
+                break
+            hard_cut = position
+            if character.isspace() or character in "，,；;。！？!?":
+                preferred_cut = position
+        cut = preferred_cut if preferred_cut >= max(1, hard_cut // 2) else hard_cut
+        if (
+            cut == hard_cut
+            and 0 < cut < len(remaining)
+            and remaining[cut - 1].isascii()
+            and remaining[cut - 1].isalnum()
+            and remaining[cut].isascii()
+            and remaining[cut].isalnum()
+            and preferred_cut
+        ):
+            cut = preferred_cut
+        if cut <= 0:
+            lines.append(_fit(remaining, max_units))
+            break
+        if len(lines) == max_lines - 1:
+            lines.append(_fit(remaining, max_units))
+            break
+        lines.append(remaining[:cut])
+        remaining = remaining[cut:].lstrip()
+    return lines or [""]
+
+
+def _multiline_element(
+    element_id: str,
+    attributes: dict[str, object],
+    value: str,
+    *,
+    max_units: int,
+    line_height: int,
+    max_lines: int = 3,
+) -> str:
+    rendered = " ".join(f'{name}="{item}"' for name, item in attributes.items())
+    x = attributes["x"]
+    tspans = "".join(
+        f'<tspan x="{x}" dy="{0 if index == 0 else line_height}">{_text(line)}</tspan>'
+        for index, line in enumerate(_wrap_lines(value, max_units, max_lines=max_lines))
+    )
+    return f'  <text id="{element_id}" {rendered}>{tspans}</text>'
 
 
 def _element(tag: str, element_id: str, attributes: dict[str, object], content: str = "") -> str:
@@ -343,10 +402,10 @@ def author_slide(
             )
     elif slide.role == "comparison":
         panel_gap = 32
-        panel_width = (1056 - panel_gap) // 2
+        panel_width = 1056 if len(body) == 1 else (1056 - panel_gap) // 2
         for body_index, item in enumerate(body[:4]):
-            column = body_index % 2
-            row = body_index // 2
+            column = 0 if len(body) == 1 else body_index % 2
+            row = body_index if len(body) == 1 else body_index // 2
             x = 112 + column * (panel_width + panel_gap)
             y = 216 + row * 184
             lines.extend(
@@ -377,21 +436,18 @@ def author_slide(
                         },
                         f"{body_index + 1:02d}",
                     ),
-                    _element(
-                        "text",
+                    _multiline_element(
                         f"comparison-body-{index}-{body_index}",
                         {
                             "x": x + 28,
-                            "y": y + 92,
+                            "y": y + 76,
                             "font-family": "Arial, Microsoft YaHei, sans-serif",
-                            "font-size": _font_size_for_line(
-                                item,
-                                preferred=20,
-                                available_width=panel_width - 56,
-                            ),
+                            "font-size": 20,
                             "fill": "#1E293B",
                         },
-                        _text(item),
+                        item,
+                        max_units=max(36, (panel_width - 56) * 2 // 21),
+                        line_height=28,
                     ),
                 ]
             )
@@ -443,22 +499,20 @@ def author_slide(
                         },
                         f"{body_index + 1:02d}",
                     ),
-                    _element(
-                        "text",
+                    _multiline_element(
                         f"timeline-body-{index}-{body_index}",
                         {
                             "x": x,
-                            "y": 410,
+                            "y": 402,
                             "text-anchor": "middle",
                             "font-family": "Arial, Microsoft YaHei, sans-serif",
-                            "font-size": _font_size_for_line(
-                                item,
-                                preferred=18,
-                                available_width=max(150, int(gap) - 24),
-                            ),
+                            "font-size": 18,
                             "fill": "#1E293B",
                         },
-                        _text(item),
+                        item,
+                        max_units=max(28, max(150, int(gap) - 24) * 2 // 18),
+                        line_height=26,
+                        max_lines=4,
                     ),
                 ]
             )
@@ -474,7 +528,7 @@ def author_slide(
                             "x": 112,
                             "y": y,
                             "width": 164,
-                            "height": 64,
+                            "height": 88,
                             "rx": 16,
                             "fill": accent,
                         },
@@ -484,14 +538,18 @@ def author_slide(
                         f"risk-label-{index}-{body_index}",
                         {
                             "x": 194,
-                            "y": y + 40,
+                            "y": y + 52,
                             "text-anchor": "middle",
                             "font-family": "Arial, Microsoft YaHei, sans-serif",
                             "font-size": 17,
                             "font-weight": 700,
                             "fill": "#FFFFFF",
                         },
-                        "风险" if body_index % 2 == 0 else "行动",
+                        (
+                            "要点"
+                            if len(body) == 1
+                            else ("风险" if body_index % 2 == 0 else "行动")
+                        ),
                     ),
                     _element(
                         "rect",
@@ -500,27 +558,25 @@ def author_slide(
                             "x": 300,
                             "y": y,
                             "width": 868,
-                            "height": 64,
+                            "height": 88,
                             "rx": 16,
                             "fill": "#FFFFFF",
                             "stroke": "#CBD5E1",
                         },
                     ),
-                    _element(
-                        "text",
+                    _multiline_element(
                         f"risk-body-{index}-{body_index}",
                         {
                             "x": 328,
-                            "y": y + 40,
+                            "y": y + 28,
                             "font-family": "Arial, Microsoft YaHei, sans-serif",
-                            "font-size": _font_size_for_line(
-                                item,
-                                preferred=20,
-                                available_width=812,
-                            ),
+                            "font-size": 18,
                             "fill": "#1E293B",
                         },
-                        _text(item),
+                        item,
+                        max_units=90,
+                        line_height=24,
+                        max_lines=3,
                     ),
                 ]
             )
@@ -542,22 +598,20 @@ def author_slide(
                             "stroke": accent,
                         },
                     ),
-                    _element(
-                        "text",
+                    _multiline_element(
                         f"ending-body-{index}-{body_index}",
                         {
                             "x": 152,
-                            "y": y + 78,
+                            "y": y + 56,
                             "font-family": "Arial, Microsoft YaHei, sans-serif",
-                            "font-size": _font_size_for_line(
-                                item,
-                                preferred=24 if body_index == 0 else 22,
-                                available_width=800,
-                            ),
+                            "font-size": 24 if body_index == 0 else 22,
                             "font-weight": 700 if body_index == 0 else 600,
                             "fill": "#0F172A" if body_index == 0 else "#FFFFFF",
                         },
-                        _text(item),
+                        item,
+                        max_units=66 if body_index == 0 else 72,
+                        line_height=32,
+                        max_lines=3,
                     ),
                 ]
             )
@@ -646,6 +700,8 @@ def author_chart_slide(
     axis_max = max(1.0, math.ceil(max(value for _, value in chart) / 100.0) * 100.0)
     gap = (x_max - x_min) / len(chart)
     bar_width = min(160.0, gap * 0.55)
+    source_label = "来源：已批准的不可变来源片段"
+    title_size = 36 if len(slide.title) > 40 else 38
     metadata = {
         "x": 120,
         "y": 180,
@@ -695,12 +751,12 @@ def author_chart_slide(
             "grid_color": "#CBD5E1",
         },
         "source": {
-            "text": "Source: approved immutable fragments",
+            "text": source_label,
             "x": 140,
             "y": 604,
             "width": 900,
             "height": 28,
-            "font_size": 12,
+            "font_size": 15,
             "color": "#64748B",
         },
     }
@@ -716,7 +772,7 @@ def author_chart_slide(
         '  <g id="page-content" data-pptx-bounds="72 56 1136 600">',
         (
             '    <text id="title" x="80" y="98" '
-            'font-family="Microsoft YaHei, Arial, sans-serif" font-size="38" '
+            f'font-family="Microsoft YaHei, Arial, sans-serif" font-size="{title_size}" '
             f'font-weight="700" fill="#0F172A">{_text(slide.title)}</text>'
         ),
         (
@@ -781,6 +837,11 @@ def author_chart_slide(
     lines.extend(
         [
             "      </g>",
+            (
+                '      <text id="chart-source" x="140" y="624" '
+                'font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" '
+                f'fill="#64748B">{_text(source_label)}</text>'
+            ),
             "    </g>",
             "  </g>",
             (

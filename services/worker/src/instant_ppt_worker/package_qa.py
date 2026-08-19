@@ -32,6 +32,12 @@ def _normalize_text(value: str) -> str:
     return " ".join(value.split())
 
 
+def _content_key(value: str) -> str:
+    """Compare editable characters while treating authored line wraps as layout."""
+
+    return "".join(_normalize_text(value).split())
+
+
 def _shape_metrics(
     shapes: object,
     *,
@@ -165,8 +171,8 @@ def inspect_pptx(path: Path, deck: DeckPlan) -> dict[str, object]:
         editable_shapes += slide_text_count
         editable_native_shapes += native_count
         full_slide_pictures += full_slide_count
-        expected = Counter(_normalize_text(value) for value in [slide_plan.title, *slide_plan.body])
-        actual = Counter(slide_text)
+        expected = Counter(_content_key(value) for value in [slide_plan.title, *slide_plan.body])
+        actual = Counter(_content_key(value) for value in slide_text)
         expected_text_count += sum(expected.values())
         for value, required_count in expected.items():
             matched = min(required_count, actual[value])

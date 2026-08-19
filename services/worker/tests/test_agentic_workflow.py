@@ -35,6 +35,96 @@ def test_same_label_in_distinct_benchmarks_is_not_a_false_conflict() -> None:
     assert unit == "%"
 
 
+def test_sentences_preserve_model_versions_decimals_and_skip_headings() -> None:
+    fragments = [
+        {"fragmentId": "heading-1", "kind": "heading", "text": "## 效率默认与最高能力"},
+        {
+            "fragmentId": "processing-note",
+            "kind": "paragraph",
+            "text": "本文件是为本地安全测试制作的无外部关系版本，保留核心事实。",
+        },
+        {
+            "fragmentId": "paragraph-1",
+            "kind": "paragraph",
+            "text": (
+                "GPT-5.6 Sol 在评测中达到 53.6，领先竞品 13.1 分。"
+                "Sol max 比竞品高 2.8 分，且用时不到一半。"
+            ),
+        },
+    ]
+
+    sentences = [text for text, _ in workflow_module._sentences(fragments)]
+
+    assert sentences == [
+        "GPT-5.6 Sol 在评测中达到 53.6，领先竞品 13.1 分。",
+        "Sol max 比竞品高 2.8 分，且用时不到一半。",
+    ]
+    assert all(not text.startswith(("6，", "8 分", "##")) for text in sentences)
+
+
+def test_concise_title_never_reuses_polluted_outline_or_splits_decimals() -> None:
+    source = (
+        "Sol max 在 Artificial Analysis Coding Agent Index 上以 80 分创纪录，"
+        "比 Fable 5 高 2.8 分，输出 token 和用时都不到一半。"
+    )
+
+    title = workflow_module._concise_title(source)
+
+    assert title == "Sol max 在 Artificial Analysis Coding Agent Index 上以 80 分创纪录"
+    assert not title.endswith(("2", "."))
+
+
+def test_data_slides_bind_distinct_benchmark_series() -> None:
+    workflow = _payload()
+    base = workflow["outline"][1]
+    workflow["outline"] = [
+        workflow["outline"][0],
+        base,
+        {
+            **base,
+            "outlineSlideId": deterministic_ulid(hashlib.sha256(b"chart-outline-3").hexdigest()),
+            "slideId": deterministic_ulid(hashlib.sha256(b"chart-slide-3").hexdigest()),
+            "pnn": "P03",
+            "order": 3,
+        },
+        {
+            **base,
+            "outlineSlideId": deterministic_ulid(hashlib.sha256(b"chart-outline-4").hexdigest()),
+            "slideId": deterministic_ulid(hashlib.sha256(b"chart-slide-4").hexdigest()),
+            "pnn": "P04",
+            "order": 4,
+        },
+    ]
+    text = (
+        "Terminal-Bench 2.1：Sol 88.8%，Sol Ultra 91.9%，Terra 87.4%。\n"
+        "BrowseComp：Sol 90.4%，Sol Ultra 92.2%，Terra 87.5%。\n"
+        "SEC-Bench Pro：Sol 71.2%，Sol Ultra 74.3%，Terra 57.7%。"
+    )
+    fragment = workflow["sources"]["artifacts"][0]["fragments"][0]
+    fragment.update(
+        {
+            "kind": "paragraph",
+            "text": text,
+            "textSha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        }
+    )
+
+    _, plan = workflow_module._build_deck(WorkflowRequestV2.model_validate(workflow), [fragment])
+    charts = [item["chart"] for item in plan["roster"] if item["chart"]]
+
+    assert [chart["context"] for chart in charts] == [
+        "Terminal-Bench 2.1",
+        "BrowseComp",
+        "SEC-Bench Pro",
+    ]
+    assert len({tuple(chart["values"]) for chart in charts}) == 3
+    assert [slide["title"] for slide in plan["roster"][1:]] == [
+        "Terminal-Bench 2.1 中，Sol Ultra 达到 91.9%，领先 Sol 3%",
+        "BrowseComp 中，Sol Ultra 达到 92.2%，领先 Sol 2%",
+        "SEC-Bench Pro 中，Sol Ultra 达到 74.3%，领先 Sol 4%",
+    ]
+
+
 def test_no_source_limited_draft_authors_distinct_topic_specific_copy() -> None:
     workflow = _payload()
     workflow["sources"] = {

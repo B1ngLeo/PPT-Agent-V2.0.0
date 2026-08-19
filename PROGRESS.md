@@ -6,8 +6,8 @@
 
 - Goal：ISSUE-002 / Default Agentic 可用初稿生成链路
 - 状态：in_progress（2026-08-19 同日运行时复测重新打开）
-- 当前检查点：R1/R1B/R2/R3 完成；正在使用已批准 GPT-5.6 来源执行全新 Default generation 与用户视角 E2E
-- 已验证：代码服务均来自 Git 提交 `35f5084461c4a77ffcef177f3f64f312681b77a7`；Worker/Agent Worker/outbox/Provider Gateway 共享镜像 `sha256:8b8d75b2…`；真实 HTTP→outbox→Redis→Celery exact export 复用 canonical artifact `01JTDVMY6PVRNRZPCVV8SMQ32V` 且下载 SHA-256 `255ef972…` 完全一致，legacy 工程文案命中 0
+- 当前检查点：R1/R1B/R2/R3 完成；已修复小数/版本号拆句和多数据页复用同一图表，正在基于已批准 GPT-5.6 来源执行保留工作区复现与全新 E2E
+- 已验证：已部署代码服务均来自 Git 提交 `261161c27ded57043bdcc0ef0462e2e94bd7e0f0`；Worker/Agent Worker/outbox/Provider Gateway 共享镜像 `sha256:37746977…`；真实 HTTP→outbox→Redis→Celery exact export 复用 canonical artifact `01JTDVMY6PVRNRZPCVV8SMQ32V` 且下载 SHA-256 `255ef972…` 完全一致，legacy 工程文案命中 0
 - 剩余工作：批准 GPT-5.6 来源的全新生成与完整用户旅程；全量回归；关闭审计与最终 Git commit
 - 决策/偏离：网站成品固定 `route=generate_pptx`、`profile=default-agentic`；第一条纵向切片固定 free-design、`image_usage=["none"]`、closed-corpus、notes/动画/旁白/visual review 关闭；Quick 仅保留工程用途并受同一内容守卫
 - 阻塞：当前无
@@ -15,6 +15,7 @@
 
 ## 已完成事项
 
+- ISSUE-002 内容质量补闭环：修正 ASCII 句点的无条件拆分，保留 `GPT-5.6`、`53.6`、`2.8` 等版本与小数，并排除 heading/table 和来源处理说明；长标题只从完整来源句按语义标点收束，不回退到已污染的旧大纲；图表改为按页绑定不同 benchmark 系列，多行文本以原生可编辑 tspan 换行且 package QA 按字符级核对。Ruff、`test_agentic_workflow.py` 11/11、同一冻结快照 12/12 页全流程复现、逐页渲染检查与 `slides_test.py` 全部通过；PPTX 54,294 bytes。
 - ISSUE-002 R3 / 单一提交部署：停止占用 8000 端口的宿主机 API，从干净 Git 提交 `35f5084…` 构建 API 与唯一共享 Worker 镜像，强制重建 API/Worker/Agent Worker/outbox/Provider Gateway；五服务 OCI label、env、health runtime identity 均一致，四个 Worker 家族 image ID 一致，`instant_ppt.v2.process_export` 注册通过。证据：`docs/evidence/issue002-runtime-deployment.json`。
 - ISSUE-002 R2 / 真实 exact export 队列 Gate：通过对外 HTTP 新建导出任务 `01M0D48BRDVZJW4MCRJWW47HQX`，经真实 outbox/Redis/Celery 完成；export artifact ID 与 EffectiveDesignSpecRevision canonical PPTX 均为 `01JTDVMY6PVRNRZPCVV8SMQ32V`，数据库/下载 SHA-256 均为 `255ef97203d9b10bec338dbdc03cb9abf15bd3cd736b34cf18a00612d7191a94`，证明 exact export 不再重建或污染 PPTX；47 条可见文本中 legacy 工程占位文案命中 0。证据：`docs/evidence/issue002-runtime-exact-export.json`。
 - ISSUE-002 R1B / 可重复部署与验证工具：新增 `scripts/issue002/deploy_runtime.py`、`verify_runtime_deployment.py` 与 `verify_exact_export_queue.py`；正式构建默认拒绝未提交的运行时输入，诊断性脏构建只能使用 `dev-<sha>-dirty` 身份；部署后强制校验 API/Worker/Agent Worker/outbox/Provider Gateway 的 Git revision、runtime contract、OCI label、共享 Worker image ID 和 v2 exact-export 任务注册；真实导出脚本强制 canonical artifact ID/SHA 复用且扫描 legacy 工程文案泄漏。Ruff、Python compile、Compose config 与 dirty-build fail-closed 负向验证通过。
@@ -104,6 +105,10 @@
 | 问题                                                                                    | 尝试次数 | 处理结果                                                                                                                                                                                                         |
 | --------------------------------------------------------------------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 批准来源的 12 页稿中，只含一个长事实的 timeline 节点被固定在左端导致 SVG 水平越界 |        1 | 保留完整事实文本与引擎质量门，将单节点 timeline 改为安全区正中；定向 SVG QA 与基于同一冻结快照/批准来源的保留工作目录复现均通过，12 页 PPTX 53,738 bytes 成功编译。 |
+| ASCII 句点被无条件当作句号，将 `GPT-5.6`、`53.6`、`2.8` 拆成残句并泄漏 Markdown heading |        1 | 只在 ASCII 终止符后是空白/文末时拆句，中文标点保持独立规则，跳过 heading/table 且清理列表标记；新增版本/小数/标题回归用例并通过。 |
+| `_build_deck` 只选取一组全局 chart values，所有 data 页因而生成相同图表与标题 |        1 | 提取去重后的多 benchmark 系列，按 data 页顺序绑定 Terminal-Bench/BrowseComp/SEC-Bench 等不同上下文；渲染和 chart gate 均从逐页 roster 取值，新增三页三系列回归用例并通过。 |
+| 旧 generation snapshot 中的大纲标题已经含有 `6：…`、`##`、`2.`、`8 分…` 等修复前污染数据 |        1 | 非图表标题改为只从已批准来源的完整句子生成，长文按语义标点收束，禁止用旧 outline title 兜底；同时过滤“本地安全测试版本”等处理说明，最终逐页检查无残句、Markdown 或工程文案。 |
+| 完整事实文本在 comparison/risk/timeline/ending 单行布局中触发 12px、越界或截断 |        5 | 保持不放宽 SVG/content/package 门禁；实现不拆版本与小数的语义换行，正文最小 16px，为各角色扩展安全行数/面板，并让 SVG 内容核对和 PPTX package QA 正确忽略布局换行空白；第 5 次内收敛，12 页无截断/越界。 |
 | 图表来源校验只按系列标签全局合并，将 GPT-5.5 在不同基准中的 47.9/45.8 误判为冲突 |        2 | 第 1 次改为分句上下文后破坏了分号分隔的单图表 fixture；第 2 次改为“单行/单基准选取一组完整系列，跨基准不合并，同一上下文内重复冲突仍 fail-closed”；8/8 工作流测试与真实解析 GPT-5.6 数据系列通过。 |
 | 原 GPT-5.6 DOCX 含 Office 外部关系，来源安全扫描 fail-closed 且无解析工件       |        1 | 保留安全拒绝，不放宽外部关系策略；从同一公告构建无外链、有限事实、可审计的 HTML 受控来源，真实上传后成功发布 2 个解析工件。 |
 | 应用内浏览器文件选择事件前 4 种直接激活方式超时                         |        5 | 第 5 次使用可见拖放区域的 DOM 节点成功捕获 chooser 并上传；未改动正确的产品上传链路，未超过防循环上限。 |
