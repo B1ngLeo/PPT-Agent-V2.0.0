@@ -12,6 +12,7 @@ from instant_ppt_worker.adapter import run_request
 from instant_ppt_worker.errors import CONTENT_QA_FAILED, AdapterError
 from instant_ppt_worker.presentation_agent_fixture_provider import (
     DeterministicPresentationAgentProvider,
+    _fit_text,
 )
 from instant_ppt_worker.presentation_blueprint import (
     canonical_sha256,
@@ -25,6 +26,19 @@ from instant_ppt_worker.workflow_models import WorkflowRequestV2
 from .test_workflow_contracts import _payload
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_fixture_text_fit_wraps_without_tiny_type_or_content_loss() -> None:
+    value = (
+        "全面开放前，我们进行了迄今最密集的安全评估，包括大规模红队测试、"
+        "与外部专家合作开展的严格能力与防护测试。"
+    )
+
+    fitted, size = _fit_text(value, 456, 250, 25)
+
+    assert size >= 15
+    assert "\n" in fitted
+    assert "".join(fitted.split()) == "".join(value.split())
 
 
 def test_nested_workflow_tools_use_a_stable_python_hash_seed() -> None:
@@ -157,6 +171,63 @@ def test_sentences_preserve_model_versions_decimals_and_skip_headings() -> None:
         "Sol max 比竞品高 2.8 分，且用时不到一半。",
     ]
     assert all(not text.startswith(("6，", "8 分", "##")) for text in sentences)
+
+
+def test_sentences_skip_document_metadata_and_preserved_price_notes() -> None:
+    fragments = [
+        {
+            "fragmentId": "metadata",
+            "kind": "paragraph",
+            "text": (
+                "OpenAI 官方公告中文译版\n"
+                "本文“可用性与定价”部分保留 7 月 9 日首发时的原始价格。\n"
+                "__原文发布日期：__2026 年 7 月 9 日\n"
+                "2026 年 7 月 30 日更新：Luna 的价格下调 80%。"
+            ),
+        }
+    ]
+
+    sentences = [text for text, _ in workflow_module._sentences(fragments)]
+
+    assert sentences == ["2026 年 7 月 30 日更新：Luna 的价格下调 80%。"]
+
+
+def test_timeline_blueprint_uses_three_distinct_semantic_milestones() -> None:
+    payload = _payload()
+    payload["outline"][1].update(
+        {
+            "role": "timeline",
+            "title": "发布时间线与版本节奏",
+            "audienceQuestion": "官方公布了哪些发布节点？",
+        }
+    )
+    source_text = (
+        "过度拦截可能阻止防御者测试系统和部署补丁。\n"
+        "2026 年 7 月 9 日，全面推出 Sol。\n"
+        "2026 年 7 月 16 日，Terra 开放 API。\n"
+        "2026 年 7 月 23 日，Luna 扩大可用范围。\n"
+        "2026 年 7 月 30 日，官方更新定价。"
+    )
+    fragment = payload["sources"]["artifacts"][0]["fragments"][0]
+    fragment.update(
+        {
+            "kind": "paragraph",
+            "text": source_text,
+            "textSha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+        }
+    )
+    request = WorkflowRequestV2.model_validate(payload)
+
+    blueprint = workflow_module._build_page_blueprint(request, [fragment])
+    deck, _ = workflow_module._build_deck(request, [fragment], blueprint=blueprint)
+
+    timeline = blueprint.pages[1]
+    assert len(timeline.content_blocks) == 3
+    assert len({block.text for block in timeline.content_blocks}) == 3
+    assert all("部署补丁" not in block.text for block in timeline.content_blocks)
+    assert deck.slides[0].title == request.intent.title
+    assert deck.slides[0].body == [request.intent.objective]
+    assert deck.slides[1].title == "发布时间线与版本节奏"
 
 
 def test_concise_title_never_reuses_polluted_outline_or_splits_decimals() -> None:

@@ -6,13 +6,13 @@
 
 - Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
 - 状态：in progress（2026-08-22 启动）
-- 当前阶段：E2E 与最终回归
-- 已完成：阶段 0 基线/证据合同；阶段 A Page Blueprint；阶段 B 受约束工具；阶段 C 可恢复 Runtime；阶段 D 同一 Main Presentation Agent 顺序创作；阶段 E 两轮多模态视觉审阅；阶段 F snapshot-safe 灰度、显式模板 fallback、UI/manifest/文件名披露、费用、指标/告警与发布/回滚文档
-- 进行中：以阶段 0 冻结的同一 10 页 snapshot 执行 Agent after 生成、用户旅程、PowerPoint/WPS 兼容、before/after 人工偏好、fallback/canary/rollback 演练与根回归
-- 后续模块：E2E 证据归档、ISSUE-003 最终验收对照、release checklist 收口
+- 当前阶段：最终用户旅程与根回归
+- 已完成：阶段 0–F；冻结同一 10 页 snapshot 的最终 Agent after；PowerPoint/WPS 双应用 10/10 无修复；before/after 人工偏好与机器证据归档
+- 进行中：提交并从固定 Git revision 重建最终运行时，执行创建/监控/编辑/精确导出/下载、fallback/canary/rollback 与 snapshot 不变量的用户旅程，并跑根回归
+- 后续模块：ISSUE-003 最终验收对照、release checklist/Issue 状态收口
 - 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
-- 当前验证：Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 119/119；G06 11/11；G07 5/5；Web lint/typecheck/生产构建；Ruff；14/14 告警；Markdown links；Compose config；Alembic head/drift 全部通过
-- 问题与解决方案：阶段 F 集成作业曾被未停止的开发 Worker 提前消费，已可逆停止业务服务并保留 PostgreSQL/Redis/MinIO 依赖；上传后崩溃重放不再重新调用含时间证据的 Agent，而是校验 manifest/hash 后安全解包并恢复精确不可变产物；G07 两种对象存储缺失异常已统一兼容
+- 当前验证：Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 127/127；G06 11/11；G07 5/5；Web lint/typecheck/生产构建；Ruff；14/14 告警；Markdown links；Compose config；Alembic head/drift；最终候选 Agent 38 turns/26 tools/视觉首轮 0 blocking、package QA、PowerPoint/WPS 各 10/10 全部通过
+- 问题与解决方案：最终候选迭代中自动门禁分别拦截 BOM、8px/overflow、可见字符校验、视觉证据字段、Blueprint 支撑、结构标题 grounding 与 Markdown/PPTX 表示等不同缺陷；每项均在 1–2 次内定位并新增回归，未有同一问题达到 5 次。最终清除内部提示/blueprint 哈希、元数据误选和主题证据错配；失败/旧候选均可恢复移动至 `.codex-tmp/`，没有覆盖用户数据
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
@@ -31,6 +31,9 @@
 
 ## 已完成事项
 
+- ISSUE-003 crash replay 不可变请求修复：G06 在“工件已上传、数据库尚未发布”恢复时，从已被首次发布流程改写的 `GenerationJobSlide.title` 重建工作流请求，导致 hash-bound recovery 正确拒绝请求漂移。请求映射现强制从批准 snapshot outline 取标题，缺少批准 roster 直接失败；新增“运行时标题已变化但同 workflowRunId 请求完全相等”的回归，单元 3/3、真实 PostgreSQL/MinIO crash replay 聚焦 1/1 及 G06 全量 11/11 通过，未放宽 request hash 或对象字节一致性校验。
+- ISSUE-003 最终纵向恢复回归：在 crash replay 修复和语义质量改动后，G06 11/11 与 G07 5/5 均使用真实 PostgreSQL/Redis/MinIO、真实 Agent turn/tool/reviewer runtime 及本地确定性 Provider 通过；编辑、单页重生成、精确 revision 导出、恢复、取消与幂等发布不变量全部保持。
+- ISSUE-003 同输入最终 Agent 候选与人工偏好：以冻结 snapshot `fdb0cd6f…`、来源 `81133341…` 和同一 10 页 stable ID roster 重放真实 Agent turn/tool/reviewer 运行时；因本机无 `MOONSHOT_API_KEY` 明确使用本地 `fake-agent@v1`，不虚报线上 Kimi。最终 PPTX SHA-256 `57ea3e54…`，38 turns/26 tools、视觉首轮 0 blocking；内容形成概览、3 节点时间线、Programmatic Tool Calling、Terminal-Bench 原生图表、模型对比、定价、风险/行动与结尾闭环。PowerPoint/WPS 各 10/10 无修复，23/23 预期可编辑文本匹配、79 个文本形状、32 个原生形状、0 张整页图片；人工判定 After 明显优于 Before，证据见 `docs/evidence/issue003/after/README.md`。
 - ISSUE-003 阶段 F / 灰度、显式 fallback 与发布：新 generation snapshot 在服务端冻结 `agent-authoring` 或 `deterministic-template`，开关切换不改写已有 snapshot/revision；模板路径不创建 Agent turn/tool/author receipt，在 job/SSE/manifest/revision/export/UI/下载名统一披露“模板化受限初稿”且精确导出拒绝错误 fallback 文件名。Agent token/费用/阶段/工具/写页/修复、Agent canary 失败与 fallback 率已入库指标和 14 条告警；增加 ADR-012、隐私披露、runbook、release/rollback 文档和 Alembic 约束迁移。上传后崩溃会从 hash-bound manifest/canonical bundle 恢复同一字节产物，不重复调用 Agent；G06 11/11、G07 5/5、Worker 119/119、API/Domain 40/40、Contracts/Web/迁移/指标/链接全部通过。
 - ISSUE-003 阶段 E / 有界视觉反馈闭环：对每页当前 Scene Graph 渲染 1280×720 PNG 和 deck contact sheet，将联系表+逐页图像作为真实多模态输入交给只读 Visual Review Agent；strict `VisualReviewReport` v1 覆盖层级、密度/留白、对齐/节奏/平衡、连续重复、内容-视觉匹配、图片裁切/对比度/可读性和整稿一致性，且绑定 workflow/SVG roster/render/contact hash。阻断 finding 按 page/deck ownership 映射回同一 Main Agent，只重写所有页，标记旧 gate stale，重跑 final checker 并最多复审两轮；二轮仍有 blocking 则 `needs_manual` 且不导出。Reviewer 用量纳入同一 runtime 预算，报告、图像和 provider evidence 进入 canonical bundle。Ruff 及 73/73 纵向回归通过，联系表人工检查通过。
 - ISSUE-003 阶段 D / Agent 顺序接管 SVG 创作：`agentic_workflow.py` 主路径已删除对固定 `author_slide()` 的页面写入，先由真实 Strategist 读取批准上下文/设计目录并落盘策略，再在同一 session 以 Executor 严格执行 P01→首屏 checker observation→P02…Pn。每页 Scene Graph 写入绑定实际 model turn/tool call/current SVG hash，P01 gate 只有当前 hash 通过才可进入后续页；Blueprint 由真实 strategistTurnId 升级为 `agent-strategist`，结果 usage 记录真实 turn/token/cost/time，canonical bundle 包含 turn/tool/phase/scene/checkpoint 证据。历史 phase 只保留不可变 hash/receipt 和小型策略观察，当前页事实/Design Spec/spec lock 每次精确读取，避免重复 token 计费。2 页 native chart、8 页多角色、AI/provided 图片和完整兼容/内容门合并回归通过。
@@ -122,14 +125,18 @@
 
 ## 进行中事项
 
-- ISSUE-003 E2E：用阶段 0 同一批准 snapshot 生成 Agent after，逐页渲染与 before/reference 人工对照。
 - ISSUE-003 用户旅程：重建最终运行时，覆盖创建/监控/编辑/精确导出/下载、fallback 披露、canary 切换与 snapshot 不变量。
-- ISSUE-003 发布收口：PowerPoint/WPS 打开无修复、安全/取消/恢复/指标/告警/根 `pnpm verify` 回归、证据与 checklist/Issue 更新。
+- ISSUE-003 发布收口：安全/取消/恢复/指标/告警/根 `pnpm verify` 回归、证据与 checklist/Issue 更新。
 
 ## 问题及解决方案
 
 | 问题                                                                                    | 尝试次数 | 处理结果                                                                                                                                                                                                         |
 | --------------------------------------------------------------------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G06 crash replay 从首次流程已改写的 `GenerationJobSlide.title` 重建 immutable workflow request，恢复时 request hash 漂移 | 1 | 请求标题改为只读批准 snapshot outline；缺失批准 roster fail-closed，并新增 runtime title 改写前后请求完全相等回归。单元 3/3、真实 PostgreSQL/MinIO 聚焦 crash replay 1/1、G06 全量 11/11 通过。 |
+| ISSUE-003 冻结 snapshot JSON 带 UTF-8 BOM，首次 after 重放在 Agent 启动前失败 | 1 | 证据脚本按 `utf-8-sig` 读取；批准 ID/hash/来源字节不变，随后重放成功。 |
+| 首版 after 出现 8px 文本、0.9% 溢出和可见工程提示/blueprint 哈希 | 2 | 实现 East Asian Width 语义换行与最小 15px、保留全文；内容门同时扫描最终可见工件，页脚改为受众可读来源披露；PowerPoint/WPS 双渲染人工复核无泄漏。 |
+| Markdown 转义在来源、SVG 与 PPTX 可编辑文本之间表示不同，Blueprint/package QA 先后 fail-closed | 2 | 底层证据保留原始 `GPT\-5.6`，渲染为 `GPT-5.6`；SVG 表示门和 package QA 对 Markdown escape 做字符等价比较，缺字仍阻断，新增双层回归。 |
+| 页面相关性被整稿目标稀释，导致 timeline/核心能力/定价误选安全段落或处理注记 | 4 | 处理注记先过滤；topic expansion 只由当前页标题与 audience question 触发；时间线优先真实日期/可用性信号并按来源顺序排列，内容页允许复用更相关的已批准事实。最终 3 个真实时间节点、Programmatic Tool Calling 与官方降价信息均正确落页。 |
 | Stage F 真实 G06 集成作业被未停止的 Compose outbox/worker 抢占 lease |        1 | 精确查明 lease owner，可逆停止 API/Worker/outbox/provider-gateway 业务容器，保留 PostgreSQL/Redis/MinIO/ClamAV 依赖；随后 G06 全套通过。 |
 | Agent 在“上传完、数据库发布前崩溃”后重跑会因时间/耗时证据产生不同 bundle hash |        4 | 改为根据确定性 manifest key 下载并验证 manifest/bundle/workflow result/PPTX，有界防路径穿越解包，恢复 `workflow-events` 后直接发布原字节；聚焦与 G06 11/11 均通过。 |
 | G07 内存存储用 `ArtifactUnavailable`、生产 MinIO 用 `SourceObjectError` 表示未上传恢复清单 |        2 | 恢复入口兼容两种协议异常，集成 runner 固定为真实 Agent runtime + 确定性 Provider；G07 5/5 通过。 |

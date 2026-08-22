@@ -1,0 +1,322 @@
+{
+  "authority": {
+    "after": "after-agent-authoring.pptx",
+    "afterSha256": "57ea3e5414779b1e0a81da78ac403bd1a80bed3c18fe92056b253c27396cbf75",
+    "before": "before-deterministic-template.pptx",
+    "beforeSha256": "4fa9901f9c4a38c2d41fd98e60cd65c56999caa4050be4c8f37cb73aeba4fe6e",
+    "referenceIsNonStrict": true,
+    "strictSameApprovalInput": true
+  },
+  "metrics": {
+    "after": {
+      "averageTopLevelShapesPerSlide": 1.0,
+      "mediaPartCount": 0,
+      "nativeChartCount": 1,
+      "nativeTableCount": 0,
+      "notesPageCount": 0,
+      "path": "after-agent-authoring.pptx",
+      "pictureCount": 0,
+      "recursiveShapeCount": 90,
+      "sha256": "57ea3e5414779b1e0a81da78ac403bd1a80bed3c18fe92056b253c27396cbf75",
+      "sizeBytes": 37785,
+      "slideCount": 10,
+      "slideMasterCount": 1,
+      "slides": [
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 1,
+          "title": "P01 · COVERGPT 5.6 官方公告解读基于官方公告材料，系统梳理 GPT 5.6 的核心能力、\u000b关键更新点与发布时间线，帮助团队快速理解新特性并评估其对现有业务的\u000b潜在影响依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 108
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 2,
+          "title": "P02 · CONTENT公告概览与解读框架在有限预览之后，我们正式全面推出 GPT-5.6 模型家族：全新旗舰模型 Sol、\u000b适合日常工作的均衡型模型 Terra，以及成本效率最高的模型 Luna。依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 116
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 12,
+          "slide": 3,
+          "title": "P03 · TIMELINE发布时间线与版本节奏发布日期：2026 年 7 月 9 日2026 年 7 月 30 日更新：\u000bOpenAI 将 GPT-5.6 Luna\u000b的价格下调 80%，将 GPT-5.6\u000bTerra 的价格下调 20%。个人成员须在 9 月 1\u000b日前启用采用硬件支持通行密钥的\u000b高级账户安全功能，\u000b才能继续使用网络安全能力最强的\u000b前沿模型依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 195
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 4,
+          "title": "P04 · CONTENT核心能力解析Responses API 中，程序化工具调用让 GPT-5.6 能在内存中编写并运行程序，\u000b以协调工具、处理中间结果，并兼容零数据保留（ZDR）。依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 109
+        },
+        {
+          "nativeChartCount": 1,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 10,
+          "slide": 5,
+          "title": "P05 · DATATerminal-Bench 2.1 中，Sol\u000bUltra 达到 91.9%，领先 Sol 3%Terminal-Bench 2.1KEY TAKEAWAY对比结论直接来自已批准\u000b来源，未执行外部研究。依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 128
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 6,
+          "title": "P06 · COMPARISON与前代及同类模型对比GPT-5.6 Sol\u000b为智能与效率树立了新标准：\u000b它在编码、知识工作、\u000b网络安全和科学领域取得最先进的成\u000b绩，同时以更少的 token、\u000b更低的预估成本超越此前及其他前沿\u000b模型。对比口径：仅呈现已批准的官方材料；\u000b未提供的数据不作推断。依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 161
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 7,
+          "title": "P07 · CONTENT定价、可用性与接入方式2026 年 7 月 30 日更新：OpenAI 将 GPT-5.6 Luna 的价格下调 80%，将\u000bGPT-5.6 Terra 的价格下调 20%。依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 116
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 8,
+          "title": "P08 · RISK_ACTION对现有业务的潜在影响随着模型能力不断增强，\u000b安全工作仍将继续：\u000b新的薄弱点与绕过现有防护的新越狱\u000b方式都会被发现，\u000b每一代新模型也可能带来新的攻击和\u000b滥用途径。建议：先在受控范围复核本页披露的能\u000b力与安全边界，再决定接入节奏。依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 146
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 9,
+          "title": "P09 · RISK_ACTION评估建议与后续行动全面开放前，我们进行了迄今最密集\u000b的安全评估，包括大规模红队测试、\u000b与外部专家合作开展的严格能力与防\u000b护测试，以及约 70 万个 NVIDIA\u000bA100 Tensor Core GPU\u000b等效小时的黑盒自动化红队测试。建议：先在受控范围复核本页披露的能\u000b力与安全边界，再决定接入节奏。依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 183
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 10,
+          "title": "P10 · ENDING总结与讨论结论：GPT-5.6 能编写并运行轻量程序，用于协调工具、处理中间结果、监控进度，\u000b并随着工作推进选择下一步行动。行动：基于官方公告材料，系统梳理 GPT 5.6 的核心能力、\u000b关键更新点与发布时间线，帮助团队快速理解新特性并评估其对现有业务的潜在影响依据：已批准官方材料（封闭语料）",
+          "topLevelShapeCount": 1,
+          "visibleCharacterCount": 159
+        }
+      ],
+      "topLevelShapeCount": 10,
+      "usedSlideLayoutCount": 1,
+      "visibleCharacterCount": 1421
+    },
+    "before": {
+      "averageTopLevelShapesPerSlide": 2.9,
+      "mediaPartCount": 0,
+      "nativeChartCount": 1,
+      "nativeTableCount": 0,
+      "notesPageCount": 0,
+      "path": "before-deterministic-template.pptx",
+      "pictureCount": 0,
+      "recursiveShapeCount": 81,
+      "sha256": "4fa9901f9c4a38c2d41fd98e60cd65c56999caa4050be4c8f37cb73aeba4fe6e",
+      "sizeBytes": 36636,
+      "slideCount": 10,
+      "slideMasterCount": 1,
+      "slides": [
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 7,
+          "slide": 1,
+          "title": "GPT 5.6 官方公告解读GPT 5.6 官方公告解读__GPT\\-5.6：随雄心扩展的前沿智能__",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 53
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 2,
+          "title": "OpenAI 官方公告中文译版GPT 5.6 官方公告解读OpenAI 官方公告中文译版",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 46
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 3,
+          "title": "发布日期：2026 年 7 月 9 日GPT 5.6 官方公告解读01发布日期：2026 年 7 月 9 日",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 56
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 4,
+          "title": "原文：[GPT\\-5.6: Frontier intelligence that scales with your…GPT 5.6 官方公告解读原文：[GPT\\-5.6: Frontier intelligence that scales with your\u000bambition](https://openai.com/index/gpt-5-6/)",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 176
+        },
+        {
+          "nativeChartCount": 1,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 6,
+          "slide": 5,
+          "title": "Terminal-Bench 2.1 中，Sol Ultra 达到 91.9%，领先 Sol 3%对比结论直接来自已批准来源，未执行外部研究。来源：已批准的不可变来源片段",
+          "topLevelShapeCount": 2,
+          "visibleCharacterCount": 87
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 6,
+          "title": "__每个 token 带来更多智能，每一美元获得更强性能，并为最艰巨的工作按需提供更强能力GPT 5.6 官方公告解读01__每个 token 带来更多智能，每一美元获得更强性能，并为最艰巨的工作按需提供更强能力。",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 109
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 8,
+          "slide": 7,
+          "title": "__2026 年 7 月 30 日更新：__OpenAI 将 GPT\\-5.6 Luna 的价格下调 80%GPT 5.6 官方公告解读__2026 年 7 月 30 日更新：__OpenAI 将 GPT\\-5.6 Luna 的价格下调 80%，将\u000bGPT\\-5.6 Terra 的价格下调 20%。",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 152
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 8,
+          "title": "本文“可用性与定价”部分保留 7 月 9 日首发时的原始价格，以便还原公告发布时的内容GPT 5.6 官方公告解读要点本文“可用性与定价”部分保留 7 月 9 日首发时的原始价格，以便还原公告发布时的内容。",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 105
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 9,
+          "title": "在有限预览之后，我们正式全面推出 GPT\\-5.6 模型家族：全新旗舰模型 Sol、适合日常工作的均衡型模型 TerraGPT 5.6 官方公告解读要点在有限预览之后，我们正式全面推出 GPT\\-5.6 模型家族：全新旗舰模型\u000bSol、适合日常工作的均衡型模型 Terra，以及成本效率最高的模型 Luna。",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 156
+        },
+        {
+          "nativeChartCount": 0,
+          "nativeTableCount": 0,
+          "pictureCount": 0,
+          "recursiveShapeCount": 9,
+          "slide": 10,
+          "title": "GPT\\-5.6 Sol 为智能与效率树立了新标准：它在编码、知识工作、网络安全和科学领域取得最先进的成绩GPT 5.6 官方公告解读结论：GPT\\-5.6 Sol 为智能与效率树立了新标准：它在编码、知识工作、\u000b网络安全和科学领域取得最先进的成绩，同时以更少的\u000btoken、更低的预估成本超越此前及其他前沿模型。行动：基于官方公告材料，系统梳理 GPT 5.6\u000b的核心能力、关键更新点与发布时间线，\u000b帮助团队快速理解新特性并评估其对现有业务的潜在影响",
+          "topLevelShapeCount": 3,
+          "visibleCharacterCount": 228
+        }
+      ],
+      "topLevelShapeCount": 29,
+      "usedSlideLayoutCount": 1,
+      "visibleCharacterCount": 1168
+    },
+    "delta": {
+      "averageTopLevelShapesPerSlide": -1.9,
+      "nativeChartCount": 0,
+      "recursiveShapeCount": 9,
+      "visibleCharacterCount": 253
+    }
+  },
+  "officeRenders": {
+    "crossApplicationNormalizedPixelDifference": [
+      0.018987,
+      0.006201,
+      0.009954,
+      0.005538,
+      0.011975,
+      0.02401,
+      0.004888,
+      0.023552,
+      0.026957,
+      0.008824
+    ],
+    "powerpoint": {
+      "path": "after-agent-authoring-powerpoint-contact-sheet.png",
+      "pngCount": 10,
+      "sha256": "5968de6aee06c1e16117647164fee8e5ec87fb1e068e349fadd32184fa594349",
+      "sizeBytes": 314551,
+      "status": "rendered"
+    },
+    "wps": {
+      "path": "after-agent-authoring-wps-contact-sheet.png",
+      "pngCount": 10,
+      "sha256": "585d5916905d503dc8f95751cb657a356737c2aad2c02f881e0bd00e380d9628",
+      "sizeBytes": 322178,
+      "status": "rendered"
+    }
+  },
+  "qualityGates": {
+    "editableNativeShapeCount": 32,
+    "editableTextShapeCount": 79,
+    "expectedEditableTextCount": 23,
+    "finalSvgBlockingCount": 0,
+    "fullSlidePictureCount": 0,
+    "matchedEditableTextCount": 23,
+    "packagePassed": true
+  },
+  "schemaVersion": 1,
+  "semanticStructure": {
+    "distinctRoleCount": 7,
+    "roles": [
+      "cover",
+      "content",
+      "timeline",
+      "content",
+      "data",
+      "comparison",
+      "content",
+      "risk_action",
+      "risk_action",
+      "ending"
+    ],
+    "stableSlideIds": [
+      "01M0KZ2JRMZHFH5CG2RQTBRDC4",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC5",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC6",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC7",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC8",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC9",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCA",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCB",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCC",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCD"
+    ]
+  },
+  "status": "passed"
+}

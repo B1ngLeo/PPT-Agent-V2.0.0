@@ -1,0 +1,23 @@
+﻿{
+    "schemaVersion":  1,
+    "status":  "passed",
+    "candidate":  {
+                      "path":  ".\\docs\\evidence\\issue003\\after\\after-agent-authoring.pptx",
+                      "sha256":  "57ea3e5414779b1e0a81da78ac403bd1a80bed3c18fe92056b253c27396cbf75",
+                      "sizeBytes":  37785
+                  },
+    "application":  {
+                        "requestedName":  "PowerPoint",
+                        "name":  "Microsoft PowerPoint",
+                        "version":  "16.0",
+                        "build":  "20228",
+                        "path":  "C:\\Program Files\\Microsoft Office\\Root\\Office16",
+                        "progId":  "PowerPoint.Application"
+                    },
+    "compatibility":  {
+                          "slideCount":  10,
+                          "pngCount":  10,
+                          "repairsCollectionSupported":  false,
+                          "repairCount":  null
+                      }
+}

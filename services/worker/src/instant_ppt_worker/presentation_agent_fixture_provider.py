@@ -51,6 +51,12 @@ class DeterministicPresentationAgentProvider:
         )
 
 
+def _display_copy(value: str) -> str:
+    """Render Markdown escapes as audience-visible punctuation without changing evidence."""
+
+    return re.sub(r"\\([\\`*{}\[\]()#+.!_\-])", r"\1", value)
+
+
 def _visual_review_completion(messages: list[dict[str, Any]]) -> TextCompletion:
     context: dict[str, Any] | None = None
     for message in messages:
@@ -330,15 +336,53 @@ def _wrapped(value: str, width: int) -> str:
     return "\n".join(lines[:4])
 
 
-def _fit_size(value: str, width: float, maximum: float, minimum: float = 8) -> float:
-    units = sum(
-        1.0 if unicodedata.east_asian_width(character) in {"W", "F"} else 0.56
-        for character in value
-        if character not in "\r\n"
-    )
-    if units <= 0:
-        return maximum
-    return round(max(minimum, min(maximum, width * 0.9 / units)), 1)
+def _character_units(character: str) -> float:
+    return 1.0 if unicodedata.east_asian_width(character) in {"W", "F"} else 0.56
+
+
+def _wrap_units(value: str, capacity: float) -> list[str]:
+    lines: list[str] = []
+    for paragraph in value.replace("\r", "").split("\n"):
+        remaining = " ".join(paragraph.split())
+        if not remaining:
+            lines.append("")
+            continue
+        while remaining:
+            units = 0.0
+            cut = 0
+            last_break = 0
+            for index, character in enumerate(remaining, start=1):
+                next_units = units + _character_units(character)
+                if next_units > capacity and cut:
+                    break
+                units = next_units
+                cut = index
+                if character in " \t，。；：、,.!?;:":
+                    last_break = index
+            if cut < len(remaining) and last_break >= max(1, cut // 2):
+                cut = last_break
+            lines.append(remaining[:cut].strip())
+            remaining = remaining[cut:].strip()
+    return lines
+
+
+def _fit_text(
+    value: str,
+    width: float,
+    height: float,
+    maximum: float,
+    minimum: float = 15,
+) -> tuple[str, float]:
+    compact = " ".join(value.split())
+    if not compact:
+        return "", maximum
+    size = maximum
+    while size >= minimum:
+        lines = _wrap_units(compact, max(1, width * 0.9 / size))
+        if len(lines) * size * 1.25 <= height * 0.92:
+            return "\n".join(lines), round(size, 1)
+        size -= 0.5
+    return "\n".join(_wrap_units(compact, max(1, width * 0.9 / minimum))), minimum
 
 
 def _text_node(
@@ -405,28 +449,32 @@ def _stacked_text_nodes(
 ) -> list[dict[str, Any]]:
     rendered = values or [""]
     slot = height / len(rendered)
-    return [
-        _text_node(
-            f"{prefix}-{index + 1}",
-            value,
-            x=x,
-            y=y + index * slot,
-            width=width,
-            height=slot,
-            size=_fit_size(value, width, maximum_size),
-            weight=weight,
-            color=color,
+    nodes: list[dict[str, Any]] = []
+    for index, value in enumerate(rendered):
+        if not value:
+            continue
+        fitted, size = _fit_text(value, width, slot, maximum_size)
+        nodes.append(
+            _text_node(
+                f"{prefix}-{index + 1}",
+                fitted,
+                x=x,
+                y=y + index * slot,
+                width=width,
+                height=slot,
+                size=size,
+                weight=weight,
+                color=color,
+            )
         )
-        for index, value in enumerate(rendered)
-        if value
-    ]
+    return nodes
 
 
 def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
     page = context["page"]
     slide = context["slide"]
-    title = _wrapped(str(slide["title"]), 28)
-    body = [str(value) for value in slide.get("body") or []]
+    title = _wrapped(_display_copy(str(slide["title"])), 28)
+    body = [_display_copy(str(value)) for value in slide.get("body") or []]
     role = str(page["role"])
     accent = "#0F766E" if revision > 1 else "#2563EB"
     nodes: list[dict[str, Any]] = [
@@ -553,7 +601,15 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
         )
     elif role in {"comparison", "risk_action"}:
         left = body[0] if body else str(page["assertion"])
-        right = body[1] if len(body) > 1 else str(page["audienceMove"])
+        right = (
+            body[1]
+            if len(body) > 1
+            else "对比口径：仅呈现已批准的官方材料；未提供的数据不作推断。"
+            if role == "comparison"
+            else "建议：先在受控范围复核本页披露的能力与安全边界，再决定接入节奏。"
+        )
+        fitted_left, left_size = _fit_text(left, 456, 250, 25)
+        fitted_right, right_size = _fit_text(right, 488, 250, 25)
         nodes.extend(
             [
                 _shape_node(
@@ -570,22 +626,22 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
                 ),
                 _text_node(
                     "left-copy",
-                    left,
+                    fitted_left,
                     x=112,
                     y=270,
                     width=456,
                     height=250,
-                    size=_fit_size(left, 456, 25),
+                    size=left_size,
                     weight=600,
                 ),
                 _text_node(
                     "right-copy",
-                    right,
+                    fitted_right,
                     x=680,
                     y=270,
                     width=488,
                     height=250,
-                    size=_fit_size(right, 488, 25),
+                    size=right_size,
                     weight=600,
                     color="#115E59",
                 ),
@@ -604,9 +660,18 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
                 shape="rect",
             )
         )
-        statements = body or [str(page["assertion"])]
-        for index, statement in enumerate((statements * 3)[:3]):
-            x = 120 + index * 370
+        statements = (body or [str(page["assertion"])])[:3]
+        positions = {
+            1: [490],
+            2: [260, 760],
+            3: [120, 490, 860],
+        }[len(statements)]
+        for index, (statement, x) in enumerate(
+            zip(statements, positions, strict=True)
+        ):
+            fitted_statement, statement_size = _fit_text(
+                statement, 300, 120, 18
+            )
             nodes.extend(
                 [
                     _shape_node(
@@ -621,12 +686,12 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
                     ),
                     _text_node(
                         f"milestone-copy-{index + 1}",
-                        statement,
+                        fitted_statement,
                         x=x,
                         y=470,
                         width=300,
                         height=120,
-                        size=_fit_size(statement, 300, 18),
+                        size=statement_size,
                         weight=600,
                     ),
                 ]
@@ -668,7 +733,7 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
     nodes.append(
         _text_node(
             "evidence-footer",
-            f"Approved evidence · blueprint {context['blueprintSha256'][:12]}",
+            "依据：已批准官方材料（封闭语料）",
             x=72,
             y=666,
             width=600,

@@ -87,6 +87,42 @@ PROMPT_INJECTION_PATTERNS = (
 )
 SOURCE_PROCESSING_NOTE_PATTERNS = (
     re.compile(r"本文件是为本地安全测试制作的无外部关系版本"),
+    re.compile(r"^(?:OpenAI\s*)?官方公告中文译版[\s。]*$", re.IGNORECASE),
+    re.compile(r"^本文[“「].{0,40}可用性与定价.{0,120}保留.{0,60}原始价格"),
+    re.compile(r"^(?:作者|原文链接|原文发布日期|中文译制日期)[：:]"),
+    re.compile(r"^原文[：:].{0,160}https?://", re.IGNORECASE),
+    re.compile(r"^延迟按.{0,80}API.{0,80}模拟.{0,80}成本按.{0,80}API.{0,80}定价模拟"),
+)
+
+_TOPIC_EXPANSIONS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        ("概览", "框架", "overview"),
+        ("模型家族", "全面推出", "旗舰模型", "核心信息", "overview"),
+    ),
+    (
+        ("发布", "时间线", "版本节奏", "timeline"),
+        ("年", "月", "日", "发布", "推出", "更新", "预览", "开放"),
+    ),
+    (
+        ("核心能力", "新特性", "capabilit", "feature"),
+        ("编写", "运行", "工具", "协调", "程序化", "智能体", "视觉", "研究"),
+    ),
+    (
+        ("定价", "价格", "计费", "pricing", "availability"),
+        ("价格", "定价", "美元", "每百万", "下调", "API", "可用"),
+    ),
+    (
+        ("对比", "前代", "差异", "comparison"),
+        ("相比", "此前", "超越", "领先", "更少", "降低", "提升"),
+    ),
+    (
+        ("影响", "机会", "风险", "impact", "risk"),
+        ("安全", "效率", "成本", "防护", "风险", "能力", "接入"),
+    ),
+    (
+        ("建议", "行动", "跟踪", "recommend", "action"),
+        ("安全评估", "红队", "验证", "专家", "防护", "访问计划"),
+    ),
 )
 
 
@@ -364,6 +400,8 @@ def _sentences(fragments: list[dict[str, Any]]) -> list[tuple[str, str]]:
                 "",
                 normalized,
             ).strip()
+            normalized = re.sub(r"\\([\\`*{}\[\]()#+.!_])", r"\1", normalized)
+            normalized = normalized.replace("**", "").replace("__", "").replace("`", "")
             if len(normalized) >= 8 and not any(
                 pattern.search(normalized) for pattern in PROMPT_INJECTION_PATTERNS
             ) and not any(
@@ -773,11 +811,38 @@ def _blueprint_relevance(
 ) -> float:
     """Weight page-specific semantics ahead of broad deck intent terms."""
 
+    page_query = f"{slide.title} {slide.audience_question}".casefold()
+    folded_evidence = evidence.casefold()
+    expansion_score = sum(
+        sum(cue.casefold() in folded_evidence for cue in cues)
+        for triggers, cues in _TOPIC_EXPANSIONS
+        if any(trigger.casefold() in page_query for trigger in triggers)
+    )
     return (
         5 * _semantic_rank(slide.title, evidence)
         + 3 * _semantic_rank(slide.audience_question, evidence)
         + _semantic_rank(_blueprint_query(request, slide), evidence)
+        + 2 * expansion_score
     )
+
+
+def _timeline_signal_score(evidence: str) -> int:
+    """Prefer real dated availability milestones over incidental deployment wording."""
+
+    score = 0
+    if re.search(r"20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日", evidence):
+        score += 12
+    elif re.search(r"\d{1,2}\s*月\s*\d{1,2}\s*日", evidence):
+        score += 9
+    elif re.search(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", evidence):
+        score += 12
+    if re.search(r"\d+\s*(?:小时|天|周|个月)(?:内|后|前)?", evidence):
+        score += 4
+    score += 2 * sum(
+        cue in evidence
+        for cue in ("发布", "推出", "更新", "开放", "上线", "可用", "启用", "日前", "未来")
+    )
+    return score
 
 
 def _build_page_blueprint(
@@ -918,11 +983,81 @@ def _build_page_blueprint(
             )
             continue
 
+        if outline.role == "timeline":
+            ranked_indices = sorted(
+                range(len(sentences)),
+                key=lambda index: (
+                    index not in used_sentences,
+                    _timeline_signal_score(sentences[index][0]),
+                    _blueprint_relevance(request, outline, sentences[index][0]),
+                    len(semantic_terms(sentences[index][0])),
+                    -index,
+                ),
+                reverse=True,
+            )
+            selected_indices = sorted(ranked_indices[:3])
+            selected = [sentences[index] for index in selected_indices]
+            used_sentences.update(selected_indices)
+            evidence_refs = list(dict.fromkeys(value[1] for value in selected))
+            assertion = _concise_title(selected[0][0])
+            pages.append(
+                {
+                    "schemaVersion": 1,
+                    "outlineSlideId": outline.outline_slide_id,
+                    "slideId": outline.slide_id,
+                    "pnn": outline.pnn,
+                    "order": outline.order,
+                    "role": outline.role,
+                    "assertion": assertion,
+                    "audienceMove": (
+                        f"Use the approved milestones to answer "
+                        f"'{outline.audience_question}'."
+                    ),
+                    "evidenceRefs": evidence_refs,
+                    "contentBlocks": [
+                        {
+                            "blockId": f"{outline.pnn}-milestone-{index}",
+                            "kind": "sequence",
+                            "hierarchy": min(index, 3),
+                            "text": sentence,
+                            "relationship": (
+                                "precedes" if index < len(selected) else "supports"
+                            ),
+                            "evidenceRefs": [evidence_ref],
+                        }
+                        for index, (sentence, evidence_ref) in enumerate(
+                            selected, start=1
+                        )
+                    ],
+                    "visualForm": "timeline",
+                    "layoutIntent": _layout_for_role(outline.role),
+                    "literalConstraints": list(
+                        dict.fromkeys(
+                            literal
+                            for sentence, _ in selected
+                            for literal in (
+                                extract_literal_constraints(sentence) or [sentence]
+                            )
+                        )
+                    )[:64],
+                    "sourceMode": "approved-artifacts",
+                }
+            )
+            continue
+
         sentence_index = max(
             range(len(sentences)),
             key=lambda index: (
-                _blueprint_relevance(request, outline, sentences[index][0]),
-                index not in used_sentences,
+                (
+                    _blueprint_relevance(request, outline, sentences[index][0])
+                    if outline.role == "content"
+                    else int(index not in used_sentences)
+                ),
+                (
+                    int(index not in used_sentences)
+                    if outline.role == "content"
+                    else _blueprint_relevance(request, outline, sentences[index][0])
+                ),
                 len(semantic_terms(sentences[index][0])),
                 -index,
             ),
@@ -943,8 +1078,8 @@ def _build_page_blueprint(
                 "role": outline.role,
                 "assertion": assertion,
                 "audienceMove": (
-                    f"Connect the approved evidence to '{outline.audience_question}' for "
-                    f"{request.intent.audience}."
+                    f"这组已批准证据回答“{outline.audience_question}”，据此可"
+                    f"{request.intent.desired_outcome}。"
                 ),
                 "evidenceRefs": [evidence_ref],
                 "contentBlocks": [
@@ -1003,8 +1138,16 @@ def _build_deck(
                 "values": [(item.label, item.value) for item in page.chart_spec.values],
                 "unit": page.chart_spec.unit,
             }
-        title = page.assertion if chart_entry else _concise_title(page.assertion)
+        title = (
+            request.intent.title
+            if page.role == "cover"
+            else page.assertion
+            if chart_entry
+            else outline.title
+        )
         body = [block.text for block in page.content_blocks]
+        if page.role == "cover" and fragments:
+            body = [request.intent.objective]
         if page.role == "data":
             body = ["对比结论直接来自已批准来源，未执行外部研究。"]
         if page.role == "ending":
@@ -1037,6 +1180,8 @@ def _build_deck(
                 "order": outline.order,
                 "role": outline.role,
                 "title": title,
+                "approvedOutlineTitle": outline.title,
+                "intentObjective": request.intent.objective,
                 "body": body,
                 "factIds": page.evidence_refs,
                 "chart": chart_entry,

@@ -33,9 +33,10 @@ def _normalize_text(value: str) -> str:
 
 
 def _content_key(value: str) -> str:
-    """Compare editable characters while treating authored line wraps as layout."""
+    """Compare visible editable characters, ignoring layout and Markdown escapes."""
 
-    return "".join(_normalize_text(value).split())
+    unescaped = re.sub(r"\\([\\`*{}\[\]()#+.!_\-])", r"\1", value)
+    return "".join(_normalize_text(unescaped).split())
 
 
 def _shape_metrics(

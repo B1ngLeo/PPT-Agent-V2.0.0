@@ -91,6 +91,16 @@ def build_evidence_map(
             elif field == "title" and planned["role"] == "cover":
                 claim_type = "framing"
                 supporting = []
+            elif (
+                field.startswith("body[")
+                and planned["role"] == "cover"
+                and text == planned.get("intentObjective")
+            ):
+                claim_type = "framing"
+                supporting = []
+            elif field == "title" and text == planned.get("approvedOutlineTitle"):
+                claim_type = "approved-outline-framing"
+                supporting = []
             elif field == "title" and planned.get("chart"):
                 claim_type = "derived-comparison"
                 supporting = [

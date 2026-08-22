@@ -68,7 +68,60 @@ def test_release_guard_blocks_issue_002_failure_modes(body: list[str], code: str
 def test_release_guard_allows_non_placeholder_modal_phrases(body: list[str]) -> None:
     report = evaluate_deck(_deck(body), stage="test")
 
-    assert report["passed"] is True
+    assert report["passed"] is True, report
+
+
+def test_representation_guard_ignores_layout_line_breaks_without_losing_characters() -> None:
+    body = "约 70 万个 NVIDIA A100 Tensor Core GPU 等效小时的黑盒自动化红队测试。"
+    deck = _deck([body])
+
+    passing = evaluate_deck(
+        deck,
+        stage="final-svg",
+        represented_text=(
+            "性能与基准\n约 70 万个 NVIDIA A100\n"
+            "Tensor Core GPU 等效小时的黑盒自动化红队测试。"
+        ),
+    )
+    rejected = evaluate_deck(
+        deck,
+        stage="final-svg",
+        represented_text="性能与基准\n约 70 万个 NVIDIA A100\nTensor Core GPU 等效小时。",
+    )
+
+    assert passing["passed"] is True
+    assert rejected["passed"] is False
+    assert "CONTENT_REPRESENTATION_MISSING" in {
+        finding["code"] for finding in rejected["findings"]
+    }
+
+
+def test_representation_guard_treats_markdown_escape_as_visible_punctuation() -> None:
+    report = evaluate_deck(
+        _deck([r"GPT\-5.6 已发布。"]),
+        stage="final-svg",
+        represented_text="性能与基准\nGPT-5.6 已发布。",
+    )
+
+    assert report["passed"] is True, report
+
+
+def test_representation_guard_rejects_extra_visible_agent_instruction() -> None:
+    deck = _deck(["已批准的可见结论"])
+
+    report = evaluate_deck(
+        deck,
+        stage="final-svg",
+        represented_text=(
+            "性能与基准\n已批准的可见结论\n"
+            "Approved evidence · blueprint 49f27762fc87"
+        ),
+    )
+
+    assert report["passed"] is False
+    assert "CONTENT_ENGINEERING_TEXT_LEAK" in {
+        finding["code"] for finding in report["findings"]
+    }
 
 
 def test_hash_bound_risk_receipt_prevents_dictionary_false_positive() -> None:
@@ -172,3 +225,41 @@ def test_allowed_fragment_id_cannot_support_an_unrelated_claim() -> None:
     assert "CITATION_SEMANTICALLY_UNSUPPORTED" in {
         finding["code"] for finding in rejected["findings"]
     }
+
+
+def test_approved_outline_title_is_structural_framing_not_a_source_claim() -> None:
+    deck = _deck(["Sol 实测吞吐为 418 req/s"])
+    source_text = "Sol 实测吞吐为 418 req/s。"
+    fragment = {
+        "sourceArtifactId": "01ARZ3NDEKTSV4RRFFQ69G5FAE",
+        "fragmentId": "fragment-1",
+        "text": source_text,
+        "textSha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+    }
+    evidence_map = build_evidence_map(
+        deck,
+        [
+            {
+                "pnn": "P01",
+                "role": "content",
+                "approvedOutlineTitle": "性能与基准",
+                "factIds": ["fragment-1"],
+                "chart": None,
+            }
+        ],
+        [fragment],
+        source_manifest_sha256="a" * 64,
+    )
+
+    report = evaluate_deck(
+        deck,
+        stage="test-grounding",
+        evidence_map=evidence_map,
+        source_fragments=[fragment],
+        source_manifest_sha256="a" * 64,
+    )
+
+    assert report["passed"] is True
+    assert evidence_map["slides"][0]["claims"][0]["claimType"] == (
+        "approved-outline-framing"
+    )

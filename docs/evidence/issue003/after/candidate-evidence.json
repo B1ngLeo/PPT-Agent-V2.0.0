@@ -1,0 +1,60 @@
+{
+  "candidate": {
+    "authoringDisclosure": "agent-authored-editable-draft",
+    "authoringMode": "agent-authoring",
+    "model": "fake-agent@v1",
+    "modelDisclosure": "Deterministic local Provider; real Agent turn/tool/reviewer runtime; no live Kimi credential was available.",
+    "pptx": "after-agent-authoring.pptx",
+    "pptxSha256": "57ea3e5414779b1e0a81da78ac403bd1a80bed3c18fe92056b253c27396cbf75",
+    "pptxSizeBytes": 37785,
+    "project": "agent-candidate_ppt169_20260822",
+    "toolCallCount": 26,
+    "turnCount": 38,
+    "usage": {
+      "costMicrounits": 0,
+      "imageCount": 0,
+      "inputTokens": 380199,
+      "outputTokens": 5973,
+      "renderSeconds": 2
+    },
+    "visualReviewBlockingCount": 0,
+    "visualReviewPassed": true,
+    "visualReviewRound": 1,
+    "workflowRequestSha256": "fcaedf5ff6074e4060e276ddd73036edabb4a1b2dd12048dc9f674752e39b14b",
+    "workflowRunId": "016X9ZGZDT8MBSY70HXJXFN1C1",
+    "workflowStage": "publish",
+    "workflowStatus": "succeeded"
+  },
+  "comparisonAuthority": {
+    "outlineSlideIds": [
+      "01M0KY8878VW7DAX4Q5ZPVTWCZ",
+      "01M0KY8878VW7DAX4Q5ZPVTWD0",
+      "01M0KY8878VW7DAX4Q5ZPVTWD1",
+      "01M0KY8878VW7DAX4Q5ZPVTWD2",
+      "01M0KY8878VW7DAX4Q5ZPVTWD3",
+      "01M0KY8878VW7DAX4Q5ZPVTWD4",
+      "01M0KY8878VW7DAX4Q5ZPVTWD5",
+      "01M0KY8878VW7DAX4Q5ZPVTWD6",
+      "01M0KY8878VW7DAX4Q5ZPVTWD7",
+      "01M0KY8878VW7DAX4Q5ZPVTWD8"
+    ],
+    "pageCount": 10,
+    "slideIds": [
+      "01M0KZ2JRMZHFH5CG2RQTBRDC4",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC5",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC6",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC7",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC8",
+      "01M0KZ2JRMZHFH5CG2RQTBRDC9",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCA",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCB",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCC",
+      "01M0KZ2JRMZHFH5CG2RQTBRDCD"
+    ],
+    "snapshotId": "01M0KZ2JRMZHFH5CG2RQTBRDC3",
+    "snapshotSha256": "fdb0cd6f714baf0e5af838617de3519f1295e8565e764c6f61a678544f4d4ffe",
+    "sourceSha256": "811333418f1cf5b69330c0812781a82fa89467a403049c51e211653656ee04cf"
+  },
+  "schemaVersion": 1,
+  "status": "passed"
+}

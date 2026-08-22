@@ -11,7 +11,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Inches
 
 
-def _deck() -> DeckPlan:
+def _deck(*, body: str = "Every expected text remains editable") -> DeckPlan:
     return DeckPlan.model_validate(
         {
             "schemaVersion": 1,
@@ -33,7 +33,7 @@ def _deck() -> DeckPlan:
                     "order": 0,
                     "role": "content",
                     "title": "Relationship integrity",
-                    "body": ["Every expected text remains editable"],
+                    "body": [body],
                     "editable": True,
                 }
             ],
@@ -75,6 +75,26 @@ def test_package_qa_proves_text_shapes_and_relationship_integrity(tmp_path: Path
     assert report["relationshipCount"] > 0
     assert report["missingRelationshipTargets"] == []
     assert report["unreferencedMediaParts"] == []
+
+
+def test_package_qa_matches_markdown_escape_to_visible_punctuation(tmp_path: Path) -> None:
+    path = tmp_path / "markdown-escape.pptx"
+    _presentation(path)
+
+    report = inspect_pptx(path, _deck(body=r"Every expected text remains edit\-able"))
+
+    assert report["passed"] is False
+    assert any(
+        finding["code"] == "PPTX_EDITABLE_TEXT_MISSING"
+        for finding in report["findings"]
+    )
+
+    # The same comparison succeeds when the PPTX contains the rendered hyphen.
+    presentation = Presentation(path)
+    presentation.slides[0].shapes[1].text = "Every expected text remains edit-able"
+    presentation.save(path)
+    report = inspect_pptx(path, _deck(body=r"Every expected text remains edit\-able"))
+    assert report["passed"] is True
 
 
 def test_package_qa_rejects_missing_media_relationship_target(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,15 @@ def recursive_shape_count(shape: Any) -> int:
     return 1 + sum(recursive_shape_count(child) for child in shape.shapes)
 
 
+def recursive_match_count(shape: Any, predicate: Callable[[Any], bool]) -> int:
+    """Count matching shapes at any depth, including children of SVG groups."""
+
+    count = int(predicate(shape))
+    if getattr(shape, "shape_type", None) == MSO_SHAPE_TYPE.GROUP:
+        count += sum(recursive_match_count(child, predicate) for child in shape.shapes)
+    return count
+
+
 def analyze_pptx(path: Path) -> dict[str, Any]:
     presentation = Presentation(path)
     used_layouts: set[str] = set()
@@ -61,10 +71,26 @@ def analyze_pptx(path: Path) -> dict[str, Any]:
         top_level = len(slide.shapes)
         recursive = sum(recursive_shape_count(shape) for shape in slide.shapes)
         pictures = sum(
-            1 for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+            recursive_match_count(
+                shape,
+                lambda candidate: candidate.shape_type == MSO_SHAPE_TYPE.PICTURE,
+            )
+            for shape in slide.shapes
         )
-        charts = sum(1 for shape in slide.shapes if getattr(shape, "has_chart", False))
-        tables = sum(1 for shape in slide.shapes if getattr(shape, "has_table", False))
+        charts = sum(
+            recursive_match_count(
+                shape,
+                lambda candidate: bool(getattr(candidate, "has_chart", False)),
+            )
+            for shape in slide.shapes
+        )
+        tables = sum(
+            recursive_match_count(
+                shape,
+                lambda candidate: bool(getattr(candidate, "has_table", False)),
+            )
+            for shape in slide.shapes
+        )
         used_layouts.add(str(slide.slide_layout.part.partname))
         record = {
             "slide": index,

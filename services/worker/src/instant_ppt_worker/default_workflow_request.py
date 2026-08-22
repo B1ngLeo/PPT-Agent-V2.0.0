@@ -25,8 +25,14 @@ def build_default_workflow_request(
     }
     total = len(slides)
 
+    def approved_outline_value(slide: GenerationJobSlide) -> dict[str, Any]:
+        value = outline_by_id.get(str(slide.outline_slide_id))
+        if value is None:
+            raise ValueError("generation slide is missing from the approved snapshot outline")
+        return value
+
     def resolved_role(slide: GenerationJobSlide) -> str:
-        value = str(outline_by_id.get(str(slide.outline_slide_id), {}).get("type") or "content")
+        value = str(approved_outline_value(slide).get("type") or "content")
         normalized = value.lower()
         if slide.position == 1:
             return "cover"
@@ -154,7 +160,10 @@ def build_default_workflow_request(
                     "pnn": f"P{index:02d}",
                     "order": index,
                     "role": resolved_role(slide),
-                    "title": slide.title,
+                    # GenerationJobSlide is mutable runtime state: publication updates its
+                    # authored title before the final database transaction. Recovery must
+                    # rebuild the immutable request only from the approved snapshot.
+                    "title": str(approved_outline_value(slide)["title"]),
                     "audienceQuestion": (
                         "；".join(
                             str(value).strip()

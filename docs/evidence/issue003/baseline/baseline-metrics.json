@@ -10,7 +10,7 @@
     "before-deterministic-template": {
       "averageTopLevelShapesPerSlide": 2.9,
       "mediaPartCount": 0,
-      "nativeChartCount": 0,
+      "nativeChartCount": 1,
       "nativeTableCount": 0,
       "notesPageCount": 0,
       "path": "before-deterministic-template.pptx",
@@ -62,7 +62,7 @@
           "visibleCharacterCount": 176
         },
         {
-          "nativeChartCount": 0,
+          "nativeChartCount": 1,
           "nativeTableCount": 0,
           "pictureCount": 0,
           "recursiveShapeCount": 6,
@@ -129,7 +129,7 @@
     "before-user-download": {
       "averageTopLevelShapesPerSlide": 2.9,
       "mediaPartCount": 0,
-      "nativeChartCount": 0,
+      "nativeChartCount": 1,
       "nativeTableCount": 0,
       "notesPageCount": 0,
       "path": "before-user-download.pptx",
@@ -181,7 +181,7 @@
           "visibleCharacterCount": 176
         },
         {
-          "nativeChartCount": 0,
+          "nativeChartCount": 1,
           "nativeTableCount": 0,
           "pictureCount": 0,
           "recursiveShapeCount": 6,

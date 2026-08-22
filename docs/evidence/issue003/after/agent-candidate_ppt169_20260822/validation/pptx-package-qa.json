@@ -1,0 +1,17 @@
+{
+  "schema": "instant-ppt.pptx-package-qa.v1",
+  "passed": true,
+  "slideCount": 10,
+  "editableTextShapeCount": 79,
+  "expectedEditableTextCount": 23,
+  "matchedEditableTextCount": 23,
+  "editableNativeShapeCount": 32,
+  "fullSlidePictureCount": 0,
+  "relationshipCount": 35,
+  "mediaParts": [],
+  "mediaReferences": [],
+  "unreferencedMediaParts": [],
+  "missingRelationshipTargets": [],
+  "externalRelationships": [],
+  "findings": []
+}

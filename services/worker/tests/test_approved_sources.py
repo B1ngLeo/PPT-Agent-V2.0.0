@@ -180,9 +180,21 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
             },
             "outline": {
                 "slides": [
-                    {"outlineSlideId": outline_slide_ids[0], "type": "cover"},
-                    {"outlineSlideId": outline_slide_ids[1], "type": "data"},
-                    {"outlineSlideId": outline_slide_ids[2], "type": "closing"},
+                    {
+                        "outlineSlideId": outline_slide_ids[0],
+                        "type": "cover",
+                        "title": "经营复盘",
+                    },
+                    {
+                        "outlineSlideId": outline_slide_ids[1],
+                        "type": "data",
+                        "title": "关键数据",
+                    },
+                    {
+                        "outlineSlideId": outline_slide_ids[2],
+                        "type": "closing",
+                        "title": "下一步",
+                    },
                 ]
             },
             "templateCandidate": {
@@ -232,10 +244,11 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
         "continueLimitedDraft": True,
     }
 
+    workflow_run_id = new_ulid()
     request = build_default_workflow_request(
         snapshot,
         slides,
-        workflow_run_id=new_ulid(),
+        workflow_run_id=workflow_run_id,
         sources=sources,
     )
 
@@ -246,6 +259,15 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
     assert request.template.active_template_version is None
     assert request.template.candidates[0].content_accessed is False
     assert request.template.candidates[0].installed is False
+
+    slides[0].title = "published runtime title must not change recovery request"
+    recovery_request = build_default_workflow_request(
+        snapshot,
+        slides,
+        workflow_run_id=workflow_run_id,
+        sources=sources,
+    )
+    assert recovery_request == request
 
     snapshot.payload["imagePolicy"] = {
         "scope": "cover_only",

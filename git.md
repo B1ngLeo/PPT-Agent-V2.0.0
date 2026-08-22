@@ -18,12 +18,12 @@
 | 项目 | 状态 |
 | --- | --- |
 | 当前分支 | `codex/issue-003-presentation-agent` |
-| 当前提交 | `f45b8ce` (`feat(agent): add bounded visual review loop`) |
-| 提交总数 | 24 |
+| 当前提交 | `7de8499` (`feat(agent): add explicit authoring fallback and canary controls`) |
+| 提交总数 | 25 |
 | 历史结构 | 单一直线历史，无合并提交 |
 | Git 远端 | 未配置 |
 | Git 标签 | 无 |
-| 工作区 | ISSUE-003 阶段 0–E 已分类提交；阶段 F 已完成验证、待提交，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
+| 工作区 | ISSUE-003 阶段 0–F 已分类提交；最终语义质量、同输入 after 证据与恢复回归待提交，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
 | GitHub 状态 | 尚未关联或上传 |
 
 注意：首次提交包含 13,213 个文件和约 40 万行新增内容。上传 GitHub 前应检查仓库体积、敏感信息、依赖目录和生成文件，避免把不适合公开或版本管理的内容推送出去。
@@ -56,6 +56,7 @@
 | 2026-08-23 00:49 | `0b29374` | `feat` | ISSUE-003：新增可恢复 Main Presentation Agent Runtime |
 | 2026-08-23 01:06 | `9230485` | `feat` | ISSUE-003：同一 Main Agent 顺序创作并绑定逐页证据 |
 | 2026-08-23 01:24 | `f45b8ce` | `feat` | ISSUE-003：新增有界多模态视觉审阅与反修闭环 |
+| 2026-08-23 02:41 | `7de8499` | `feat` | ISSUE-003：新增显式 Agent/fallback 冻结、披露、灰度与回滚控制 |
 
 ## 远端与 GitHub
 
@@ -104,6 +105,19 @@
 ## 操作日志
 
 最新记录放在最上方。
+
+### 2026-08-23 02:41 — 提交 ISSUE-003 阶段 F 灰度与显式回退
+
+- 操作者：Codex
+- 目的：冻结新 generation snapshot 的 Agent/模板回退模式，并把 authoring 披露、canary、监控告警与回滚控制贯穿 API、Worker、Web 和发布文档。
+- 操作前状态：`codex/issue-003-presentation-agent` 位于 `f45b8ce`；阶段 F 代码、合同、迁移、测试和文档已完成验证，工作区另有用户无关改动。
+- 执行命令：按模块精确 `git add`，检查 `git diff --cached --check` 与暂存清单后执行 `git commit -m "feat(agent): add explicit authoring fallback and canary controls"`。
+- 变更范围：57 个文件；authoring policy snapshot、fallback/canary、manifest/revision/export/SSE/UI 披露、Agent 指标与 14 条告警、迁移、ADR、runbook/privacy/release/rollback 文档及纵向回归。
+- 验证结果：Contracts 26/38/166、API/Domain 40/40、Worker 119/119、G06 11/11、G07 5/5、Web、Ruff、告警、链接、Compose 与 Alembic 均通过。
+- 相关提交：`7de849950adb87f99d63691f73a08fee68bdc6f9`
+- 远端结果：未涉及；仓库仍无远端。
+- 回退方式：`git revert 7de8499`；运行时紧急回退另可对新 snapshot 切换 `deterministic-template`，不改写既有 snapshot。
+- 状态：成功；未纳入用户的无关 Markdown 空行和未跟踪工作目录。
 
 ### 2026-08-23 01:24 — 提交 ISSUE-003 阶段 E 有界视觉审阅闭环
 

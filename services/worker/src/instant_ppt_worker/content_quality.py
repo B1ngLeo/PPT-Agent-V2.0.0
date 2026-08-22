@@ -31,6 +31,8 @@ CONTENT_REQUIRED_ROLES = frozenset(
 
 ENGINEERING_TEXT_PATTERNS = (
     re.compile(r"editable\s+native\s+presentation\s+baseline", re.IGNORECASE),
+    re.compile(r"connect\s+the\s+approved\s+evidence", re.IGNORECASE),
+    re.compile(r"approved\s+evidence\s*[·|:\-]\s*blueprint", re.IGNORECASE),
     re.compile(r"AI\s*重生成指令[：:]", re.IGNORECASE),
     re.compile(r"本页已由\s*AI\s*重新生成并通过质量检查"),
     re.compile(r"(?:quality|package|svg)\s+(?:check|qa)\s+(?:passed|baseline)", re.IGNORECASE),
@@ -70,6 +72,13 @@ def _canonical_hash(value: Any) -> str:
 
 def _normalized(value: str) -> str:
     return " ".join(value.split())
+
+
+def _representation_normalized(value: str) -> str:
+    """Ignore layout-only whitespace while retaining the exact visible character sequence."""
+
+    unescaped = re.sub(r"\\([\\`*{}\[\]()#+.!_\-])", r"\1", html.unescape(value))
+    return "".join(unescaped.split())
 
 
 def _matches(value: str, patterns: Iterable[re.Pattern[str]]) -> list[str]:
@@ -219,13 +228,25 @@ def evaluate_deck(
     ]
     findings = [item.as_dict() for item in lexical_findings]
     if represented_text is not None:
-        visible_representation = html.unescape(represented_text)
+        visible_representation = _representation_normalized(represented_text)
+        represented_engineering = _matches(represented_text, ENGINEERING_TEXT_PATTERNS)
+        if represented_engineering:
+            findings.append(
+                {
+                    "code": "CONTENT_ENGINEERING_TEXT_LEAK",
+                    "severity": "blocking",
+                    "slideId": "deck",
+                    "field": "artifact",
+                    "message": "artifact contains visible internal authoring instructions",
+                    "excerpt": represented_engineering[0][:180],
+                }
+            )
         for slide in deck.slides:
             for field, value in [
                 ("title", slide.title),
                 *((f"body[{index}]", item) for index, item in enumerate(slide.body)),
             ]:
-                if value not in visible_representation:
+                if _representation_normalized(value) not in visible_representation:
                     findings.append(
                         {
                             "code": "CONTENT_REPRESENTATION_MISSING",
