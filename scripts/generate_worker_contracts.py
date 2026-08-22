@@ -4,6 +4,7 @@ import json
 
 from instant_ppt_worker.models import AdapterRequest, AdapterResponse, SecurityDecision
 from instant_ppt_worker.paths import REPOSITORY_ROOT
+from instant_ppt_worker.presentation_agent_tools import SlideSceneGraph
 from instant_ppt_worker.workflow_models import (
     PageBlueprintArtifact,
     WorkflowRequestV2,
@@ -20,6 +21,7 @@ def main() -> None:
         "engine-adapter.response.schema.json": AdapterResponse.model_json_schema(),
         "security-decision.schema.json": SecurityDecision.model_json_schema(),
         "page-blueprint.v1.schema.json": PageBlueprintArtifact.model_json_schema(),
+        "slide-scene-graph.v1.schema.json": SlideSceneGraph.model_json_schema(),
         "workflow-request.v2.schema.json": WorkflowRequestV2.model_json_schema(),
         "workflow-result.v2.schema.json": WorkflowResultV2.model_json_schema(),
     }

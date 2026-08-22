@@ -1,0 +1,370 @@
+{
+  "$defs": {
+    "SceneChart": {
+      "additionalProperties": false,
+      "properties": {
+        "objectKey": {
+          "pattern": "^[a-z][a-z0-9-]{1,79}$",
+          "title": "Objectkey",
+          "type": "string"
+        },
+        "chartType": {
+          "enum": [
+            "bar",
+            "column",
+            "line",
+            "area",
+            "scatter"
+          ],
+          "title": "Charttype",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "$ref": "#/$defs/SceneChartPoint"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "Values",
+          "type": "array"
+        },
+        "unit": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Unit",
+          "type": "string"
+        },
+        "sourceText": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Sourcetext",
+          "type": "string"
+        }
+      },
+      "required": [
+        "objectKey",
+        "chartType",
+        "values",
+        "unit",
+        "sourceText"
+      ],
+      "title": "SceneChart",
+      "type": "object"
+    },
+    "SceneChartPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "title": "SceneChartPoint",
+      "type": "object"
+    },
+    "SceneNode": {
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "pattern": "^[a-z][a-z0-9-]{1,79}$",
+          "title": "Nodeid",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "shape",
+            "group",
+            "image",
+            "chart",
+            "table"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "maximum": 1280,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 720,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 1280,
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 720,
+          "title": "Height",
+          "type": "number"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "maxLength": 8000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "shape": {
+          "anyOf": [
+            {
+              "enum": [
+                "rect",
+                "round-rect",
+                "ellipse",
+                "line"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shape"
+        },
+        "fill": {
+          "default": "#FFFFFF",
+          "title": "Fill",
+          "type": "string"
+        },
+        "stroke": {
+          "default": "#CBD5E1",
+          "title": "Stroke",
+          "type": "string"
+        },
+        "strokeWidth": {
+          "default": 1,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Strokewidth",
+          "type": "number"
+        },
+        "fontFamily": {
+          "default": "Microsoft YaHei, Arial, sans-serif",
+          "maxLength": 160,
+          "title": "Fontfamily",
+          "type": "string"
+        },
+        "fontSize": {
+          "default": 22,
+          "maximum": 96,
+          "minimum": 8,
+          "title": "Fontsize",
+          "type": "number"
+        },
+        "fontWeight": {
+          "default": 400,
+          "enum": [
+            400,
+            500,
+            600,
+            700
+          ],
+          "title": "Fontweight",
+          "type": "integer"
+        },
+        "textColor": {
+          "default": "#1E293B",
+          "title": "Textcolor",
+          "type": "string"
+        },
+        "textAnchor": {
+          "default": "start",
+          "enum": [
+            "start",
+            "middle",
+            "end"
+          ],
+          "title": "Textanchor",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 260,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "crop": {
+          "default": "cover",
+          "enum": [
+            "contain",
+            "cover"
+          ],
+          "title": "Crop",
+          "type": "string"
+        },
+        "children": {
+          "items": {
+            "$ref": "#/$defs/SceneNode"
+          },
+          "maxItems": 80,
+          "title": "Children",
+          "type": "array"
+        },
+        "chart": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneChart"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "table": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneTable"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "nodeId",
+        "kind",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "SceneNode",
+      "type": "object"
+    },
+    "SceneTable": {
+      "additionalProperties": false,
+      "properties": {
+        "objectKey": {
+          "pattern": "^[a-z][a-z0-9-]{1,79}$",
+          "title": "Objectkey",
+          "type": "string"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Columns",
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maxItems": 40,
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "objectKey",
+        "columns",
+        "rows"
+      ],
+      "title": "SceneTable",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "workflowRunId": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Workflowrunid",
+      "type": "string"
+    },
+    "slideId": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Slideid",
+      "type": "string"
+    },
+    "pnn": {
+      "pattern": "^P\\d{2,3}$",
+      "title": "Pnn",
+      "type": "string"
+    },
+    "pageBlueprintSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Pageblueprintsha256",
+      "type": "string"
+    },
+    "authorAttempt": {
+      "maximum": 5,
+      "minimum": 1,
+      "title": "Authorattempt",
+      "type": "integer"
+    },
+    "background": {
+      "default": "#F8FAFC",
+      "title": "Background",
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/SceneNode"
+      },
+      "maxItems": 120,
+      "minItems": 1,
+      "title": "Nodes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "workflowRunId",
+    "slideId",
+    "pnn",
+    "pageBlueprintSha256",
+    "authorAttempt",
+    "nodes"
+  ],
+  "title": "SlideSceneGraph",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v1/slide-scene-graph.v1.schema.json"
+}

@@ -424,6 +424,15 @@ class AgentRuntimePolicy(WorkflowContractModel):
             "provider-text",
             "provider-image",
             "approved-web",
+            "read_approved_context",
+            "write_planning_artifact",
+            "read_design_catalog",
+            "write_or_patch_slide_svg",
+            "run_svg_gate",
+            "render_slide_or_deck",
+            "run_chart_gate",
+            "request_visual_review",
+            "complete_or_pause_stage",
         ]
     ] = Field(min_length=1)
     allow_subagent_research: bool = False

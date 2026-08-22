@@ -6,13 +6,13 @@
 
 - Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
 - 状态：in progress（2026-08-22 启动）
-- 当前阶段：阶段 B — 受约束语义页面设计工具与 Scene Graph
-- 已完成：阶段 0 基线/证据合同；阶段 A 版本化 Page Blueprint、语义证据选择、批准 roster/snapshot/hash 门禁、Blueprint→Design Spec→SVG→PPTX 一致性报告
-- 进行中：实现只能在 project 边界内读写的页面设计工具 allowlist，产出可验证 Scene Graph/语义 SVG，并为每次 tool call 绑定 input/output hash、attempt 与 stale 规则
+- 当前阶段：阶段 C — 真实 Main Presentation Agent 模型—工具循环与恢复持久化
+- 已完成：阶段 0 基线/证据合同；阶段 A Page Blueprint/语义一致性；阶段 B 受约束 Agent 工具注册表、Scene Graph/原生图表表格/图片/组合排版、受校验直接 SVG escape hatch、页面/路径/证据权限和 hash/attempt/stale 调用证据
+- 进行中：实现独立 `MainPresentationAgent`，让 Provider 每 turn 选择工具或终止，Supervisor 强制 turn/token/cost/timeout/allowlist/attempt，并持久化 turn、tool call、observation、usage 和 checkpoint 以支持不重复计费的恢复
 - 后续模块：A Page Blueprint；B 受约束设计工具层；C 单主 Agent 模型—工具循环与持久化；D 顺序 SVG authoring；E 两轮视觉反馈闭环；F feature flag/fallback/UI/发布文档；完整 E2E
 - 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
-- 当前验证：阶段 A Ruff 通过；`test_agentic_workflow.py` + `test_workflow_contracts.py` 33/33 通过，包含有来源/无来源真实纵向切片、语义选择、不支持 assertion 阻断、stable ID/order/hash 重放与三层一致性报告；Page Blueprint JSON Schema 已物化
-- 问题与解决方案：阶段 0 问题见已完成项；阶段 A 首次验证时 PATH 无 `uv` 命令，改用仓库 `.venv` 后通过；新 Blueprint gate 使一项旧状态机测试缺少 receipt 1 次，补齐显式 hash-bound receipt；首版语义排序被 deck 宽泛 intent 稀释 1 次，调整为 page title > audience question > deck intent 的加权排序后通过
+- 当前验证：阶段 B Ruff 通过；Scene Graph/Tool 专项 9/9，与 Agentic Workflow/合同合并回归 42/42 通过；由 Scene Graph 写出的原生 chart SVG 经 vendored final checker 验证为 0 blocking/exit 0；`slide-scene-graph.v1` 及扩展 WorkflowRequest Schema 已物化
+- 问题与解决方案：阶段 A 问题保留于上一次记录；阶段 B 首次检查有 4 个 Ruff 格式问题并且 SVG sanitizer 将标准 `xmlns=http://www.w3.org/2000/svg` 误判为外链 1 次，改为按 href 属性做外部资源检查；两次新增测试时 patch 落点使 stale-ownership 断言误入下一测试，均在当轮移回原用例；首次手工 checker 因测试仅写占位 Design Spec/spec lock 出现 3 个上下文 blocking，改为测试中生成完整真实 Design Spec/lock 后 checker 为 0 blocking
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
@@ -22,8 +22,8 @@
 | --- | --- | --- |
 | 0 基线与 Agent 证据合同 | completed | 两套基线、渲染、统计、输入/version/hash 已归档；Agent/模板最小证据合同已冻结 |
 | A Page Blueprint | completed | 每页 assertion/audienceMove/evidenceRefs/contentBlocks/visualForm/layoutIntent/literalConstraints；100% claim support |
-| B 受约束设计工具 | in progress | allowlist、路径隔离、Scene Graph/直接 SVG、hash/tool call/attempt/stale |
-| C Main Presentation Agent Runtime | pending | 实际模型 turn→工具→观察→修订→终止；预算/超时/恢复/持久化 |
+| B 受约束设计工具 | completed | allowlist、路径隔离、Scene Graph/直接 SVG、hash/tool call/attempt/stale |
+| C Main Presentation Agent Runtime | in progress | 实际模型 turn→工具→观察→修订→终止；预算/超时/恢复/持久化 |
 | D Agent 顺序创作 | pending | P01 gate 后 P02–Pn；每页 SVG 追溯到 Agent turn/tool call；模板仅显式 fallback |
 | E 有界视觉闭环 | pending | contact sheet、结构化 reviewer、最多两轮、blocking 清零或非成功 |
 | F 灰度、回退与发布 | pending | feature flag、manifest/UI/文件名披露、监控、文档与 rollback |
@@ -31,6 +31,7 @@
 
 ## 已完成事项
 
+- ISSUE-003 阶段 B / 受约束语义设计工具：新增 9 个精确 Agent 工具的闭包注册表，只读当页批准 Blueprint/来源/Design Spec/lock/roster，只写当页 SVG 或 run 拥有的 planning JSON；新增物化 `SlideSceneGraph` v1，可表达文本、图形、分组、项目内图片、可编辑原生 chart/table 和自由组合排版，同时保留拒绝 active/external content 的直接 SVG escape hatch。图表/表格值必须与当页 Blueprint 完全相等，直接 SVG 也不能绕过；每次工具调用绑定 workflow/stage/PNN/attempt/input/arguments/output/subject hash，幂等重放且写入传播后续 gate stale。Agent 无 shell、网络、数据库或通用文件系统工具。Ruff、42/42 回归及 vendored SVG final checker 0 blocking 通过。
 - ISSUE-003 阶段 A / Page Blueprint 与语义一致性：新增 strict Pydantic `PageBlueprintArtifact` v1 及物化 JSON Schema，严格冻结 approved roster 的 outlineSlideId/slideId/PNN/order/role；以 page title、audience question、deck intent 的语义相关性选择来源句/图表序列，删除页序取模轮转。每页保存 assertion、audienceMove、evidenceRefs、contentBlocks、visualForm、layoutIntent、literalConstraints 和可选 native chartSpec；蓝图按 workflow/snapshot/source/claim/literal/chart/hash fail-closed，后续 Design Spec、final SVG、compiled PPTX 报告均绑定同一 Blueprint hash，并生成总一致性报告。Ruff 及 33/33 定向/纵向测试通过。
 - ISSUE-003 阶段 0 / 基线与 Agent 证据合同：从 PostgreSQL/私有 MinIO 恢复网站 canonical 10 页 before（SHA-256 `4fa9901f…`）、批准 snapshot `fdb0cd6f…`、Markdown `81133341…` 与转换配置 `48189255…`；归档 `ppt-master` 12 页 reference（`5e22b233…`）及用户下载谱系副本。PowerPoint 逐页导出 10/10/12 PNG 且 Repairs=0；统计确认 before 递归 Shape 81、可见字符 1,168、备注 0，reference 递归 Shape 450、可见字符 2,903、备注 12；contact sheet 人工盘点记录 before 的单一正文面板退化和 reference 的语义构图差距。新增可重放封存、渲染、分析脚本及真实 Agent 最小证据合同，明确 reference 非严格 A/B，后续以冻结 10 页 snapshot 做严格 before/after。
 - ISSUE-002 最终干净部署与生产用户 E2E：从 Git 提交 `ebed9eb…` 重建并校验 API/Worker/Agent Worker/outbox/Provider Gateway，Worker 家族共享镜像 `sha256:2d98d9ad…` 且 `instant-ppt.v2.process_export` 注册通过；浏览器从已批准事实来源启动任务 `01M0DA1AM1MGYVF41XRWQ6K85Q`，首次尝试 12/12 发布。编辑器显示完整 `GPT-5.6`、`91.9`、`92.2`、`74.3`、`2.8` 与三组不同图表；Web 导出及独立真实队列导出均复用 canonical artifact，下载文件 54,086 bytes / SHA-256 `c617bd0c…`，61 条可见文本无 legacy 命中；12 页逐页渲染、montage 人工检查与 `slides_test.py` 无越界通过。

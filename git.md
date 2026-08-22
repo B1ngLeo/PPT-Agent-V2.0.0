@@ -18,12 +18,12 @@
 | 项目 | 状态 |
 | --- | --- |
 | 当前分支 | `codex/issue-003-presentation-agent` |
-| 当前提交 | `9372959` (`fix(runtime): checkpoint verified provider and quality fixes`) |
-| 提交总数 | 19 |
+| 当前提交 | `2246ed8` (`feat(agent): add semantic page blueprint gate`) |
+| 提交总数 | 20 |
 | 历史结构 | 单一直线历史，无合并提交 |
 | Git 远端 | 未配置 |
 | Git 标签 | 无 |
-| 工作区 | ISSUE-003 阶段 0 及已验证的 runtime/provider 修复已分类提交；阶段 A 正在开发，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
+| 工作区 | ISSUE-003 阶段 0/A 及已验证的 runtime/provider 修复已分类提交；阶段 B 正在开发，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
 | GitHub 状态 | 尚未关联或上传 |
 
 注意：首次提交包含 13,213 个文件和约 40 万行新增内容。上传 GitHub 前应检查仓库体积、敏感信息、依赖目录和生成文件，避免把不适合公开或版本管理的内容推送出去。
@@ -51,6 +51,7 @@
 | 2026-08-19 23:32 | `c156d90` | `docs` | ISSUE-002：记录最终生产验证结果 |
 | 2026-08-22 23:50 | `e8b54ff` | `docs` | ISSUE-003：冻结 before/reference 质量基线与 Agent 证据合同 |
 | 2026-08-22 23:58 | `9372959` | `fix` | 分类提交已验证的 provider timeout/retry 和质量修复 |
+| 2026-08-23 00:18 | `2246ed8` | `feat` | ISSUE-003：新增语义 Page Blueprint 和 hash-bound 一致性门禁 |
 
 ## 远端与 GitHub
 
@@ -99,6 +100,19 @@
 ## 操作日志
 
 最新记录放在最上方。
+
+### 2026-08-23 00:18 — 提交 ISSUE-003 阶段 A Page Blueprint
+
+- 操作者：Codex
+- 目的：以版本化、可审计的逐页沟通蓝图取代按页序取模的来源句分配。
+- 操作前状态：`codex/issue-003-presentation-agent@9372959`；阶段 0 和已验证 runtime 修复已分类提交。
+- 执行命令：`git add <stage-a files>`；`git diff --cached --check`；`git commit -m "feat(agent): add semantic page blueprint gate"`。
+- 变更范围：PageBlueprint strict 合同/Schema、语义 evidence 选择、snapshot/roster/claim/literal/chart 门禁、Design Spec 投影与 Blueprint→SVG→PPTX 一致性报告。
+- 验证结果：Ruff、33/33 Agentic Workflow/合同测试和 Markdown 链接检查通过，含有来源/无来源纵向切片、语义错绑及不支持 assertion 负向门禁。
+- 相关提交：`2246ed864562a02b7a92b862f440c94ee9ee9bef`
+- 远端结果：未涉及，未推送。
+- 回退方式：`git revert 2246ed8`。
+- 状态：成功。
 
 ### 2026-08-22 23:58 — 提交已验证的 runtime/provider 修复
 

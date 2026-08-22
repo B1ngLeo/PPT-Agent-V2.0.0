@@ -12,7 +12,16 @@
               "start-live-preview",
               "provider-text",
               "provider-image",
-              "approved-web"
+              "approved-web",
+              "read_approved_context",
+              "write_planning_artifact",
+              "read_design_catalog",
+              "write_or_patch_slide_svg",
+              "run_svg_gate",
+              "render_slide_or_deck",
+              "run_chart_gate",
+              "request_visual_review",
+              "complete_or_pause_stage"
             ],
             "type": "string"
           },
