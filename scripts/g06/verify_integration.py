@@ -13,6 +13,10 @@ def main() -> int:
         "G06_TEST_DATABASE_URL",
         "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/instant_ppt",
     )
+    # Exercise the real Agent turn/tool/reviewer runtime deterministically at the
+    # integration boundary without requiring or transmitting a live Provider key.
+    environment["KIMI_MODEL"] = "fake-agent@v1"
+    environment["PRESENTATION_AUTHORING_MODE"] = "agent-authoring"
     command = [
         sys.executable,
         "-m",

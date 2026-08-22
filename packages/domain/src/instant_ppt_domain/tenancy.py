@@ -408,6 +408,7 @@ def usage_snapshot(session: Session, organization_id: str) -> dict[str, Any]:
         "metrics": {
             "slides": int(totals.get("slides", 0)),
             "modelTokens": int(totals.get("model_tokens", 0)),
+            "modelCostMicrounits": int(totals.get("model_cost_microunits", 0)),
             "images": int(totals.get("images", 0)),
             "imageCostMicrounits": int(totals.get("image_cost_microunits", 0)),
             "workerSeconds": int(totals.get("worker_seconds", 0)),

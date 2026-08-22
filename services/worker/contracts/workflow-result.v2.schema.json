@@ -279,9 +279,26 @@
     "profile": {
       "enum": [
         "default-agentic",
+        "deterministic-template",
         "quick-engineering"
       ],
       "title": "Profile",
+      "type": "string"
+    },
+    "authoringMode": {
+      "enum": [
+        "agent-authoring",
+        "deterministic-template"
+      ],
+      "title": "Authoringmode",
+      "type": "string"
+    },
+    "authoringDisclosure": {
+      "enum": [
+        "agent-authored-editable-draft",
+        "template-limited-editable-draft"
+      ],
+      "title": "Authoringdisclosure",
       "type": "string"
     },
     "status": {
@@ -362,6 +379,8 @@
     "workflowRunId",
     "requestSha256",
     "profile",
+    "authoringMode",
+    "authoringDisclosure",
     "status",
     "stage",
     "receipts",

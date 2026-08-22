@@ -22,6 +22,9 @@ from instant_ppt_domain.models import (
     Source,
     UsageLedger,
     UsageReservation,
+    WorkflowAgentToolCall,
+    WorkflowAgentTurn,
+    WorkflowRun,
 )
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -64,6 +67,177 @@ class DatabaseMetricsCollector:
             ):
                 jobs.add_metric([status, stage], count)
             yield jobs
+
+            authoring_runs = GaugeMetricFamily(
+                "instant_ppt_authoring_runs",
+                "Durable presentation authoring runs by explicit mode and status.",
+                labels=["mode", "status"],
+            )
+            for profile, status, count in self._grouped(
+                session, WorkflowRun, WorkflowRun.profile, WorkflowRun.status
+            ):
+                mode = (
+                    "agent-authoring"
+                    if profile == "default-agentic"
+                    else "deterministic-template"
+                    if profile == "deterministic-template"
+                    else "quick-engineering"
+                )
+                authoring_runs.add_metric([mode, status], count)
+            yield authoring_runs
+
+            authoring_decisions = GaugeMetricFamily(
+                "instant_ppt_authoring_decisions",
+                "Durable authoring decisions used for fallback and manual-intervention rates.",
+                labels=["decision"],
+            )
+            authoring_decisions.add_metric(
+                ["fallback"],
+                int(
+                    session.scalar(
+                        select(func.count(WorkflowRun.id)).where(
+                            WorkflowRun.profile == "deterministic-template"
+                        )
+                    )
+                    or 0
+                ),
+            )
+            authoring_decisions.add_metric(
+                ["needs_manual"],
+                int(
+                    session.scalar(
+                        select(func.count(WorkflowRun.id)).where(
+                            WorkflowRun.status == "needs_manual"
+                        )
+                    )
+                    or 0
+                ),
+            )
+            yield authoring_decisions
+
+            agent_turns = GaugeMetricFamily(
+                "instant_ppt_agent_turns",
+                "Durable Main Presentation Agent turns by role and status.",
+                labels=["role", "status"],
+            )
+            for role, status, count in self._grouped(
+                session,
+                WorkflowAgentTurn,
+                WorkflowAgentTurn.role,
+                WorkflowAgentTurn.status,
+            ):
+                agent_turns.add_metric([role, status], count)
+            yield agent_turns
+
+            agent_tokens = GaugeMetricFamily(
+                "instant_ppt_agent_tokens",
+                "Durable Main Presentation Agent token usage by role and direction.",
+                labels=["role", "direction"],
+            )
+            agent_cost = GaugeMetricFamily(
+                "instant_ppt_agent_cost_microunits",
+                "Durable Main Presentation Agent cost by role.",
+                labels=["role"],
+            )
+            for role, input_tokens, output_tokens, cost in session.execute(
+                select(
+                    WorkflowAgentTurn.role,
+                    func.coalesce(func.sum(WorkflowAgentTurn.input_tokens), 0),
+                    func.coalesce(func.sum(WorkflowAgentTurn.output_tokens), 0),
+                    func.coalesce(func.sum(WorkflowAgentTurn.cost_microunits), 0),
+                ).group_by(WorkflowAgentTurn.role)
+            ):
+                agent_tokens.add_metric([role, "input"], input_tokens)
+                agent_tokens.add_metric([role, "output"], output_tokens)
+                agent_cost.add_metric([role], cost)
+            yield agent_tokens
+            yield agent_cost
+
+            def phase_kind(phase_id: str) -> str:
+                if phase_id == "strategist":
+                    return "strategist"
+                if phase_id.startswith("visual-review-"):
+                    return "review"
+                if phase_id.startswith("visual-repair-"):
+                    return "repair"
+                if phase_id.startswith("executor-"):
+                    return "executor"
+                return "other"
+
+            phase_totals: dict[tuple[str, str], tuple[int, float]] = {}
+            for phase_id, status, count, total in session.execute(
+                select(
+                    WorkflowAgentTurn.phase_id,
+                    WorkflowAgentTurn.status,
+                    func.count(WorkflowAgentTurn.id),
+                    func.sum(WorkflowAgentTurn.elapsed_seconds),
+                ).group_by(WorkflowAgentTurn.phase_id, WorkflowAgentTurn.status)
+            ):
+                key = (phase_kind(phase_id), status)
+                previous_count, previous_total = phase_totals.get(key, (0, 0.0))
+                phase_totals[key] = (
+                    previous_count + int(count),
+                    previous_total + float(total or 0),
+                )
+            agent_duration = SummaryMetricFamily(
+                "instant_ppt_agent_phase_duration_seconds",
+                "Durable Main Presentation Agent turn duration by bounded phase and status.",
+                labels=["phase", "status"],
+            )
+            for (phase, status), (count, total) in phase_totals.items():
+                agent_duration.add_metric([phase, status], count, total)
+            yield agent_duration
+
+            agent_tools = GaugeMetricFamily(
+                "instant_ppt_agent_tool_calls",
+                "Durable Main Presentation Agent tool calls by allowlisted tool and status.",
+                labels=["tool", "status"],
+            )
+            for tool_name, status, count in self._grouped(
+                session,
+                WorkflowAgentToolCall,
+                WorkflowAgentToolCall.tool_name,
+                WorkflowAgentToolCall.status,
+            ):
+                agent_tools.add_metric([tool_name, status], count)
+            yield agent_tools
+
+            agent_pages = GaugeMetricFamily(
+                "instant_ppt_agent_page_writes",
+                "Durable Agent-authored page write attempts and outcomes.",
+                labels=["status"],
+            )
+            for status, count in session.execute(
+                select(
+                    WorkflowAgentToolCall.status,
+                    func.count(WorkflowAgentToolCall.id),
+                )
+                .where(
+                    WorkflowAgentToolCall.tool_name == "write_or_patch_slide_svg",
+                    WorkflowAgentToolCall.current_pnn.is_not(None),
+                )
+                .group_by(WorkflowAgentToolCall.status)
+            ):
+                agent_pages.add_metric([status], count)
+            yield agent_pages
+
+            agent_repairs = GaugeMetricFamily(
+                "instant_ppt_agent_repairs",
+                "Durable page repair attempts after the first authoring attempt.",
+                labels=["kind"],
+            )
+            repairs = int(
+                session.scalar(
+                    select(func.count(WorkflowAgentToolCall.id)).where(
+                        WorkflowAgentToolCall.tool_name
+                        == "write_or_patch_slide_svg",
+                        WorkflowAgentToolCall.author_attempt > 1,
+                    )
+                )
+                or 0
+            )
+            agent_repairs.add_metric(["page"], repairs)
+            yield agent_repairs
 
             oldest_running = GaugeMetricFamily(
                 "instant_ppt_oldest_generation_running_seconds",

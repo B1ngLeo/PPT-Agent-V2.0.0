@@ -369,6 +369,11 @@ def create_revision(
         "partial": partial,
         "acceptedMissing": accepted_missing,
         "contentMode": base.payload.get("contentMode"),
+        "engineProfile": base.payload.get("engineProfile"),
+        "authoring": base.payload.get("authoring"),
+        "authoringMode": base.payload.get("authoringMode"),
+        "authoringDisclosure": base.payload.get("authoringDisclosure"),
+        "suggestedFilename": base.payload.get("suggestedFilename"),
         "effectiveSpecRevisionId": effective.id if effective else None,
         "effectiveSpecSha256": effective.effective_spec_sha256 if effective else None,
         "wholeDeckFinalGate": (effective.payload.get("wholeDeckFinalGate") if effective else None),
@@ -390,6 +395,11 @@ def create_revision(
         "effectiveSpecRevisionId": effective.id if effective else None,
         "effectiveSpecSha256": effective.effective_spec_sha256 if effective else None,
         "contentMode": base.payload.get("contentMode"),
+        "engineProfile": base.payload.get("engineProfile"),
+        "authoring": base.payload.get("authoring"),
+        "authoringMode": base.payload.get("authoringMode"),
+        "authoringDisclosure": base.payload.get("authoringDisclosure"),
+        "suggestedFilename": base.payload.get("suggestedFilename"),
         "slides": payload["slides"],
     }
     _publish_json_artifact(
@@ -583,6 +593,16 @@ def create_export_job(
         raise PresentationValidationError(
             "partial revisions require explicit accept_missing before export"
         )
+    if revision.payload.get("authoringMode") == "deterministic-template":
+        required_filename = str(revision.payload.get("suggestedFilename") or "")
+        if not required_filename.endswith("-模板化受限初稿.pptx"):
+            raise PresentationValidationError(
+                "template fallback revision is missing its required filename disclosure"
+            )
+        if options.get("filename") != required_filename:
+            raise PresentationValidationError(
+                "template fallback export filename must disclose 模板化受限初稿"
+            )
     options_sha = canonical_sha256(options)
     existing = session.scalar(
         select(ExportJob).where(

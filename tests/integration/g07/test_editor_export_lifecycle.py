@@ -535,7 +535,8 @@ def test_default_effective_revision_drives_edit_regenerate_and_exact_export(
         )
         regenerated_manifest = session.get(Artifact, regenerated_row.manifest_artifact_id)
         manifest = json.loads(object_store.objects[regenerated_manifest.object_key])
-        assert manifest["engineProfile"] == "default-agentic-revision"
+        assert manifest["engineProfile"] == "default-agentic"
+        assert manifest["authoringMode"] == "agent-authoring"
         assert manifest["quickGenerate"] is False
         assert manifest["contentMode"] == "limited-general-draft"
         assert manifest["wholeDeckFinalQa"]["passed"] is True
@@ -569,7 +570,8 @@ def test_default_effective_revision_drives_edit_regenerate_and_exact_export(
         assert "renderSkipped" not in manifest
         assert manifest["effectiveSpecSha256"] == regenerated["effectiveSpecSha256"]
         assert manifest["wholeDeckFinalQaSha256"]
-        assert manifest["engineProfile"] == "default-agentic-revision"
+        assert manifest["engineProfile"] == "default-agentic"
+        assert manifest["authoringMode"] == "agent-authoring"
         assert manifest["quickGenerate"] is False
         assert manifest["contentMode"] == "limited-general-draft"
         assert manifest["evidenceMapSha256"]

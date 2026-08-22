@@ -49,6 +49,29 @@
       },
       "uniqueItems": true
     },
+    "engineProfile": {
+      "enum": [
+        "default-agentic",
+        "deterministic-template",
+        "quick-engineering"
+      ]
+    },
+    "authoringMode": {
+      "enum": [
+        "agent-authoring",
+        "deterministic-template"
+      ]
+    },
+    "authoringDisclosure": {
+      "enum": [
+        "agent-authored-editable-draft",
+        "template-limited-editable-draft"
+      ]
+    },
+    "suggestedFilename": {
+      "type": "string",
+      "minLength": 1
+    },
     "createdBy": {
       "type": "string",
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
@@ -66,6 +89,10 @@
     "organizationId",
     "slideVersionIds",
     "acceptedMissingSlideIds",
+    "engineProfile",
+    "authoringMode",
+    "authoringDisclosure",
+    "suggestedFilename",
     "createdBy",
     "createdAt"
   ]

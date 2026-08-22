@@ -13,6 +13,11 @@
     "sizeBytes": 2048,
     "engineVersion": "ppt-master-v4.7.0",
     "fontPackVersion": "fonts-v1",
+    "engineProfile": "default-agentic",
+    "authoringMode": "agent-authoring",
+    "authoringDisclosure": "agent-authored-editable-draft",
+    "fallbackReason": null,
+    "suggestedFilename": "年度经营复盘.pptx",
     "snapshotId": "01ARZ3NDEKTSV4RRFFQ69G5FB0",
     "presentationRevisionId": "01ARZ3NDEKTSV4RRFFQ69G5FB3",
     "createdAt": "2026-08-16T08:00:00Z"

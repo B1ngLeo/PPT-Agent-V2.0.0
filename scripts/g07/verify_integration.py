@@ -13,6 +13,10 @@ def main() -> int:
         "G07_TEST_DATABASE_URL",
         "postgresql+psycopg://instant_ppt:local-development-only@127.0.0.1:5432/instant_ppt",
     )
+    # Keep the editor/export integration boundary hermetic while still exercising
+    # the real Presentation Agent turn, tool, review, and publication runtime.
+    environment["KIMI_MODEL"] = "fake-agent@v1"
+    environment["PRESENTATION_AUTHORING_MODE"] = "agent-authoring"
     command = [
         sys.executable,
         "-m",

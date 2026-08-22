@@ -29,11 +29,11 @@ def test_agent_turn_and_tool_tables_have_tenant_scoped_audit_constraints() -> No
     assert "workflow_agent_tool_calls" in Base.metadata.tables
 
 
-def test_issue003_agent_evidence_migration_is_the_single_head() -> None:
+def test_issue003_authoring_profile_migration_is_the_single_head() -> None:
     config = Config("packages/domain/src/instant_ppt_domain/alembic.ini")
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_current_head() == "b71c4e2f9a03"
-    revision = script.get_revision("b71c4e2f9a03")
+    assert script.get_current_head() == "c82d5f1a7b04"
+    revision = script.get_revision("c82d5f1a7b04")
     assert revision is not None
-    assert revision.down_revision == "9c0e3f6a4b12"
+    assert revision.down_revision == "b71c4e2f9a03"

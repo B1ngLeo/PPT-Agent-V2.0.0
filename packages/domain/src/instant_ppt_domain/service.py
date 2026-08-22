@@ -233,6 +233,21 @@ def serialize_job_snapshot(session: Session, job: GenerationJob) -> dict[str, An
         "status": job.status,
         "stage": job.stage,
         "mode": snapshot_payload.get("modeId", "native"),
+        "engineProfile": snapshot_payload.get("engineProfile"),
+        "authoringMode": (snapshot_payload.get("authoringPolicy") or {}).get(
+            "mode", "deterministic-template"
+        ),
+        "authoringDisclosure": (
+            "template-limited-editable-draft"
+            if (snapshot_payload.get("authoringPolicy") or {}).get(
+                "mode", "deterministic-template"
+            )
+            == "deterministic-template"
+            else "agent-authored-editable-draft"
+        ),
+        "fallbackReason": (snapshot_payload.get("authoringPolicy") or {}).get(
+            "fallbackReason", "legacy-snapshot-without-authoring-policy"
+        ),
         "templateVersionId": snapshot_payload.get("templateVersionId"),
         "approvalId": snapshot_payload.get("approvalId"),
         "publicationVersion": job.publication_version,

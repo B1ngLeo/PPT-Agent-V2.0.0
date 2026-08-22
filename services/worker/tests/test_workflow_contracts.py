@@ -39,6 +39,14 @@ def _payload() -> dict[str, object]:
         "organizationId": ULIDS["org"],
         "route": "generate_pptx",
         "profile": "default-agentic",
+        "authoring": {
+            "mode": "agent-authoring",
+            "policyVersion": "presentation-authoring@v1",
+            "fallbackReason": None,
+            "disclosure": "agent-authored-editable-draft",
+            "visualReviewPolicyVersion": "visual-review-optional@v1",
+            "visualReviewRequired": False,
+        },
         "versions": {
             "workflow": "instant-ppt-default@v2.0.0",
             "engine": "ppt-master@v4.7.0",
@@ -345,6 +353,7 @@ def test_conditional_capabilities_reject_missing_dependencies() -> None:
         WorkflowRequestV2.model_validate(narration)
 
     visual_review = _payload()
+    visual_review["authoring"]["visualReviewRequired"] = True
     visual_review["production"]["visualReview"] = True
     with pytest.raises(ValidationError, match="review-agent capability"):
         WorkflowRequestV2.model_validate(visual_review)

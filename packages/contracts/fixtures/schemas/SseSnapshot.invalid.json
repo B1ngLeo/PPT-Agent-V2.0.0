@@ -3,6 +3,10 @@
   "jobId": "01ARZ3NDEKTSV4RRFFQ69G5FB1",
   "status": "running",
   "stage": "slide_generation",
+  "engineProfile": "default-agentic",
+  "authoringMode": "agent-authoring",
+  "authoringDisclosure": "agent-authored-editable-draft",
+  "fallbackReason": null,
   "latestSeq": 42,
   "terminal": false
 }

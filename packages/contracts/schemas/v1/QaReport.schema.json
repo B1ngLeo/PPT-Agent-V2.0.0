@@ -27,7 +27,8 @@
     "profile": {
       "enum": [
         "quick-engineering",
-        "default-agentic"
+        "default-agentic",
+        "deterministic-template"
       ]
     },
     "quickGenerate": {

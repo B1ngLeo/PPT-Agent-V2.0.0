@@ -8,12 +8,13 @@ import math
 import os
 import tempfile
 import time
+import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from instant_ppt_domain.artifacts import tenant_object_key
+from instant_ppt_domain.artifacts import ArtifactUnavailable, tenant_object_key
 from instant_ppt_domain.effective_spec import persist_initial_effective_revision
 from instant_ppt_domain.generation import (
     GenerationCancellationObserved,
@@ -47,6 +48,7 @@ from instant_ppt_worker.artifacts import sha256_file
 from instant_ppt_worker.default_workflow_request import build_default_workflow_request
 from instant_ppt_worker.errors import RENDER_FAILED, AdapterError
 from instant_ppt_worker.source_parser import deterministic_ulid
+from instant_ppt_worker.source_pipeline import SourceObjectError
 from instant_ppt_worker.workflow_models import (
     GeneratePptxDefaultRequest,
     WorkflowRequestV2,
@@ -75,6 +77,135 @@ class DefaultWorkflowObjectStore(Protocol):
 
 class DefaultWorkflowInterrupted(RuntimeError):
     """A recoverable process interruption after durable external writes."""
+
+
+_RECOVERY_MANIFEST_MAX_BYTES = 4 * 1024 * 1024
+_RECOVERY_BUNDLE_MAX_BYTES = 512 * 1024 * 1024
+_RECOVERY_BUNDLE_MAX_FILES = 10_000
+
+
+def _safe_extract_recovery_bundle(bundle: Path, project: Path) -> None:
+    project.mkdir(parents=True, exist_ok=False)
+    total_bytes = 0
+    with zipfile.ZipFile(bundle) as archive:
+        members = archive.infolist()
+        if len(members) > _RECOVERY_BUNDLE_MAX_FILES:
+            raise RuntimeError("uploaded workflow bundle contains too many files")
+        for member in members:
+            relative = Path(member.filename.replace("\\", "/"))
+            if (
+                relative.is_absolute()
+                or not relative.parts
+                or ".." in relative.parts
+                or member.is_dir()
+                or (member.external_attr >> 16) & 0o170000 == 0o120000
+            ):
+                raise RuntimeError("uploaded workflow bundle contains an unsafe member")
+            total_bytes += int(member.file_size)
+            if total_bytes > _RECOVERY_BUNDLE_MAX_BYTES:
+                raise RuntimeError("uploaded workflow bundle exceeds the recovery limit")
+            target = (project / relative).resolve()
+            if project.resolve() not in target.parents:
+                raise RuntimeError("uploaded workflow bundle escapes the recovery project")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(member) as source, target.open("xb") as destination:
+                while chunk := source.read(1024 * 1024):
+                    destination.write(chunk)
+
+
+def _restore_uploaded_workflow(
+    store: DefaultWorkflowObjectStore,
+    *,
+    root: Path,
+    job_id: str,
+    organization_id: str,
+    publication_version: int,
+    snapshot: GenerationSnapshot,
+    request_sha256: str,
+) -> Path | None:
+    manifest_artifact_id = _stable_id(
+        f"{job_id}:v{publication_version}:generation_manifest:deck"
+    )
+    manifest_key = tenant_object_key(
+        organization_id,
+        "published",
+        manifest_artifact_id,
+    )
+    manifest_path = root / "uploaded-generation-manifest.json"
+    try:
+        manifest_digest = store.download(
+            manifest_key,
+            manifest_path,
+            max_bytes=_RECOVERY_MANIFEST_MAX_BYTES,
+        )
+    except (ArtifactUnavailable, SourceObjectError):
+        return None
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (
+        sha256_file(manifest_path) != manifest_digest
+        or manifest.get("artifactId") != manifest_artifact_id
+        or manifest.get("jobId") != job_id
+        or manifest.get("organizationId") != organization_id
+        or manifest.get("snapshotId") != snapshot.id
+        or manifest.get("snapshotSha256") != snapshot.snapshot_sha256
+        or manifest.get("workflowRequestSha256") != request_sha256
+    ):
+        raise RuntimeError("uploaded generation manifest is stale or invalid")
+    bundle = next(
+        (
+            value
+            for value in list(manifest.get("artifacts") or [])
+            if value.get("artifactType") == "generation_source_bundle"
+        ),
+        None,
+    )
+    if not bundle:
+        raise RuntimeError("uploaded generation manifest has no workflow bundle")
+    bundle_path = root / "uploaded-canonical-project-bundle.zip"
+    bundle_digest = store.download(
+        str(bundle["objectKey"]),
+        bundle_path,
+        max_bytes=_RECOVERY_BUNDLE_MAX_BYTES,
+    )
+    if bundle_digest != bundle.get("sha256") or sha256_file(bundle_path) != bundle_digest:
+        raise RuntimeError("uploaded workflow bundle hash does not match its manifest")
+    project = root / "recovered-default-workflow"
+    _safe_extract_recovery_bundle(bundle_path, project)
+    recovered_bundle = project / "canonical-project-bundle.zip"
+    bundle_path.replace(recovered_bundle)
+    required_artifacts = {
+        "generation_workflow_result": (
+            project / "workflow-result.json",
+            _RECOVERY_MANIFEST_MAX_BYTES,
+        ),
+        "generation_baseline_pptx": (
+            project / "exports" / "deck.pptx",
+            _RECOVERY_BUNDLE_MAX_BYTES,
+        ),
+    }
+    artifacts_by_type = {
+        str(value.get("artifactType")): value
+        for value in list(manifest.get("artifacts") or [])
+    }
+    for artifact_type, (target, max_bytes) in required_artifacts.items():
+        artifact = artifacts_by_type.get(artifact_type)
+        if artifact is None:
+            raise RuntimeError(
+                f"uploaded generation manifest has no {artifact_type} artifact"
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        digest = store.download(
+            str(artifact["objectKey"]),
+            target,
+            max_bytes=max_bytes,
+        )
+        if digest != artifact.get("sha256") or sha256_file(target) != digest:
+            raise RuntimeError(f"uploaded {artifact_type} hash does not match its manifest")
+    result_path = project / "workflow-result.json"
+    result = WorkflowResultV2.model_validate_json(result_path.read_text(encoding="utf-8"))
+    if result.status != "succeeded" or result.request_sha256 != request_sha256:
+        raise RuntimeError("uploaded workflow result is stale or incomplete")
+    return project
 
 
 def _scoped_image_environment(
@@ -228,6 +359,56 @@ def _write_canonical(path: Path, value: Any) -> None:
     path.write_bytes(_canonical_bytes(value))
 
 
+def _suggested_filename(title: str, authoring_mode: str) -> str:
+    safe = "".join(
+        "_" if character in '<>:"/\\|?*' or ord(character) < 32 else character
+        for character in title.strip()
+    ).strip(" .")
+    safe = safe[:120] or "AI 演示文稿"
+    suffix = "-模板化受限初稿" if authoring_mode == "deterministic-template" else ""
+    return f"{safe}{suffix}.pptx"
+
+
+def _authoring_summary(
+    project: Path,
+    request: WorkflowRequestV2,
+    result: WorkflowResultV2,
+) -> dict[str, Any]:
+    turns = list((project / "agent" / "turns").glob("*.json"))
+    tools = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+    ]
+    page_count = len(request.outline)
+    review_path = project / "validation" / "visual-review.json"
+    review = (
+        json.loads(review_path.read_text(encoding="utf-8"))
+        if review_path.is_file()
+        else None
+    )
+    return {
+        "policyVersion": request.authoring.policy_version,
+        "mode": request.authoring.mode,
+        "profile": request.profile,
+        "disclosure": request.authoring.disclosure,
+        "fallbackReason": request.authoring.fallback_reason,
+        "agentAuthoredPageCount": (
+            page_count if request.authoring.mode == "agent-authoring" else 0
+        ),
+        "templateAuthoredPageCount": (
+            page_count if request.authoring.mode == "deterministic-template" else 0
+        ),
+        "turnCount": len(turns),
+        "toolCallCount": len(tools),
+        "toolFailureCount": sum(value.get("status") != "succeeded" for value in tools),
+        "repairCount": sum(int(value.get("authorAttempt") or 1) > 1 for value in tools),
+        "visualReviewPolicyVersion": request.authoring.visual_review_policy_version,
+        "visualReviewRound": int(review.get("reviewRound") or 0) if review else 0,
+        "visualReviewPassed": bool(review.get("passed")) if review else None,
+        "usage": result.usage.model_dump(by_alias=True, mode="json"),
+    }
+
+
 def _stable_id(seed: str) -> str:
     return deterministic_ulid(hashlib.sha256(seed.encode("utf-8")).hexdigest())
 
@@ -369,6 +550,7 @@ def _process_default_generation_job(
                 lease_seconds=lease_seconds,
             )
             fencing_token = str(run.fencing_token)
+            publication_version = locked_job.publication_version + 1
 
         def cancellation_requested() -> bool:
             with session_factory() as session:
@@ -394,46 +576,55 @@ def _process_default_generation_job(
             output_key=f"projects/job-{job_id[-8:]}",
             workflow=request,
         )
-        try:
-            supervised = run_default_workflow_supervised(
-                root,
-                adapter_request,
-                hard_timeout_seconds=request.runtime.hard_timeout_seconds,
-                cancellation_requested=cancellation_requested,
-                heartbeat=heartbeat,
-                text_environment=_scoped_text_environment(snapshot, request),
-                image_environment=_scoped_image_environment(snapshot, request),
-            )
-        except WorkflowCancelled:
-            worker_seconds = max(1, math.ceil(time.monotonic() - started))
-            with session_factory.begin() as session:
-                run = session.get(WorkflowRun, workflow_run_id)
-                if run is not None:
-                    finish_workflow_run(run, status="cancelled", stage=run.stage)
-                cancel_generation_job(
-                    session,
+        project = _restore_uploaded_workflow(
+            object_store,
+            root=root,
+            job_id=job_id,
+            organization_id=organization_id,
+            publication_version=publication_version,
+            snapshot=snapshot,
+            request_sha256=request_sha256,
+        )
+        if project is None:
+            try:
+                supervised = run_default_workflow_supervised(
+                    root,
+                    adapter_request,
+                    hard_timeout_seconds=request.runtime.hard_timeout_seconds,
+                    cancellation_requested=cancellation_requested,
+                    heartbeat=heartbeat,
+                    text_environment=_scoped_text_environment(snapshot, request),
+                    image_environment=_scoped_image_environment(snapshot, request),
+                )
+            except WorkflowCancelled:
+                worker_seconds = max(1, math.ceil(time.monotonic() - started))
+                with session_factory.begin() as session:
+                    run = session.get(WorkflowRun, workflow_run_id)
+                    if run is not None:
+                        finish_workflow_run(run, status="cancelled", stage=run.stage)
+                    cancel_generation_job(
+                        session,
+                        job_id=job_id,
+                        organization_id=organization_id,
+                        worker_id=worker_id,
+                        worker_seconds=worker_seconds,
+                    )
+                return "cancelled"
+            except (AdapterError, OSError, RuntimeError, ValueError) as error:
+                worker_seconds = max(1, math.ceil(time.monotonic() - started))
+                code = error.code if isinstance(error, AdapterError) else RENDER_FAILED
+                _fail_default_run(
+                    session_factory,
                     job_id=job_id,
                     organization_id=organization_id,
                     worker_id=worker_id,
+                    workflow_run_id=workflow_run_id,
+                    error_code=code,
+                    message=str(error),
                     worker_seconds=worker_seconds,
                 )
-            return "cancelled"
-        except (AdapterError, OSError, RuntimeError, ValueError) as error:
-            worker_seconds = max(1, math.ceil(time.monotonic() - started))
-            code = error.code if isinstance(error, AdapterError) else RENDER_FAILED
-            _fail_default_run(
-                session_factory,
-                job_id=job_id,
-                organization_id=organization_id,
-                worker_id=worker_id,
-                workflow_run_id=workflow_run_id,
-                error_code=code,
-                message=str(error),
-                worker_seconds=worker_seconds,
-            )
-            return "failed"
-
-        project = supervised.project
+                return "failed"
+            project = supervised.project
         result = WorkflowResultV2.model_validate_json(
             (project / "workflow-result.json").read_text(encoding="utf-8")
         )
@@ -492,6 +683,7 @@ def _process_default_generation_job(
                 worker_seconds=worker_seconds,
             )
             return "failed"
+        authoring = _authoring_summary(project, request, result)
         with session_factory.begin() as session:
             run = session.get(WorkflowRun, workflow_run_id)
             if run is None or run.fencing_token != fencing_token:
@@ -611,6 +803,8 @@ def _process_default_generation_job(
             "sourceManifestSha256": source_manifest.manifest_sha256,
             "evidenceMapSha256": evidence_map["evidenceMapSha256"],
             "contentMode": content_mode,
+            "engineProfile": request.profile,
+            "authoring": authoring,
             "exactRoster": [item.pnn for item in request.outline],
             "designSpecContent": design_content,
             "finalSvgContent": final_svg_content,
@@ -679,6 +873,16 @@ def _process_default_generation_job(
         if image_prompt_path.is_file():
             artifact_values.append(
                 ("generation_image_prompts", image_prompt_path, "application/json", None)
+            )
+        visual_review_path = project / "validation" / "visual-review.json"
+        if visual_review_path.is_file():
+            artifact_values.append(
+                (
+                    "generation_visual_review",
+                    visual_review_path,
+                    "application/json",
+                    None,
+                )
             )
         media_types = {
             ".png": "image/png",
@@ -782,7 +986,12 @@ def _process_default_generation_job(
             "snapshotSha256": snapshot.snapshot_sha256,
             "workflowRunId": workflow_run_id,
             "workflowRequestSha256": request_sha256,
-            "engineProfile": "default-agentic",
+            "engineProfile": request.profile,
+            "authoring": authoring,
+            "suggestedFilename": _suggested_filename(
+                str(snapshot.payload.get("intent", {}).get("title") or "AI 演示文稿"),
+                request.authoring.mode,
+            ),
             "route": "generate_pptx",
             "contentMode": content_mode,
             "sourceGroundingStatus": (

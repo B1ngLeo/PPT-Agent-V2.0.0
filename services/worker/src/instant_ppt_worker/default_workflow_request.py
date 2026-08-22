@@ -54,6 +54,29 @@ def build_default_workflow_request(
         payload.get("providerConfiguration", {}).get("planning", {}).get("model")
         or "kimi-k3"
     )
+    frozen_authoring = dict(payload.get("authoringPolicy") or {})
+    authoring_mode = str(
+        frozen_authoring.get("mode") or "deterministic-template"
+    )
+    if authoring_mode not in {"agent-authoring", "deterministic-template"}:
+        raise ValueError("generation snapshot has an invalid authoring mode")
+    is_agent_authoring = authoring_mode == "agent-authoring"
+    fallback_reason = (
+        None
+        if is_agent_authoring
+        else str(
+            frozen_authoring.get("fallbackReason")
+            or "legacy-snapshot-without-authoring-policy"
+        )
+    )
+    visual_review = bool(
+        frozen_authoring.get("visualReview", {}).get("required", False)
+    )
+    if not is_agent_authoring:
+        visual_review = False
+    planning_configuration = dict(
+        payload.get("providerConfiguration", {}).get("planning") or {}
+    )
     image_policy = dict(
         payload.get("imagePolicy")
         or {"scope": "none", "usage": ["none"], "notes": {}}
@@ -63,9 +86,9 @@ def build_default_workflow_request(
         "write-project",
         "run-vendored-script",
         "start-live-preview",
-        "provider-text",
-        *AGENT_TOOL_NAMES,
     ]
+    if is_agent_authoring:
+        allowed_tools.extend(["provider-text", *AGENT_TOOL_NAMES])
     if "ai" in list(image_policy.get("usage") or []):
         allowed_tools.append("provider-image")
     return WorkflowRequestV2.model_validate(
@@ -74,12 +97,36 @@ def build_default_workflow_request(
             "workflowRunId": workflow_run_id,
             "organizationId": snapshot.organization_id,
             "route": "generate_pptx",
-            "profile": "default-agentic",
+            "profile": (
+                "default-agentic" if is_agent_authoring else "deterministic-template"
+            ),
+            "authoring": {
+                "mode": authoring_mode,
+                "policyVersion": str(
+                    frozen_authoring.get("policyVersion")
+                    or "presentation-authoring@v1"
+                ),
+                "fallbackReason": fallback_reason,
+                "disclosure": (
+                    "agent-authored-editable-draft"
+                    if is_agent_authoring
+                    else "template-limited-editable-draft"
+                ),
+                "visualReviewPolicyVersion": str(
+                    frozen_authoring.get("visualReview", {}).get("policyVersion")
+                    or "visual-review-disabled@v1"
+                ),
+                "visualReviewRequired": visual_review,
+            },
             "versions": {
                 "workflow": "instant-ppt-default@v2.0.0",
                 "engine": "ppt-master@v4.7.0",
                 "model": model,
-                "prompt": "default-agentic@v1",
+                "prompt": (
+                    "default-agentic@v2"
+                    if is_agent_authoring
+                    else "deterministic-template@v1"
+                ),
                 "reference": "ppt-master-default@v4.7.0",
                 "adapter": "engine-adapter@v2",
             },
@@ -151,17 +198,23 @@ def build_default_workflow_request(
                 "effectiveSpeakerNotes": "disabled",
                 "effectiveCustomAnimations": "disabled",
                 "effectiveNarrationAudio": "disabled",
-                "visualReview": False,
+                "visualReview": visual_review,
                 "refineSpec": False,
             },
             "runtime": {
                 "allowedTools": allowed_tools,
                 "allowSubagentResearch": False,
-                "allowSubagentReview": False,
+                "allowSubagentReview": visual_review,
                 "allowSubagentSvgAuthoring": False,
                 "maxTurns": 120,
                 "maxTokens": 400000,
                 "maxCostMicrounits": 500000,
+                "inputCostMicrounitsPer1K": int(
+                    planning_configuration.get("inputCostMicrounitsPer1K") or 0
+                ),
+                "outputCostMicrounitsPer1K": int(
+                    planning_configuration.get("outputCostMicrounitsPer1K") or 0
+                ),
                 "softTimeoutSeconds": 3600,
                 "hardTimeoutSeconds": 3900,
                 "previewIdleTimeoutSeconds": 7200,

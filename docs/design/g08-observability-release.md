@@ -20,6 +20,12 @@ outbox age, usage reservation/settlement, Provider call/token/duration aggregate
 cleanup state, audit actions, and reconciliation state. Current-state gauges are
 explicitly distinct from process-local counters.
 
+ISSUE-003 adds durable low-cardinality aggregates for explicit authoring mode/status,
+fallback and `needs_manual` decisions, Strategist/Executor turns, input/output tokens,
+configured micro-unit cost, bounded phase duration, allowlisted tool outcomes, page writes,
+and repair attempts. Per-page/per-deck evidence remains in hash-bound workflow/manifest
+artifacts; tenant IDs, PNNs, filenames, prompts, and source text are never metric labels.
+
 FastAPI and Celery create OpenTelemetry spans with W3C trace IDs. OTLP HTTP export is
 enabled only when an endpoint is configured; local development explicitly uses
 `OTEL_TRACES_EXPORTER=none`. Span attributes are allowlisted correlation identifiers.
@@ -36,6 +42,10 @@ as metric labels.
 [Prometheus rules](../../infra/observability/alerts.yml) cover API error/latency,
 SSE resets, outbox delay, generation/source timeout, Provider failure ratio,
 reconciliation alerts, authorization spikes, and missing/stale scanner signatures.
+Agent canary failure ratio and deterministic-template fallback ratio are separate alerts;
+fallback never contributes to Agent success. Security, tenant isolation, grounding,
+cancellation/recovery, compatibility, or publication-consistency failures trigger the
+feature-flag rollback runbook. Visual preference regression alone requires human review.
 Every alert links to [the runbook](../runbook.md). Scanner signature age is supplied by
 the ClamAV exporter in a deployment environment; `absent()` fails closed if that
 external security signal disappears.

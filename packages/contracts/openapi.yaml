@@ -1936,6 +1936,24 @@ components:
         stage:
           type: string
           minLength: 1
+        engineProfile:
+          enum:
+            - default-agentic
+            - deterministic-template
+            - quick-engineering
+        authoringMode:
+          enum:
+            - agent-authoring
+            - deterministic-template
+        authoringDisclosure:
+          enum:
+            - agent-authored-editable-draft
+            - template-limited-editable-draft
+        fallbackReason:
+          anyOf:
+            - type: string
+              minLength: 1
+            - type: "null"
         latestSeq:
           type: integer
           minimum: 0
@@ -1946,6 +1964,10 @@ components:
         - jobId
         - status
         - stage
+        - engineProfile
+        - authoringMode
+        - authoringDisclosure
+        - fallbackReason
         - latestSeq
         - terminal
     QaReport:
@@ -1971,6 +1993,7 @@ components:
           enum:
             - quick-engineering
             - default-agentic
+            - deterministic-template
         quickGenerate:
           type: boolean
         passed:
@@ -2067,6 +2090,23 @@ components:
           enum:
             - quick-engineering
             - default-agentic
+            - deterministic-template
+        authoringMode:
+          enum:
+            - agent-authoring
+            - deterministic-template
+        authoringDisclosure:
+          enum:
+            - agent-authored-editable-draft
+            - template-limited-editable-draft
+        fallbackReason:
+          anyOf:
+            - type: string
+              minLength: 1
+            - type: "null"
+        suggestedFilename:
+          type: string
+          minLength: 1
         quickGenerate:
           type: boolean
         snapshotId:
@@ -2093,6 +2133,11 @@ components:
         - sizeBytes
         - engineVersion
         - fontPackVersion
+        - engineProfile
+        - authoringMode
+        - authoringDisclosure
+        - fallbackReason
+        - suggestedFilename
         - snapshotId
         - presentationRevisionId
         - createdAt
@@ -2179,6 +2224,22 @@ components:
             type: string
             pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
           uniqueItems: true
+        engineProfile:
+          enum:
+            - default-agentic
+            - deterministic-template
+            - quick-engineering
+        authoringMode:
+          enum:
+            - agent-authoring
+            - deterministic-template
+        authoringDisclosure:
+          enum:
+            - agent-authored-editable-draft
+            - template-limited-editable-draft
+        suggestedFilename:
+          type: string
+          minLength: 1
         createdBy:
           type: string
           pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
@@ -2193,6 +2254,10 @@ components:
         - organizationId
         - slideVersionIds
         - acceptedMissingSlideIds
+        - engineProfile
+        - authoringMode
+        - authoringDisclosure
+        - suggestedFilename
         - createdBy
         - createdAt
     ExportJob:

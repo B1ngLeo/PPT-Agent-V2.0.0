@@ -29,6 +29,15 @@ def test_metrics_are_low_cardinality_and_trace_headers_are_w3c_ids() -> None:
         assert "# HELP instant_ppt_outbox_events" in body
         assert "# HELP instant_ppt_usage_quantity" in body
         assert "# HELP instant_ppt_reconciliation_runs" in body
+        assert "# HELP instant_ppt_authoring_runs" in body
+        assert "# HELP instant_ppt_authoring_decisions" in body
+        assert "# HELP instant_ppt_agent_turns" in body
+        assert "# HELP instant_ppt_agent_tokens" in body
+        assert "# HELP instant_ppt_agent_cost_microunits" in body
+        assert "# HELP instant_ppt_agent_phase_duration_seconds" in body
+        assert "# HELP instant_ppt_agent_tool_calls" in body
+        assert "# HELP instant_ppt_agent_page_writes" in body
+        assert "# HELP instant_ppt_agent_repairs" in body
         assert "# HELP instant_ppt_generation_queue_latency_seconds" in body
         assert "# HELP instant_ppt_first_preview_seconds" in body
         assert "# HELP instant_ppt_source_stage_duration_seconds" in body

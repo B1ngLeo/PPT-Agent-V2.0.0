@@ -1394,7 +1394,8 @@ class WorkflowRun(Base):
         CheckConstraint(f"stage IN ({_values(WORKFLOW_STAGES)})", name="valid_stage"),
         CheckConstraint("route = 'generate_pptx'", name="valid_route"),
         CheckConstraint(
-            "profile IN ('default-agentic', 'quick-engineering')", name="valid_profile"
+            "profile IN ('default-agentic', 'deterministic-template', 'quick-engineering')",
+            name="valid_profile",
         ),
         CheckConstraint("attempt BETWEEN 0 AND max_attempts", name="attempt_bounded"),
         CheckConstraint("max_attempts BETWEEN 1 AND 5", name="max_attempts_bounded"),

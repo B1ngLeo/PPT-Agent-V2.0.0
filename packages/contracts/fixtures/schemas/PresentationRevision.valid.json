@@ -8,6 +8,10 @@
     "01ARZ3NDEKTSV4RRFFQ69G5FB3"
   ],
   "acceptedMissingSlideIds": [],
+  "engineProfile": "default-agentic",
+  "authoringMode": "agent-authoring",
+  "authoringDisclosure": "agent-authored-editable-draft",
+  "suggestedFilename": "年度经营复盘.pptx",
   "createdBy": "01ARZ3NDEKTSV4RRFFQ69G5FAW",
   "createdAt": "2026-08-16T08:00:00Z"
 }

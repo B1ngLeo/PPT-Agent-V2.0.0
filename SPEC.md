@@ -51,6 +51,7 @@
 | 主架构 | Next.js Web + FastAPI API + Celery Worker；PostgreSQL 为业务真相源，Redis 仅用于队列、短期缓存和事件分发。 |
 | 生成引擎 | 固定审计后的 `ppt-master` tag/commit，通过独立 `engine-adapter` 封装；业务代码不得直接调用上游脚本。 |
 | P1 生成模式 | 只开放“原生专业”；“视觉创意”与“模板复用”不得伪装可用，默认由 feature flag 关闭。 |
+| 页面创作路径 | 新快照默认冻结 `agent-authoring`；运维可将新快照回退为 `deterministic-template`。fallback 必须在 profile/state/manifest/UI/文件名显示“模板化受限初稿”，不计入 Agent 成功率；旗标不改变已冻结 snapshot 或已发布 revision。 |
 | P1 模板能力 | 支持内置模板选择；私有 PPTX 上传、分析和版式映射属于 P1.1，非 P1 Core 退出条件。 |
 | 主文档数量 | 每个草稿 P1 支持零或一个主文档；多文档合并不在 P1。 |
 | 文档输入白名单 | DOCX、PDF、PPTX、HTML；不支持 DOC、PPT、MD、EPUB 和 URL 抓取。 |
@@ -451,6 +452,14 @@ organization_id + snapshot_id + stage + stable_slide_id(optional)
 - 已进入终态后取消是幂等 no-op；
 - cancel 与 publish 竞争时，以数据库中第一个合法终态事务为准。
 
+#### FR-JOB-005 Agent 创作与显式降级
+
+- `default-agentic` 必须由同一 Main Presentation Agent 完成 Strategist→Executor 顺序创作；每页 SVG 必须能追溯到真实模型 turn、工具调用、观察与终止原因。
+- Supervisor 强制 turn/token/cost/soft-hard timeout/tool allowlist/最多 5 次阶段尝试；恢复不得重复计费、双写或发布旧 hash。
+- 正式 Agent 成功结果必须通过最多两轮多模态视觉审阅；二轮仍有 blocking 则进入 `needs_manual` 且不发布完整结果。
+- `deterministic-template` 不得请求文本 Provider、不得写 Agent 作者 receipt，且必须在用户界面、清单、SSE/job snapshot、下载提示和文件名显式披露。
+- 安全、跨租户、来源支持、取消/恢复、PowerPoint/WPS 兼容或发布一致性失败会触发 canary 回退；单纯视觉偏好下降进入人工复核，不覆盖已批准 revision。
+
 #### 验收
 
 - Worker kill、重复投递、API 超时重试和并发提交均不产生重复任务、工件或扣费；
@@ -611,7 +620,8 @@ P1 事件类型至少包含：
 - 创建生成任务前在组织级锁内预占预计页数、图片数、图片费用/Worker 资源；
 - 终态按实际消耗结算，取消释放未使用预占；
 - 相同幂等任务不得重复预占或结算；
-- 用量记录页数、模型 token、图片次数（当前每稿 0 或 1）、图片微单位费用、Worker 秒数和导出次数。
+- 用量记录页数、模型 token/微单位费用、图片次数（当前每稿 0 或 1）、图片微单位费用、Worker 秒数和导出次数。
+- Agent 按每页/整套记录 turn、token、cost、耗时、工具失败与修复次数；fallback 单独记录并不占用 Agent 成功分母。
 
 #### 验收
 
@@ -632,6 +642,7 @@ P1 事件类型至少包含：
 - 所有列表使用 cursor pagination；
 - 跨租户资源统一返回 `404`；
 - OpenAPI 是 HTTP 合同真相源，前端与客户端类型由合同生成。
+- job snapshot/SSE completion data 必须提供 `engineProfile`、`authoringMode`、`authoringDisclosure` 和可选 `fallbackReason`，且该信息来自冻结 snapshot 而非前端推断。
 
 ### 7.2 P1 端点基线
 
@@ -854,6 +865,8 @@ trace_id
 - SSE 活跃连接、重连、回放和丢弃；
 - Worker 运行数、队列深度、崩溃和超时；
 - Provider token/调用/成本与限流；
+- Agent/fallback 整套数、Strategist/Executor/review/repair turn 与耗时、input/output token、cost、allowlisted tool 成败、逐页写入和修复次数；
+- Agent canary 终态失败率、`needs_manual` 和模板 fallback 率，标签不得包含租户、页面 ID、prompt 或文件名；
 - PPTX 包 QA、打开成功率和用户重生成率；
 - 跨租户拒绝、安全扫描和审计异常。
 
@@ -1020,3 +1033,4 @@ P1.1 不包含公开市场、组织治理、旧 `.ppt` 转换和任意模板“�
 7. ADR-007：数据保留、删除与下载 URL 策略；
 8. ADR-008：PowerPoint/WPS 目标版本与视觉回归门槛；
 9. ADR-009：P1.1 私有模板是否进入首轮公开测试。
+10. ADR-012：Main Presentation Agent 创作证据、多模态审阅、显式 `deterministic-template` fallback 与 snapshot-safe feature flag。

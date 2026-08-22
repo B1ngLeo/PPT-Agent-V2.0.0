@@ -76,6 +76,18 @@ class MemoryGenerationStore:
         self.objects[object_key] = payload
         self.put_count += 1
 
+    def download(self, object_key: str, target: Path, *, max_bytes: int) -> str:
+        from instant_ppt_worker.source_pipeline import SourceObjectError
+
+        try:
+            payload = self.objects[object_key]
+        except KeyError as error:
+            raise SourceObjectError("source object could not be downloaded") from error
+        if len(payload) > max_bytes:
+            raise SourceObjectError("source exceeds the download limit")
+        target.write_bytes(payload)
+        return hashlib.sha256(payload).hexdigest()
+
 
 class FakeCoverImageProvider:
     provider_name = "fake-image"
@@ -275,7 +287,7 @@ def test_real_generation_crash_replay_publishes_one_immutable_revision(
         == "limited-general-draft"
     )
     assert payload["publicationVersion"] == 1
-    assert len(payload["artifacts"]) == 13
+    assert len(payload["artifacts"]) == 14
     assert {
         "generation_design_spec",
         "generation_spec_lock",
@@ -283,12 +295,13 @@ def test_real_generation_crash_replay_publishes_one_immutable_revision(
         "generation_workflow_result",
         "generation_final_svg_qa",
         "generation_package_qa",
+        "generation_visual_review",
     }.issubset({artifact["artifactType"] for artifact in payload["artifacts"]})
     assert client.get(f"/v1/jobs/{job_id}", headers=BOB).status_code == 404
 
     with session_factory() as session:
         artifacts = list(session.scalars(select(Artifact).order_by(Artifact.artifact_type)))
-        assert len(artifacts) == 13
+        assert len(artifacts) == 14
         run = session.scalar(select(WorkflowRun).where(WorkflowRun.generation_job_id == job_id))
         assert run is not None
         assert run.profile == "default-agentic"
@@ -318,7 +331,7 @@ def test_real_generation_crash_replay_publishes_one_immutable_revision(
                     WorkflowIntermediateArtifact.workflow_run_id == run.id
                 )
             )
-            == 13
+            == 14
         )
         effective = session.scalar(
             select(EffectiveDesignSpecRevision).where(

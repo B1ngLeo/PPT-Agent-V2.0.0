@@ -193,6 +193,16 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
                 "installed": False,
             },
             "providerConfiguration": {"planning": {"model": "kimi-k3"}},
+            "authoringPolicy": {
+                "mode": "agent-authoring",
+                "policyVersion": "presentation-authoring@v1",
+                "fallbackReason": None,
+                "visualReview": {
+                    "required": True,
+                    "policyVersion": "visual-review@v1",
+                    "maxRounds": 2,
+                },
+            },
         },
     )
     snapshot.intent_revision_id = intent_revision_id

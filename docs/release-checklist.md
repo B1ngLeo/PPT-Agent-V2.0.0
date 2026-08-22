@@ -67,3 +67,22 @@ production deployment.
 All current local-only G08 controls are satisfied and the Gate is `passed`. Any expansion
 beyond the approved local-only scope reopens the production KES/KMS control and requires a
 new release review.
+
+## ISSUE-003 Agent-authoring release addendum
+
+- [ ] The frozen ten-page input produces an Agent candidate with real Strategist/Executor
+      turn and per-page tool evidence; a human same-input comparison records overall
+      preference versus the deterministic website baseline and remaining reference gap.
+- [x] `agent-authoring` and `deterministic-template` freeze distinct snapshot/profile/state,
+      manifest, SSE/job, metrics, UI, download, and filename disclosures.
+- [x] Deterministic fallback records zero text-Provider/Agent-tool use and cannot enter the
+      Agent success-rate numerator or denominator.
+- [x] Model tokens and configured micro-unit cost settle idempotently; metrics expose
+      bounded turns, phases, tools, page writes, repairs, manual states, and fallback rate.
+- [x] Agent failure/fallback canary alerts and feature-flag rollback preserve all previously
+      published immutable revisions and exact downloads.
+- [ ] Full contracts, Web build, API/Domain, Worker, integration, recovery/security,
+      PowerPoint/WPS, visual comparison, and user-view E2E evidence pass on the final commit.
+
+The unchecked items are ISSUE-003 release gates and do not revoke the already documented
+owner-operated G08 baseline. ISSUE-003 cannot be marked complete until both are checked.

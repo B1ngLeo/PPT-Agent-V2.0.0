@@ -8,8 +8,8 @@ const alerts = YAML.parse(
 );
 const runbook = await readFile(resolve(root, "docs/runbook.md"), "utf8");
 const rules = alerts.groups.flatMap((group) => group.rules);
-if (rules.length !== 12)
-  throw new Error(`expected 12 alert rules, got ${rules.length}`);
+if (rules.length !== 14)
+  throw new Error(`expected 14 alert rules, got ${rules.length}`);
 const runbookAnchors = new Set(
   [...runbook.matchAll(/^## (.+)$/gm)].map((match) =>
     match[1]

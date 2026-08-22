@@ -62,6 +62,28 @@ switch requires an approved model, region, retention policy and supplier terms. 
 the external Provider adapter when error/limit ratios rise; do not log or copy prompts to
 incident tickets. Existing durable revisions and exports remain available.
 
+## Agent authoring canary or fallback
+
+1. Compare `instant_ppt_authoring_runs`, `instant_ppt_authoring_decisions`, Agent
+   turn/token/cost/phase/tool/page-write/repair metrics, Provider failures, and the exact
+   canary snapshot/manifest. Never combine deterministic-template results with Agent
+   success-rate calculations.
+2. Immediately stop Agent admission for any security, cross-tenant, approved-source,
+   cancellation/recovery, PowerPoint/WPS compatibility, or publication-consistency
+   regression. Set `PRESENTATION_AUTHORING_MODE=deterministic-template` for API admission
+   and recreate only the API service needed to freeze new snapshots. Do not mutate queued,
+   running, or published snapshot policies.
+3. Confirm a newly created canary job reports profile `deterministic-template`, makes zero
+   text-Provider/Agent-tool calls, and shows “模板化受限初稿” in job snapshot,
+   manifest, editor/monitor UI, download prompt, and filename. Existing exact revisions
+   must retain the same artifact ID and SHA-256.
+4. For visual-quality preference decline without a safety invariant failure, keep the
+   current revision immutable, suspend expansion, and conduct a same-input human review.
+   Do not silently substitute fallback bytes for a user-approved Agent revision.
+5. Roll forward only after the failed invariant, focused regression, same-input candidate,
+   and PowerPoint/WPS checks pass. Restore `agent-authoring` for a bounded canary cohort and
+   monitor terminal failure/fallback ratios before wider admission.
+
 ## Authorization denial spike
 
 Group only by external status and route. Sample request/trace IDs, verify issuer/audience,

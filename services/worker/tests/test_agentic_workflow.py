@@ -621,6 +621,8 @@ def test_explicit_visual_review_renders_and_passes_structured_reviewer(
     tmp_path: Path,
 ) -> None:
     workflow = _payload()
+    workflow["authoring"]["visualReviewRequired"] = True
+    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review@v1"
     workflow["production"]["visualReview"] = True
     workflow["runtime"]["allowSubagentReview"] = True
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
@@ -716,6 +718,8 @@ def test_visual_blocking_observation_repairs_owned_page_and_rereviews(
     tmp_path: Path,
 ) -> None:
     workflow = _payload()
+    workflow["authoring"]["visualReviewRequired"] = True
+    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review@v1"
     workflow["production"]["visualReview"] = True
     workflow["runtime"]["allowSubagentReview"] = True
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
@@ -770,6 +774,8 @@ def test_visual_review_stops_without_export_when_round_two_remains_blocking(
     tmp_path: Path,
 ) -> None:
     workflow = _payload()
+    workflow["authoring"]["visualReviewRequired"] = True
+    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review@v1"
     workflow["production"]["visualReview"] = True
     workflow["runtime"]["allowSubagentReview"] = True
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
@@ -797,3 +803,62 @@ def test_visual_review_stops_without_export_when_round_two_remains_blocking(
     assert not (project / "exports" / "deck.pptx").exists()
     assert not (project / "canonical-project-bundle.zip").exists()
     assert not (project / "validation" / "receipts" / "visual-review.json").exists()
+
+
+def test_deterministic_template_fallback_is_disclosed_without_agent_evidence(
+    tmp_path: Path,
+) -> None:
+    workflow = _payload()
+    workflow["profile"] = "deterministic-template"
+    workflow["authoring"] = {
+        "mode": "deterministic-template",
+        "policyVersion": "presentation-authoring@v1",
+        "fallbackReason": "operator-feature-flag",
+        "disclosure": "template-limited-editable-draft",
+        "visualReviewPolicyVersion": "visual-review-disabled@v1",
+        "visualReviewRequired": False,
+    }
+    workflow["versions"]["prompt"] = "deterministic-template@v1"
+    workflow["runtime"]["allowedTools"] = [
+        "read-source",
+        "write-project",
+        "run-vendored-script",
+        "start-live-preview",
+    ]
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    request = {
+        "schemaVersion": 2,
+        "requestId": "issue-003-template-fallback",
+        "operation": "generatePptxDefault",
+        "workspaceRoot": str(tmp_path),
+        "outputKey": "generated/template-fallback",
+        "workflow": workflow,
+    }
+
+    response, exit_code = run_request(json.dumps(request, ensure_ascii=False))
+
+    assert exit_code == 0, response.error.model_dump(mode="json") if response.error else response
+    [project] = (tmp_path / "generated").glob("template-fallback_ppt169_*")
+    result = json.loads((project / "workflow-result.json").read_text(encoding="utf-8"))
+    events = (project / "validation" / "workflow-events.jsonl").read_text(
+        encoding="utf-8"
+    )
+    receipt = json.loads(
+        (project / "validation" / "receipts" / "first-page-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["profile"] == "deterministic-template"
+    assert result["authoringMode"] == "deterministic-template"
+    assert result["authoringDisclosure"] == "template-limited-editable-draft"
+    assert result["usage"]["inputTokens"] == 0
+    assert result["usage"]["outputTokens"] == 0
+    assert result["usage"]["costMicrounits"] == 0
+    assert receipt["payload"]["authoringMode"] == "deterministic-template"
+    assert receipt["payload"]["fallbackReason"] == "operator-feature-flag"
+    assert "template-authored-limited-draft" in events
+    assert "main-presentation-agent" not in events
+    assert not (project / "agent").exists()
+    assert (project / "exports" / "deck.pptx").is_file()

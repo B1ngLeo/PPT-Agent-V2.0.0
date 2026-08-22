@@ -109,6 +109,7 @@ type Usage = {
     slides: number;
     images: number;
     modelTokens: number;
+    modelCostMicrounits?: number;
     imageCostMicrounits?: number;
   };
   reservedSlides: number;
@@ -226,6 +227,17 @@ type PresentationRevision = {
   partial: boolean;
   acceptedMissing: boolean;
   contentMode: "source-grounded" | "limited-general-draft" | null;
+  engineProfile:
+    | "default-agentic"
+    | "deterministic-template"
+    | "quick-engineering"
+    | null;
+  authoringMode: "agent-authoring" | "deterministic-template" | null;
+  authoringDisclosure:
+    | "agent-authored-editable-draft"
+    | "template-limited-editable-draft"
+    | null;
+  suggestedFilename: string | null;
   manifestArtifactId: string;
   slides: PresentationSlide[];
   createdAt: string;
@@ -290,6 +302,16 @@ type GenerationJob = {
   draftId: string;
   organizationId: string;
   processor: "real" | "fake";
+  engineProfile:
+    | "default-agentic"
+    | "deterministic-template"
+    | "quick-engineering"
+    | null;
+  authoringMode: "agent-authoring" | "deterministic-template";
+  authoringDisclosure:
+    | "agent-authored-editable-draft"
+    | "template-limited-editable-draft";
+  fallbackReason: string | null;
   status:
     | "queued"
     | "running"
@@ -1390,6 +1412,9 @@ export function WorkspaceApp() {
 
   const exportPresentation = async () => {
     if (!presentation || busyMessage) return;
+    const exportFilename =
+      presentation.currentRevision.suggestedFilename ??
+      `${presentation.title}.pptx`;
     setBusyMessage("正在按当前精确版本编译并执行包检…");
     setError(null);
     try {
@@ -1404,7 +1429,7 @@ export function WorkspaceApp() {
           body: mutation(
             {
               presentationRevisionId: presentation.currentRevisionId,
-              filename: `${presentation.title}.pptx`,
+              filename: exportFilename,
             },
             presentation.currentRevisionId,
           ),
@@ -1442,10 +1467,10 @@ export function WorkspaceApp() {
       });
       await downloadAuthorizedFile(
         authorization.data.downloadUrl,
-        `${presentation.title}.pptx`,
+        exportFilename,
       );
       setPresentationMessage(
-        `已导出版本 ${exportJob.presentationRevisionId.slice(-8)}，短期下载链接已签发。`,
+        `已导出版本 ${exportJob.presentationRevisionId.slice(-8)}：${exportFilename}。短期下载链接已签发。`,
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "导出失败");
@@ -1628,8 +1653,18 @@ export function WorkspaceApp() {
             aria-labelledby="draft-banner-title"
           >
             <div>
-              <p className="eyebrow">AI EDITABLE DRAFT</p>
-              <h1 id="draft-banner-title">AI 可编辑草稿</h1>
+              <p className="eyebrow">
+                {presentation.currentRevision.authoringMode ===
+                "deterministic-template"
+                  ? "DETERMINISTIC TEMPLATE · LIMITED DRAFT"
+                  : "AGENT-AUTHORED · EDITABLE DRAFT"}
+              </p>
+              <h1 id="draft-banner-title">
+                {presentation.currentRevision.authoringMode ===
+                "deterministic-template"
+                  ? "模板化受限初稿"
+                  : "Agent 创作的 AI 可编辑草稿"}
+              </h1>
               <p aria-live="polite">{presentationMessage}</p>
               <label className="regeneration-instruction">
                 <span>AI 单页修改要求</span>
@@ -1668,6 +1703,22 @@ export function WorkspaceApp() {
                 关闭
               </button>
             </div>
+          ) : null}
+
+          {presentation.currentRevision.authoringMode ===
+          "deterministic-template" ? (
+            <section
+              className="partial-warning limited-draft-warning"
+              aria-labelledby="template-limited-draft-title"
+            >
+              <div>
+                <p className="eyebrow">FALLBACK DISCLOSURE</p>
+                <h2 id="template-limited-draft-title">这是模板化受限初稿</h2>
+                <p>
+                  本版本由确定性模板降级链路生成，不计入 Agent 创作成功率；导出文件名也会保留“模板化受限初稿”标记。
+                </p>
+              </div>
+            </section>
           ) : null}
 
           {presentation.currentRevision.partial ? (
@@ -1963,15 +2014,23 @@ export function WorkspaceApp() {
 
           <section className="monitor-hero" aria-labelledby="monitor-title">
             <div className="monitor-status-copy">
-              <p className="eyebrow">DURABLE GENERATION · NATIVE MODE</p>
+              <p className="eyebrow">
+                {generationJob.authoringMode === "deterministic-template"
+                  ? "DETERMINISTIC TEMPLATE · LIMITED DRAFT"
+                  : "MAIN PRESENTATION AGENT · NATIVE MODE"}
+              </p>
               <h1 id="monitor-title">
                 {generationJob.workflow?.status === "needs_manual"
                   ? "等待人工补充图片"
-                  : generationStatusLabel(generationJob.status)}
+                  : generationJob.authoringMode === "deterministic-template"
+                    ? `模板化受限初稿 · ${generationStatusLabel(generationJob.status)}`
+                    : generationStatusLabel(generationJob.status)}
               </h1>
               <p aria-live="polite">
                 {generationJob.workflow?.status === "needs_manual"
                   ? "必需图片尚未解决；任务已在导出前安全停止，没有静默省略资源。"
+                  : generationJob.authoringMode === "deterministic-template"
+                    ? "Agent 创作链路未用于本任务；当前结果是显式标识的模板化受限初稿。"
                   : generationJob.terminal
                     ? generationJob.status === "succeeded"
                       ? "全部页面、原生 PPTX 与不可变清单已经发布。"
@@ -2016,8 +2075,31 @@ export function WorkspaceApp() {
                     : "Fixture"}
                 </dd>
               </div>
+              <div>
+                <dt>创作模式</dt>
+                <dd>
+                  {generationJob.authoringMode === "agent-authoring"
+                    ? "Agent 创作"
+                    : "模板化受限初稿"}
+                </dd>
+              </div>
             </dl>
           </section>
+
+          {generationJob.authoringMode === "deterministic-template" ? (
+            <section
+              className="partial-warning limited-draft-warning"
+              aria-labelledby="monitor-template-limited-title"
+            >
+              <div>
+                <p className="eyebrow">FALLBACK DISCLOSURE</p>
+                <h2 id="monitor-template-limited-title">模板化降级已显式启用</h2>
+                <p>
+                  原因：{generationJob.fallbackReason ?? "旧快照未包含 Agent 创作策略"}。该结果不会写入 Agent 作者证据，也不会被计入 Agent 成功率。
+                </p>
+              </div>
+            </section>
+          ) : null}
 
           {generationJob.workflow?.status === "needs_manual" ? (
             <section
@@ -2109,7 +2191,9 @@ export function WorkspaceApp() {
               <div>
                 <p className="eyebrow">IMMUTABLE GENERATION PUBLICATION</p>
                 <h2 id="publication-title">
-                  {generationJob.presentation.status === "ready"
+                  {generationJob.authoringMode === "deterministic-template"
+                    ? "模板化受限初稿已发布"
+                    : generationJob.presentation.status === "ready"
                     ? "原生基线已发布"
                     : "部分基线已发布"}
                 </h2>

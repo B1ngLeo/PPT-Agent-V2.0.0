@@ -362,6 +362,66 @@
       "title": "ApprovedSourceArtifact",
       "type": "object"
     },
+    "AuthoringPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "agent-authoring",
+            "deterministic-template"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "policyVersion": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Policyversion",
+          "type": "string"
+        },
+        "fallbackReason": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallbackreason"
+        },
+        "disclosure": {
+          "enum": [
+            "agent-authored-editable-draft",
+            "template-limited-editable-draft"
+          ],
+          "title": "Disclosure",
+          "type": "string"
+        },
+        "visualReviewPolicyVersion": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Visualreviewpolicyversion",
+          "type": "string"
+        },
+        "visualReviewRequired": {
+          "title": "Visualreviewrequired",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "policyVersion",
+        "disclosure",
+        "visualReviewPolicyVersion",
+        "visualReviewRequired"
+      ],
+      "title": "AuthoringPolicy",
+      "type": "object"
+    },
     "ConfirmationPolicy": {
       "additionalProperties": false,
       "properties": {
@@ -1185,10 +1245,14 @@
         "profile": {
           "enum": [
             "default-agentic",
+            "deterministic-template",
             "quick-engineering"
           ],
           "title": "Profile",
           "type": "string"
+        },
+        "authoring": {
+          "$ref": "#/$defs/AuthoringPolicy"
         },
         "versions": {
           "$ref": "#/$defs/WorkflowVersions"
@@ -1274,6 +1338,7 @@
         "organizationId",
         "route",
         "profile",
+        "authoring",
         "versions",
         "approval",
         "intent",

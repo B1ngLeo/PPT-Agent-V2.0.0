@@ -478,12 +478,41 @@ class ResumeCheckpointRef(WorkflowContractModel):
     fencing_token: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
 
 
+class AuthoringPolicy(WorkflowContractModel):
+    mode: Literal["agent-authoring", "deterministic-template"]
+    policy_version: str = Field(min_length=1, max_length=80)
+    fallback_reason: str | None = Field(default=None, min_length=1, max_length=160)
+    disclosure: Literal[
+        "agent-authored-editable-draft",
+        "template-limited-editable-draft",
+    ]
+    visual_review_policy_version: str = Field(min_length=1, max_length=80)
+    visual_review_required: bool
+
+    @model_validator(mode="after")
+    def validate_mode(self) -> AuthoringPolicy:
+        if self.mode == "agent-authoring":
+            if self.fallback_reason is not None:
+                raise ValueError("agent authoring cannot carry a fallback reason")
+            if self.disclosure != "agent-authored-editable-draft":
+                raise ValueError("agent authoring requires the Agent draft disclosure")
+        else:
+            if self.fallback_reason is None:
+                raise ValueError("deterministic template mode requires a fallback reason")
+            if self.disclosure != "template-limited-editable-draft":
+                raise ValueError("deterministic template mode requires limited disclosure")
+            if self.visual_review_required:
+                raise ValueError("template fallback cannot claim the Agent visual-review gate")
+        return self
+
+
 class WorkflowRequestV2(WorkflowContractModel):
     schema_version: Literal[2]
     workflow_run_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
     organization_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
     route: Literal["generate_pptx"]
-    profile: Literal["default-agentic", "quick-engineering"]
+    profile: Literal["default-agentic", "deterministic-template", "quick-engineering"]
+    authoring: AuthoringPolicy
     versions: WorkflowVersions
     approval: ApprovalSnapshotRef
     intent: ApprovedIntent
@@ -522,10 +551,19 @@ class WorkflowRequestV2(WorkflowContractModel):
     @model_validator(mode="after")
     def validate_profile(self) -> WorkflowRequestV2:
         if self.profile == "default-agentic":
+            if self.authoring.mode != "agent-authoring":
+                raise ValueError("default-agentic requires agent-authoring mode")
             if self.versions.reference != "ppt-master-default@v4.7.0":
                 raise ValueError("default-agentic requires the Default reference authority")
             if "run-vendored-script" not in self.runtime.allowed_tools:
                 raise ValueError("default-agentic requires the vendored-script capability")
+        if self.profile == "deterministic-template":
+            if self.authoring.mode != "deterministic-template":
+                raise ValueError("deterministic-template requires its explicit authoring mode")
+            if "provider-text" in self.runtime.allowed_tools:
+                raise ValueError("deterministic-template cannot call the text Provider")
+        if self.production.visual_review != self.authoring.visual_review_required:
+            raise ValueError("visual review must match the frozen authoring policy")
         if self.production.visual_review and not self.runtime.allow_subagent_review:
             raise ValueError("visual review requires the bounded review-agent capability")
         outline_slide_ids = {slide.slide_id for slide in self.outline}
@@ -579,8 +617,10 @@ class GeneratePptxDefaultRequest(WorkflowContractModel):
 
     @model_validator(mode="after")
     def validate_default_profile(self) -> GeneratePptxDefaultRequest:
-        if self.workflow.profile != "default-agentic":
-            raise ValueError("generatePptxDefault only accepts profile=default-agentic")
+        if self.workflow.profile not in {"default-agentic", "deterministic-template"}:
+            raise ValueError(
+                "generatePptxDefault accepts agent authoring or explicit template fallback"
+            )
         return self
 
 
@@ -654,7 +694,12 @@ class WorkflowResultV2(WorkflowContractModel):
     workflow_run_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
     request_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     route: Literal["generate_pptx"] = "generate_pptx"
-    profile: Literal["default-agentic", "quick-engineering"]
+    profile: Literal["default-agentic", "deterministic-template", "quick-engineering"]
+    authoring_mode: Literal["agent-authoring", "deterministic-template"]
+    authoring_disclosure: Literal[
+        "agent-authored-editable-draft",
+        "template-limited-editable-draft",
+    ]
     status: Literal[
         "awaiting_stage1_confirmation",
         "template_handoff_ready",

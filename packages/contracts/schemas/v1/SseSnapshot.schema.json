@@ -28,6 +28,36 @@
       "type": "string",
       "minLength": 1
     },
+    "engineProfile": {
+      "enum": [
+        "default-agentic",
+        "deterministic-template",
+        "quick-engineering"
+      ]
+    },
+    "authoringMode": {
+      "enum": [
+        "agent-authoring",
+        "deterministic-template"
+      ]
+    },
+    "authoringDisclosure": {
+      "enum": [
+        "agent-authored-editable-draft",
+        "template-limited-editable-draft"
+      ]
+    },
+    "fallbackReason": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "latestSeq": {
       "type": "integer",
       "minimum": 0
@@ -41,6 +71,10 @@
     "jobId",
     "status",
     "stage",
+    "engineProfile",
+    "authoringMode",
+    "authoringDisclosure",
+    "fallbackReason",
     "latestSeq",
     "terminal"
   ]

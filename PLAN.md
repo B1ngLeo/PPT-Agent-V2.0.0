@@ -906,6 +906,17 @@ Redis restart 演练
 - Worker/Redis/对象存储故障会丢失不可恢复业务状态；
 - 发布需要生产账号、DNS、密钥或费用。
 
+## 12A. ISSUE-003：真实演示创作 Agent
+
+ISSUE-003 在 G08 本地闭环上将 `default-agentic` 从固定模板标签升级为可审计的 Main Presentation Agent Runtime，不改变既有批准、租户、取消和不可变发布边界。
+
+- 阶段 0：冻结同一 10 页输入的网站基线、`ppt-master` 参考、渲染和 Agent 证据合同。
+- 阶段 A–B：冻结 Page Blueprint，建立受约束语义工具和 Scene Graph/direct-SVG escape hatch。
+- 阶段 C–D：建立可恢复单主 Agent turn/tool 循环，严格按 Strategist→P01 gate→P02…Pn 创作。
+- 阶段 E：两轮结构化多模态视觉审阅，blocking 由主 Agent 修复或转非成功。
+- 阶段 F：服务端 feature flag、独立 fallback profile/state/manifest/UI/文件名、费用结算、指标告警、canary 和 rollback。
+- 停止条件：同一冻结输入的 Agent 候选经人工并排确认整体好于网站基线；全量回归、PowerPoint/WPS、安全/恢复/发布不变量通过。
+
 ## 13. Goal G09（可选）：P1.1 私有模板上传
 
 只有 G08 完成且 ADR-009 批准后启动。

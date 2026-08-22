@@ -746,6 +746,13 @@ export interface components {
             /** @enum {unknown} */
             status: "queued" | "running" | "cancel_requested" | "cancelled" | "succeeded" | "partially_succeeded" | "failed";
             stage: string;
+            /** @enum {unknown} */
+            engineProfile: "default-agentic" | "deterministic-template" | "quick-engineering";
+            /** @enum {unknown} */
+            authoringMode: "agent-authoring" | "deterministic-template";
+            /** @enum {unknown} */
+            authoringDisclosure: "agent-authored-editable-draft" | "template-limited-editable-draft";
+            fallbackReason: string | null;
             latestSeq: number;
             terminal: boolean;
         };
@@ -758,7 +765,7 @@ export interface components {
             subjectType: "slide" | "deck" | "package";
             subjectId: string;
             /** @enum {unknown} */
-            profile?: "quick-engineering" | "default-agentic";
+            profile?: "quick-engineering" | "default-agentic" | "deterministic-template";
             quickGenerate?: boolean;
             passed: boolean;
             findings: {
@@ -796,7 +803,13 @@ export interface components {
             engineVersion: string;
             fontPackVersion: string;
             /** @enum {unknown} */
-            engineProfile?: "quick-engineering" | "default-agentic";
+            engineProfile: "quick-engineering" | "default-agentic" | "deterministic-template";
+            /** @enum {unknown} */
+            authoringMode: "agent-authoring" | "deterministic-template";
+            /** @enum {unknown} */
+            authoringDisclosure: "agent-authored-editable-draft" | "template-limited-editable-draft";
+            fallbackReason: string | null;
+            suggestedFilename: string;
             quickGenerate?: boolean;
             snapshotId: string | null;
             presentationRevisionId: string | null;
@@ -828,6 +841,13 @@ export interface components {
             organizationId: string;
             slideVersionIds: string[];
             acceptedMissingSlideIds: string[];
+            /** @enum {unknown} */
+            engineProfile: "default-agentic" | "deterministic-template" | "quick-engineering";
+            /** @enum {unknown} */
+            authoringMode: "agent-authoring" | "deterministic-template";
+            /** @enum {unknown} */
+            authoringDisclosure: "agent-authored-editable-draft" | "template-limited-editable-draft";
+            suggestedFilename: string;
             createdBy: string;
             /** Format: date-time */
             createdAt: string;

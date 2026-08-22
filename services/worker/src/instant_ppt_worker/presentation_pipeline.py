@@ -493,9 +493,6 @@ def process_slide_regeneration(
                 "evidenceMapSha256": (whole_qa.get("bindings") or {}).get(
                     "evidenceMapSha256"
                 ),
-                "engineProfile": (
-                    "default-agentic-revision" if effective is not None else "quick-engineering"
-                ),
                 "quickGenerate": effective is None,
                 "exactRoster": (
                     [slide["pnn"] for slide in effective.roster] if effective else None
@@ -503,6 +500,11 @@ def process_slide_regeneration(
                 "effectiveSpecRevisionId": effective_revision_id,
                 "effectiveSpecSha256": expected_effective_sha256,
                 "contentMode": base.payload.get("contentMode"),
+                "engineProfile": base.payload.get("engineProfile"),
+                "authoring": base.payload.get("authoring"),
+                "authoringMode": base.payload.get("authoringMode"),
+                "authoringDisclosure": base.payload.get("authoringDisclosure"),
+                "suggestedFilename": base.payload.get("suggestedFilename"),
             }
             manifest_path = root / "presentation-revision-manifest.json"
             _write_json(manifest_path, manifest)
@@ -589,6 +591,11 @@ def process_slide_regeneration(
                     "partial": partial,
                     "acceptedMissing": base.accepted_missing,
                     "contentMode": base.payload.get("contentMode"),
+                    "engineProfile": base.payload.get("engineProfile"),
+                    "authoring": base.payload.get("authoring"),
+                    "authoringMode": base.payload.get("authoringMode"),
+                    "authoringDisclosure": base.payload.get("authoringDisclosure"),
+                    "suggestedFilename": base.payload.get("suggestedFilename"),
                     "slides": [
                         {
                             key: value
@@ -820,10 +827,18 @@ def process_export(
                     "effectiveSpecRevisionId": reusable["effectiveSpecRevisionId"],
                     "effectiveSpecSha256": reusable["effectiveSpecSha256"],
                     "contentMode": revision.payload.get("contentMode"),
+                    "authoring": revision.payload.get("authoring"),
+                    "authoringMode": revision.payload.get("authoringMode"),
+                    "authoringDisclosure": revision.payload.get(
+                        "authoringDisclosure"
+                    ),
+                    "suggestedFilename": revision.payload.get("suggestedFilename"),
+                    "requestedFilename": job.options.get("filename"),
                     "evidenceMapSha256": reusable["evidenceMapSha256"],
                     "contentQaSha256": reusable["contentQaSha256"],
                     "compilerVersion": snapshot.engine_version,
-                    "engineProfile": "default-agentic",
+                    "engineProfile": revision.payload.get("engineProfile")
+                    or "default-agentic",
                     "quickGenerate": False,
                     "renderSkipped": True,
                     "reuseReason": "exact-unedited-canonical-revision",
@@ -958,6 +973,11 @@ def process_export(
                 "effectiveSpecRevisionId": effective.id if effective else None,
                 "effectiveSpecSha256": (effective.effective_spec_sha256 if effective else None),
                 "contentMode": revision.payload.get("contentMode"),
+                "authoring": revision.payload.get("authoring"),
+                "authoringMode": revision.payload.get("authoringMode"),
+                "authoringDisclosure": revision.payload.get("authoringDisclosure"),
+                "suggestedFilename": revision.payload.get("suggestedFilename"),
+                "requestedFilename": job.options.get("filename"),
                 "wholeDeckFinalQaSha256": whole_deck_qa_sha256,
                 "contentQaSha256": canonical_sha256(
                     whole_deck_qa.get("contentQa") or {}
@@ -965,8 +985,11 @@ def process_export(
                 "evidenceMapSha256": (whole_deck_qa.get("bindings") or {}).get(
                     "evidenceMapSha256"
                 ),
-                "engineProfile": (
-                    "default-agentic-revision" if effective is not None else "quick-engineering"
+                "engineProfile": revision.payload.get("engineProfile")
+                or (
+                    "default-agentic-revision"
+                    if effective is not None
+                    else "quick-engineering"
                 ),
                 "quickGenerate": effective is None,
                 "exactRoster": (

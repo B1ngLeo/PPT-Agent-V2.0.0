@@ -60,6 +60,12 @@ def _provider_configuration() -> dict[str, Any]:
         "planning": {
             "backend": os.getenv("PLANNING_BACKEND", "fake").strip().lower(),
             "model": os.getenv("KIMI_MODEL", "kimi-k3").strip(),
+            "inputCostMicrounitsPer1K": int(
+                os.getenv("KIMI_INPUT_COST_MICROUNITS_PER_1K", "0")
+            ),
+            "outputCostMicrounitsPer1K": int(
+                os.getenv("KIMI_OUTPUT_COST_MICROUNITS_PER_1K", "0")
+            ),
         },
         "image": {
             "enabled": os.getenv("IMAGE_GENERATION_ENABLED", "false").strip().lower()
@@ -74,6 +80,37 @@ def _provider_configuration() -> dict[str, Any]:
             "costMicrounitsPerImage": int(
                 os.getenv("IMAGE_COST_MICROUNITS", "100000")
             ),
+        },
+    }
+
+
+def _authoring_policy() -> dict[str, Any]:
+    mode = os.getenv("PRESENTATION_AUTHORING_MODE", "agent-authoring").strip().lower()
+    if mode not in {"agent-authoring", "deterministic-template"}:
+        raise ValueError(
+            "PRESENTATION_AUTHORING_MODE must be agent-authoring or deterministic-template"
+        )
+    if mode == "deterministic-template":
+        return {
+            "schemaVersion": 1,
+            "mode": mode,
+            "policyVersion": "presentation-authoring@v1",
+            "fallbackReason": "operator-feature-flag",
+            "visualReview": {
+                "required": False,
+                "policyVersion": "visual-review-disabled-for-template@v1",
+                "maxRounds": 0,
+            },
+        }
+    return {
+        "schemaVersion": 1,
+        "mode": mode,
+        "policyVersion": "presentation-authoring@v1",
+        "fallbackReason": None,
+        "visualReview": {
+            "required": True,
+            "policyVersion": "visual-review-required@v1",
+            "maxRounds": 2,
         },
     }
 
@@ -349,6 +386,30 @@ def create_approved_generation_job(
         or command.step_delay_ms
         or command.crash_once_at_position is not None
     )
+    authoring_policy = (
+        {
+            "schemaVersion": 1,
+            "mode": "deterministic-template",
+            "policyVersion": "engineering-quick@v1",
+            "fallbackReason": "engineering-test-controls",
+            "visualReview": {
+                "required": False,
+                "policyVersion": "visual-review-disabled-for-quick@v1",
+                "maxRounds": 0,
+            },
+        }
+        if engineering_quick
+        else _authoring_policy()
+    )
+    engine_profile = (
+        "quick-engineering"
+        if engineering_quick
+        else (
+            "default-agentic"
+            if authoring_policy["mode"] == "agent-authoring"
+            else "deterministic-template"
+        )
+    )
     image_scope = str(requested_image_policy.get("scope") or "none")
     image_usage = list(requested_image_policy.get("usage") or ["none"])
     raw_image_notes = dict(requested_image_policy.get("notes") or {})
@@ -420,7 +481,8 @@ def create_approved_generation_job(
         "template": template_candidate,
         "modeId": "native",
         "route": "generate_pptx",
-        "engineProfile": "quick-engineering" if engineering_quick else "default-agentic",
+        "engineProfile": engine_profile,
+        "authoringPolicy": authoring_policy,
         "sourceHashes": source_hashes,
         "sourceSummary": approval.source_summary,
         "sourceDecision": (
@@ -765,6 +827,8 @@ def _settle_usage(
     publication_version: int,
     image_count: int = 0,
     image_cost_microunits: int = 0,
+    model_tokens: int = 0,
+    model_cost_microunits: int = 0,
 ) -> None:
     reservation = session.scalar(
         select(UsageReservation).where(UsageReservation.job_id == job.id).with_for_update()
@@ -790,7 +854,8 @@ def _settle_usage(
     )
     metrics = {
         "slides": max(0, ready_count - previously_billed_slides),
-        "model_tokens": 0,
+        "model_tokens": max(0, model_tokens),
+        "model_cost_microunits": max(0, model_cost_microunits),
         "images": max(0, image_count),
         "image_cost_microunits": max(0, image_cost_microunits),
         "worker_seconds": max(0, worker_seconds),
@@ -991,6 +1056,13 @@ def publish_generation_result(
         "snapshotId": job.snapshot_id,
         "publicationVersion": publication_version,
         "contentMode": manifest_payload.get("contentMode"),
+        "engineProfile": manifest_payload.get("engineProfile"),
+        "authoring": manifest_payload.get("authoring"),
+        "authoringMode": (manifest_payload.get("authoring") or {}).get("mode"),
+        "authoringDisclosure": (manifest_payload.get("authoring") or {}).get(
+            "disclosure"
+        ),
+        "suggestedFilename": manifest_payload.get("suggestedFilename"),
         "partial": target == "partially_succeeded",
         "slides": [
             {
@@ -1076,6 +1148,26 @@ def publish_generation_result(
         image_cost_microunits=int(
             manifest_payload.get("imageGeneration", {}).get("costMicrounits") or 0
         ),
+        model_tokens=(
+            int(
+                manifest_payload.get("authoring", {})
+                .get("usage", {})
+                .get("inputTokens")
+                or 0
+            )
+            + int(
+                manifest_payload.get("authoring", {})
+                .get("usage", {})
+                .get("outputTokens")
+                or 0
+            )
+        ),
+        model_cost_microunits=int(
+            manifest_payload.get("authoring", {})
+            .get("usage", {})
+            .get("costMicrounits")
+            or 0
+        ),
     )
     _append_event(
         session,
@@ -1092,7 +1184,18 @@ def publish_generation_result(
         session,
         job,
         "job.completed" if target == "succeeded" else "job.partially_completed",
-        data={"presentationId": presentation.id, "presentationRevisionId": revision.id},
+        data={
+            "presentationId": presentation.id,
+            "presentationRevisionId": revision.id,
+            "engineProfile": manifest_payload.get("engineProfile"),
+            "authoringMode": (manifest_payload.get("authoring") or {}).get("mode"),
+            "authoringDisclosure": (manifest_payload.get("authoring") or {}).get(
+                "disclosure"
+            ),
+            "fallbackReason": (manifest_payload.get("authoring") or {}).get(
+                "fallbackReason"
+            ),
+        },
     )
     return publication, presentation, revision
 

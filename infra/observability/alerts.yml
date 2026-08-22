@@ -87,6 +87,30 @@ groups:
           summary: Durable provider failure ratio exceeds 10%
           runbook: docs/runbook.md#provider-degradation
 
+      - alert: InstantPptAgentCanaryFailureRatioHigh
+        expr: |
+          sum(instant_ppt_authoring_runs{mode="agent-authoring",status=~"failed|needs_manual"})
+          /
+          clamp_min(sum(instant_ppt_authoring_runs{mode="agent-authoring",status=~"succeeded|failed|needs_manual|cancelled"}), 1)
+          > 0.10
+        for: 15m
+        labels: { severity: page, service: instant-ppt-worker }
+        annotations:
+          summary: Agent-authoring canary terminal failure ratio exceeds 10%
+          runbook: docs/runbook.md#agent-authoring-canary-or-fallback
+
+      - alert: InstantPptTemplateFallbackRatioHigh
+        expr: |
+          sum(instant_ppt_authoring_runs{mode="deterministic-template"})
+          /
+          clamp_min(sum(instant_ppt_authoring_runs{mode=~"agent-authoring|deterministic-template"}), 1)
+          > 0.20
+        for: 30m
+        labels: { severity: ticket, service: instant-ppt-worker }
+        annotations:
+          summary: Explicit deterministic-template fallback ratio exceeds 20%
+          runbook: docs/runbook.md#agent-authoring-canary-or-fallback
+
       - alert: InstantPptReconciliationNeedsAttention
         expr: sum(instant_ppt_reconciliation_runs{status=~"failed|succeeded_with_alerts"}) > 0
         for: 5m

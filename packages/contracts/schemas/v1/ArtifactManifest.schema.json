@@ -52,8 +52,36 @@
     "engineProfile": {
       "enum": [
         "quick-engineering",
-        "default-agentic"
+        "default-agentic",
+        "deterministic-template"
       ]
+    },
+    "authoringMode": {
+      "enum": [
+        "agent-authoring",
+        "deterministic-template"
+      ]
+    },
+    "authoringDisclosure": {
+      "enum": [
+        "agent-authored-editable-draft",
+        "template-limited-editable-draft"
+      ]
+    },
+    "fallbackReason": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "suggestedFilename": {
+      "type": "string",
+      "minLength": 1
     },
     "quickGenerate": {
       "type": "boolean"
@@ -96,6 +124,11 @@
     "sizeBytes",
     "engineVersion",
     "fontPackVersion",
+    "engineProfile",
+    "authoringMode",
+    "authoringDisclosure",
+    "fallbackReason",
+    "suggestedFilename",
     "snapshotId",
     "presentationRevisionId",
     "createdAt"
