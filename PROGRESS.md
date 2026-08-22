@@ -6,13 +6,13 @@
 
 - Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
 - 状态：in progress（2026-08-22 启动）
-- 当前阶段：阶段 D — Main Presentation Agent 顺序接管 SVG 创作
-- 已完成：阶段 0 基线/证据合同；阶段 A Page Blueprint/语义一致性；阶段 B 受约束 Agent 工具注册表；阶段 C 单主 Agent 模型—工具循环、预算/权限/取消强制、turn/tool 持久化与不重复计费恢复
-- 进行中：把 `agentic_workflow.py` 的主路径从直接 `author_slide()` 改为同一 Agent 的 `Strategist → Executor(P01→gate→P02…Pn)`，让每页 SVG 绑定真实模型 turn/tool call，模板作者仅保留为显式受限 fallback
+- 当前阶段：阶段 E — 有界视觉反馈闭环
+- 已完成：阶段 0 基线/证据合同；阶段 A Page Blueprint；阶段 B 受约束工具；阶段 C 可恢复 Runtime；阶段 D 同一 Main Presentation Agent 的 Strategist→P01 gate→P02…Pn 顺序 SVG 创作与逐页 author evidence
+- 进行中：渲染逐页 PNG/contact sheet，以支持视觉输入的严格 Schema reviewer 返回问题，Main Agent 按 ownership 修复并最多重跑两轮，旧 gate 随 SVG hash 变化而 stale
 - 后续模块：A Page Blueprint；B 受约束设计工具层；C 单主 Agent 模型—工具循环与持久化；D 顺序 SVG authoring；E 两轮视觉反馈闭环；F feature flag/fallback/UI/发布文档；完整 E2E
 - 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
-- 当前验证：阶段 C Ruff 通过；Agent runtime/tool/supervisor/approved-source/合同/domain 合并回归 45/45；真实 PostgreSQL 临时库完成 upgrade→head、`alembic check`、downgrade→前一 revision、re-upgrade→head，新增两表正确创建/删除且 drift 为 0；`agent-decision.v1` 与请求 Schema 已物化
-- 问题与解决方案：阶段 A/B 问题保留于历史记录；阶段 C 首次 Ruff 发现 3 个长行并修正；安全提示测试的字面断言与等价系统提示不一致 1 次后改为验证实际 taint 语义；补预算矩阵时发现 Provider 返回后越过 hard timeout 被错误归类为 pause，改为 fail；系统 pytest 临时目录 ACL 拒绝访问导致 25 个 fixture setup error，确认均未进入业务代码后用仓库内专用 `--basetemp` 重跑 45/45；生产 Supervisor 原先会丢弃 Kimi 凭据，增加仅允许 8 个 Kimi 配置键的文本 Provider 环境桥，数据库/存储凭据仍禁止跨边界
+- 当前验证：阶段 D Ruff/compile 通过；Agentic Workflow、Runtime、Tool、合同、批准来源、图片资源和 Provider 合并回归全绿（含 2 页事实+native chart、8 页受限初稿、AI/provided 图片）；主路径事件不再出现伪造的 `current-main-agent`，Blueprint 为 `agent-strategist`，每页 current SVG hash 均绑定实际 Agent turn/tool call，P01 checker observation 进入模型上下文
+- 问题与解决方案：阶段 A–C 问题保留于历史记录；阶段 D 首轮 P02 fixture 因 Provider message 重排误读 P01 observation，按 stage/PNN 隔离；chart insight 1 次越界后重新分行；8 页路径重复携带所有 locked phase 导致 P04 token budget，改为当前页精确上下文+既往 phase hash/receipt/策略观察，批准事实仍由每页工具完整读取；8 页 footer 字号 recurrence 和 timeline 越界各 1 次后回到 spec role/收窄布局；PPTX 两次发现多段正文被合并成单 shape 导致 exact editability gate 缺失，最终让每个批准正文块拥有独立 `<text>`/PPT shape；图片 `adaptive` crop 1 次不符合 Scene Graph literal，规范映射为 `cover`
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
@@ -24,13 +24,14 @@
 | A Page Blueprint | completed | 每页 assertion/audienceMove/evidenceRefs/contentBlocks/visualForm/layoutIntent/literalConstraints；100% claim support |
 | B 受约束设计工具 | completed | allowlist、路径隔离、Scene Graph/直接 SVG、hash/tool call/attempt/stale |
 | C Main Presentation Agent Runtime | completed | 实际模型 turn→工具→观察→修订→终止；预算/超时/恢复/持久化 |
-| D Agent 顺序创作 | in progress | P01 gate 后 P02–Pn；每页 SVG 追溯到 Agent turn/tool call；模板仅显式 fallback |
-| E 有界视觉闭环 | pending | contact sheet、结构化 reviewer、最多两轮、blocking 清零或非成功 |
+| D Agent 顺序创作 | completed | P01 gate 后 P02–Pn；每页 SVG 追溯到 Agent turn/tool call；模板不再是 default-agentic 作者 |
+| E 有界视觉闭环 | in progress | contact sheet、结构化 reviewer、最多两轮、blocking 清零或非成功 |
 | F 灰度、回退与发布 | pending | feature flag、manifest/UI/文件名披露、监控、文档与 rollback |
 | E2E 与最终回归 | pending | 同输入用户旅程、PPTX/WPS/PowerPoint、恢复/取消/安全/发布不变量 |
 
 ## 已完成事项
 
+- ISSUE-003 阶段 D / Agent 顺序接管 SVG 创作：`agentic_workflow.py` 主路径已删除对固定 `author_slide()` 的页面写入，先由真实 Strategist 读取批准上下文/设计目录并落盘策略，再在同一 session 以 Executor 严格执行 P01→首屏 checker observation→P02…Pn。每页 Scene Graph 写入绑定实际 model turn/tool call/current SVG hash，P01 gate 只有当前 hash 通过才可进入后续页；Blueprint 由真实 strategistTurnId 升级为 `agent-strategist`，结果 usage 记录真实 turn/token/cost/time，canonical bundle 包含 turn/tool/phase/scene/checkpoint 证据。历史 phase 只保留不可变 hash/receipt 和小型策略观察，当前页事实/Design Spec/spec lock 每次精确读取，避免重复 token 计费。2 页 native chart、8 页多角色、AI/provided 图片和完整兼容/内容门合并回归通过。
 - ISSUE-003 阶段 C / 真实 Main Presentation Agent Runtime：新增 strict `AgentDecision` 和同一会话 `Strategist → Executor` 有界模型—工具循环；Provider 决定下一工具/终止，Supervisor 强制 role/allowlist/attempt、turn/token/cost/soft/hard timeout 与取消。每次 Provider 前先写 pending checkpoint，每次工具前写确定性 pending call；崩溃恢复复用已完成 turn/幂等 tool，未知 Provider 结果则暂停而不重复计费。批准来源、Design Spec、spec lock/stable ID 作为不可有损压缩的 locked context，tainted 来源指令不能扩权。新增 tenant-scoped `workflow_agent_turns`/`workflow_agent_tool_calls`、Alembic migration、文件证据→数据库幂等桥、Agent decision Schema 和严格 Kimi 子进程环境白名单。Ruff、45/45 合并回归及真实 PostgreSQL migration roundtrip/drift 通过。
 - ISSUE-003 阶段 B / 受约束语义设计工具：新增 9 个精确 Agent 工具的闭包注册表，只读当页批准 Blueprint/来源/Design Spec/lock/roster，只写当页 SVG 或 run 拥有的 planning JSON；新增物化 `SlideSceneGraph` v1，可表达文本、图形、分组、项目内图片、可编辑原生 chart/table 和自由组合排版，同时保留拒绝 active/external content 的直接 SVG escape hatch。图表/表格值必须与当页 Blueprint 完全相等，直接 SVG 也不能绕过；每次工具调用绑定 workflow/stage/PNN/attempt/input/arguments/output/subject hash，幂等重放且写入传播后续 gate stale。Agent 无 shell、网络、数据库或通用文件系统工具。Ruff、42/42 回归及 vendored SVG final checker 0 blocking 通过。
 - ISSUE-003 阶段 A / Page Blueprint 与语义一致性：新增 strict Pydantic `PageBlueprintArtifact` v1 及物化 JSON Schema，严格冻结 approved roster 的 outlineSlideId/slideId/PNN/order/role；以 page title、audience question、deck intent 的语义相关性选择来源句/图表序列，删除页序取模轮转。每页保存 assertion、audienceMove、evidenceRefs、contentBlocks、visualForm、layoutIntent、literalConstraints 和可选 native chartSpec；蓝图按 workflow/snapshot/source/claim/literal/chart/hash fail-closed，后续 Design Spec、final SVG、compiled PPTX 报告均绑定同一 Blueprint hash，并生成总一致性报告。Ruff 及 33/33 定向/纵向测试通过。

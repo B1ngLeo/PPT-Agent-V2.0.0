@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from defusedxml import ElementTree as DefusedET
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from instant_ppt_worker.presentation_blueprint import canonical_sha256
 from instant_ppt_worker.workflow_models import PageBlueprintArtifact, WorkflowRequestV2
@@ -311,19 +311,18 @@ def _node_svg(node: SceneNode, project: Path, indent: str = "  ") -> list[str]:
         return lines
     if node.kind == "text":
         lines = str(node.text).splitlines() or [""]
-        rendered = [
+        rendered = (
             f'{indent}<text id="{node_id}" x="{node.x:g}" y="{node.y + node.font_size:g}" '
             f'font-family="{_escape(node.font_family)}" font-size="{node.font_size:g}" '
             f'font-weight="{node.font_weight}" fill="{node.text_color}" '
             f'text-anchor="{node.text_anchor}">'
-        ]
+        )
         for index, line in enumerate(lines):
             dy = 0 if index == 0 else node.font_size * 1.25
-            rendered.append(
-                f'{indent}  <tspan x="{node.x:g}" dy="{dy:g}">{_escape(line)}</tspan>'
+            rendered += (
+                f'<tspan x="{node.x:g}" dy="{dy:g}">{_escape(line)}</tspan>'
             )
-        rendered.append(f"{indent}</text>")
-        return rendered
+        return [rendered + "</text>"]
     if node.kind == "shape":
         if node.shape in {"rect", "round-rect"}:
             radius = min(20, node.height / 4) if node.shape == "round-rect" else 0
@@ -604,7 +603,12 @@ class PresentationAgentToolRegistry:
                 raise ToolPolicyError("tool call ID was reused with different arguments")
             return existing
         started_at = datetime.now(UTC)
-        output = self._dispatch(tool_name, arguments)
+        try:
+            output = self._dispatch(tool_name, arguments)
+        except ToolPolicyError:
+            raise
+        except (ValidationError, ValueError) as error:
+            raise ToolPolicyError(f"Agent tool arguments are invalid: {error}") from error
         output_sha256 = canonical_sha256(output)
         subject_sha256 = str(output.get("subjectSha256") or output_sha256)
         stale = list(WRITE_STALE_TARGETS) if tool_name in MUTATING_TOOLS else []

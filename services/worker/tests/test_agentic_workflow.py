@@ -433,7 +433,8 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
     assert result["profile"] == "default-agentic"
     assert provider_request["fragments"][0]["text"].find("ORBIT-NONCE-8472") >= 0
     assert provider_request["fragments"][0]["sourceInstructionsIgnored"] is True
-    assert '"author": "current-main-agent"' in events
+    assert '"author": "main-presentation-agent"' in events
+    assert "current-main-agent" not in events
     assert "quick-generate" not in events
 
     evidence_map = json.loads(
@@ -462,6 +463,9 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
     }
     assert all(report["passed"] for report in content_reports.values())
     blueprint_sha256 = canonical_sha256(blueprint)
+    assert blueprint["authoringMode"] == "agent-strategist"
+    strategist_turn = project / "agent" / "turns" / f"{blueprint['strategistTurnId']}.json"
+    assert strategist_turn.is_file()
     assert blueprint_support["passed"] is True
     assert blueprint_support["blueprintSha256"] == blueprint_sha256
     assert blueprint_consistency["passed"] is True
@@ -475,6 +479,20 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
         and report["grounding"]["passed"] is True
         for report in content_reports.values()
     )
+    agent_state = json.loads(
+        (project / "agent" / "runtime-state.json").read_text(encoding="utf-8")
+    )
+    page_writes = []
+    for tool_path in (project / "agent" / "tool-calls").glob("*.json"):
+        record = json.loads(tool_path.read_text(encoding="utf-8"))
+        if record["toolName"] == "write_or_patch_slide_svg":
+            page_writes.append(record)
+            assert record["authorTurnId"]
+            assert record["modelVersion"] == "fake-agent@v1"
+    assert {record["currentPnn"] for record in page_writes} == {"P01", "P02"}
+    assert result["usage"]["inputTokens"] > 0
+    assert result["usage"]["outputTokens"] > 0
+    assert agent_state["usage"]["turns"] >= 10
     assert (
         content_reports["design"]["subjectSha256"]
         == hashlib.sha256((project / "design_spec.md").read_bytes()).hexdigest()

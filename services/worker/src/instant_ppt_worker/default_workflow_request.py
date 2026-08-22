@@ -6,6 +6,7 @@ from typing import Any
 
 from instant_ppt_domain.models import GenerationJobSlide, GenerationSnapshot
 
+from instant_ppt_worker.presentation_agent_tools import AGENT_TOOL_NAMES
 from instant_ppt_worker.workflow_models import WorkflowRequestV2
 
 
@@ -51,7 +52,7 @@ def build_default_workflow_request(
     )
     model = str(
         payload.get("providerConfiguration", {}).get("planning", {}).get("model")
-        or "fake"
+        or "kimi-k3"
     )
     image_policy = dict(
         payload.get("imagePolicy")
@@ -63,6 +64,7 @@ def build_default_workflow_request(
         "run-vendored-script",
         "start-live-preview",
         "provider-text",
+        *AGENT_TOOL_NAMES,
     ]
     if "ai" in list(image_policy.get("usage") or []):
         allowed_tools.append("provider-image")

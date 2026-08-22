@@ -128,6 +128,41 @@ def test_model_observes_gate_failure_and_revises_the_authored_svg(tmp_path: Path
     )
 
 
+def test_phase_cannot_complete_before_supervisor_required_tools(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    provider = DeterministicFakeProvider(
+        [
+            _decision(action="complete", termination="premature"),
+            _decision(
+                action="tool",
+                tool="read_approved_context",
+                arguments={"pnn": "P01"},
+            ),
+            _decision(action="complete", termination="required evidence observed"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="prove required tool enforcement",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"read_approved_context"}),
+    )
+
+    assert result.status == "completed"
+    assert result.termination_reason == "required evidence observed"
+    assert len(provider.calls) == 3
+    assert "AGENT_PHASE_REQUIRED_TOOLS_MISSING" in json.dumps(
+        provider.calls[1]["messages"], ensure_ascii=False
+    )
+
+
 def test_turn_budget_is_enforced_before_a_selected_tool_can_mutate(tmp_path: Path) -> None:
     context = _context(tmp_path)
     runtime = context.request.runtime.model_copy(update={"max_turns": 1})

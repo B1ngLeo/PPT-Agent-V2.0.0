@@ -149,6 +149,7 @@ class MainPresentationAgent:
         goal: str,
         locked_context: dict[str, Any],
         tools: PresentationAgentToolRegistry,
+        required_tools: frozenset[str] = frozenset(),
     ) -> AgentPhaseResult:
         if not re_phase_id(phase_id):
             raise AgentRuntimeError("phaseId must be stable kebab-case")
@@ -160,6 +161,8 @@ class MainPresentationAgent:
             raise AgentRuntimeError("tool registry stage does not own this Agent phase")
         if tools.context.author_attempt > self.request.runtime.max_stage_attempts:
             raise AgentRuntimeError("Agent author attempt exceeds runtime policy")
+        if not required_tools.issubset(tools.context.allowed_tools):
+            raise AgentRuntimeError("required Agent tools exceed the phase tool registry")
         existing_phase = self.state["phases"].get(phase_id)
         if existing_phase and existing_phase.get("status") in {
             "completed",
@@ -177,6 +180,7 @@ class MainPresentationAgent:
                 "lockedContextSha256": locked_hash,
                 "turnIds": [],
                 "toolCallIds": [],
+                "requiredTools": sorted(required_tools),
                 "startedAt": _now(),
             }
             self.state["messages"].append(
@@ -199,8 +203,11 @@ class MainPresentationAgent:
         elif (
             existing_phase["role"] != role
             or existing_phase["lockedContextSha256"] != locked_hash
+            or existing_phase.get("requiredTools", []) != sorted(required_tools)
         ):
-            raise AgentRuntimeError("phase role or immutable context changed across resume")
+            raise AgentRuntimeError(
+                "phase role, required tools, or immutable context changed across resume"
+            )
         if self.state.get("providerPending") is not None:
             return self._terminate_phase(
                 phase_id,
@@ -247,6 +254,7 @@ class MainPresentationAgent:
                             f"Validation error: {turn['validationError']}"
                         ),
                         "locked": False,
+                        "phaseId": phase_id,
                     }
                 )
                 self._persist_state("schema-repair-requested")
@@ -299,12 +307,33 @@ class MainPresentationAgent:
                 "pause": "paused",
                 "fail": "failed",
             }[decision.action]
+            if decision.action == "complete":
+                completed_tools = self._phase_tool_names(phase_id)
+                missing_tools = sorted(required_tools - completed_tools)
+                if missing_tools:
+                    self._record_policy_observation(
+                        turn,
+                        "AGENT_PHASE_REQUIRED_TOOLS_MISSING",
+                        "phase cannot complete before tools: " + ", ".join(missing_tools),
+                    )
+                    continue
             return self._terminate_phase(
                 phase_id,
                 role,
                 status,
                 str(decision.termination_reason),
             )
+
+    def _phase_tool_names(self, phase_id: str) -> set[str]:
+        names: set[str] = set()
+        for tool_call_id in self.state["phases"][phase_id]["toolCallIds"]:
+            path = self.project / "agent" / "tool-calls" / f"{tool_call_id}.json"
+            if not path.is_file():
+                raise AgentRuntimeError("phase references missing Agent tool evidence")
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record.get("status") == "succeeded":
+                names.add(str(record.get("toolName") or ""))
+        return names
 
     def _load_state(self) -> tuple[dict[str, Any], bool]:
         if not self.state_path.is_file():
@@ -393,7 +422,7 @@ class MainPresentationAgent:
                 "sequence": sequence,
             }
         )
-        messages = self._provider_messages()
+        messages = self._provider_messages(phase_id)
         prompt_sha256 = canonical_sha256(messages)
         self.state["providerPending"] = {
             "turnId": turn_id,
@@ -505,27 +534,85 @@ class MainPresentationAgent:
             )
         return decision, turn
 
-    def _provider_messages(self) -> list[dict[str, str]]:
+    def _provider_messages(self, phase_id: str) -> list[dict[str, str]]:
         messages = list(self.state["messages"])
-        locked = [message for message in messages if message.get("locked")]
-        ordinary = [message for message in messages if not message.get("locked")]
-        selected = [*locked, *ordinary[-16:]]
-        if len(ordinary) > 16:
-            compacted = [
+        system = [
+            message
+            for message in messages
+            if message.get("locked") and message.get("role") == "system"
+        ]
+        current_locked = [
+            message
+            for message in messages
+            if message.get("locked") and message.get("phaseId") == phase_id
+        ]
+        current_ordinary = [
+            message
+            for message in messages
+            if not message.get("locked") and message.get("phaseId") == phase_id
+        ]
+        prior_phases: list[dict[str, Any]] = []
+        for key, value in self.state["phases"].items():
+            if key == phase_id:
+                continue
+            retained_observations: list[dict[str, Any]] = []
+            for tool_call_id in value["toolCallIds"]:
+                path = self.project / "agent" / "tool-calls" / f"{tool_call_id}.json"
+                if not path.is_file():
+                    continue
+                record = json.loads(path.read_text(encoding="utf-8"))
+                if record.get("toolName") in {
+                    "read_design_catalog",
+                    "write_planning_artifact",
+                }:
+                    retained_observations.append(
+                        {
+                            "toolName": record["toolName"],
+                            "outputSha256": record["outputSha256"],
+                            "observation": record["observation"],
+                        }
+                    )
+            prior_phases.append(
+                {
+                "phaseId": key,
+                "role": value["role"],
+                "status": value["status"],
+                "goal": value["goal"],
+                "lockedContextSha256": value["lockedContextSha256"],
+                "terminationReason": value.get("terminationReason"),
+                "turnIds": value["turnIds"],
+                "toolCallIds": value["toolCallIds"],
+                "retainedObservations": retained_observations,
+                }
+            )
+        compacted: list[dict[str, Any]] = [*system]
+        if prior_phases:
+            compacted.append(
                 {
                     "role": "user",
                     "content": (
-                        "Earlier tool observations remain immutable by hash: "
+                        "Prior phases in this same Agent session remain immutable; exact approved "
+                        "facts for the current page must be reacquired with "
+                        "read_approved_context. Phase receipts: "
+                        + json.dumps(prior_phases, ensure_ascii=False, separators=(",", ":"))
+                    ),
+                }
+            )
+        compacted.extend([*current_locked, *current_ordinary[-16:]])
+        if len(current_ordinary) > 16:
+            compacted.insert(
+                len(system) + (1 if prior_phases else 0),
+                {
+                    "role": "user",
+                    "content": (
+                        "Earlier observations in this phase remain immutable by hash: "
                         + ", ".join(
                             str(message.get("observationSha256") or "message")
-                            for message in ordinary[:-16]
+                            for message in current_ordinary[:-16]
                         )
                     ),
                 },
-                *selected,
-            ]
-        else:
-            compacted = selected
+            )
         total = sum(len(str(message.get("content") or "")) for message in compacted)
         if total > self.request.runtime.max_context_characters:
             raise AgentRuntimeError(
@@ -599,6 +686,7 @@ class MainPresentationAgent:
                     "role": "assistant",
                     "content": json.dumps(decision, ensure_ascii=False, separators=(",", ":")),
                     "locked": False,
+                    "phaseId": pending["phaseId"],
                 },
                 {
                     "role": "user",
@@ -609,6 +697,7 @@ class MainPresentationAgent:
                     ),
                     "locked": False,
                     "observationSha256": observation_sha256,
+                    "phaseId": pending["phaseId"],
                 },
             ]
         )
@@ -635,12 +724,14 @@ class MainPresentationAgent:
                     "role": "assistant",
                     "content": json.dumps(turn.get("decision") or {}, ensure_ascii=False),
                     "locked": False,
+                    "phaseId": turn["phaseId"],
                 },
                 {
                     "role": "user",
                     "content": json.dumps(observation, ensure_ascii=False),
                     "locked": False,
                     "observationSha256": observation_sha256,
+                    "phaseId": turn["phaseId"],
                 },
             ]
         )

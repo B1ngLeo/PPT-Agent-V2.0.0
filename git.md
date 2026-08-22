@@ -101,6 +101,19 @@
 
 最新记录放在最上方。
 
+### 2026-08-23 00:49 — 提交 ISSUE-003 阶段 C 可恢复 Main Agent Runtime
+
+- 操作者：Codex
+- 目的：建立由模型选择工具、由 Supervisor 强制预算/权限/取消且可从 checkpoint 无重复计费恢复的单主 Agent 运行时。
+- 操作前状态：`codex/issue-003-presentation-agent@e22a045`；阶段 B 已验证提交。
+- 执行命令：`git add <stage-c files>`；`git diff --cached --check`；`git commit -m "feat(agent): add resumable main runtime"`。
+- 变更范围：AgentDecision/MainPresentationAgent、turn/tool/checkpoint evidence、tenant-scoped 数据表与 migration、持久化桥、Kimi 环境白名单、预算/取消/taint/恢复测试及物化 Schema。
+- 验证结果：Ruff、45/45 合并回归和真实 PostgreSQL upgrade/downgrade/re-upgrade/drift 通过。
+- 相关提交：`0b29374591b3d8e70e5035fa979dbfdeabfe1c73`
+- 远端结果：未涉及，未推送。
+- 回退方式：`git revert 0b29374`。
+- 状态：成功。
+
 ### 2026-08-23 00:32 — 提交 ISSUE-003 阶段 B 受约束设计工具
 
 - 操作者：Codex
