@@ -80,8 +80,15 @@ def test_long_cjk_cover_copy_is_wrapped_before_upstream_qa(tmp_path: Path) -> No
     package_report = json.loads(
         (tmp_path / "full-deck/validation/pptx-package-qa.json").read_text(encoding="utf-8")
     )
+    manifest = json.loads(
+        (tmp_path / "full-deck/artifact-manifest.json").read_text(encoding="utf-8")
+    )
     assert package_report["passed"] is True
     assert package_report["matchedEditableTextCount"] == 2
+    assert manifest["authoringMode"] == "deterministic-template"
+    assert manifest["authoringDisclosure"] == "template-limited-editable-draft"
+    assert manifest["fallbackReason"] == "engineering-quick-renderer"
+    assert manifest["suggestedFilename"].endswith("-模板化受限初稿.pptx")
 
 
 def test_single_long_timeline_fact_is_centered_inside_safe_bounds(tmp_path: Path) -> None:

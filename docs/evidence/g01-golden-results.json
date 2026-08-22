@@ -25,12 +25,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "ba15404fbf17d8c21b3ab0eb7f1bd6d2821f4b095c3c7e573cf3229163b1a270",
-        "e8e2fe8cb997aae9c2086955b6886f26e9a94b6519732f5e84367aac669e561c",
-        "c919b7075fc4a01b185e7032c37490289301778a3357ce0ada1eee8dffd88b67"
+        "330f3a977e3dc9c42f6d82b8243ea614abb70c61d5f17e4bee563ee3670042f4",
+        "c6ef98edbc2e08f219274c6425ece559563bda8d507d4fc4f8821846a8ed5eb0",
+        "4f6253f097651ae2cd9b3a2e88cdb5dd7533995dfc779e5e2e91703551bdd08f"
       ],
-      "previewSha256": "ba15404fbf17d8c21b3ab0eb7f1bd6d2821f4b095c3c7e573cf3229163b1a270",
-      "pptxSha256": "c2394cc72f178d57fe3478c789092630625470d315b02fa19360ee50a465fb65"
+      "previewSha256": "330f3a977e3dc9c42f6d82b8243ea614abb70c61d5f17e4bee563ee3670042f4",
+      "pptxSha256": "0bdf47583c937a80b1fde0f8428110d2004d1dc421add22caef88acd20dc1e03"
     },
     {
       "slug": "02-en-market",
@@ -52,12 +52,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "46b54037bf9e6dd4072e820a6dfc08711ef5a66c528d458285eb0c4da0100411",
-        "9643b76d9121fb40520922bc2e06181d0c69a265ce8eea86b10a4bef92b0d40c",
-        "275fc6214cd3883075cd82a651f377db987ac16f904c9c6ae44d9af8dfbafbb8"
+        "ffdf2dd32bd19226ec6e060c9fb29495684bf127f5124311b1e46204fb000ac3",
+        "7e3c4c538e7f8e1e62fa1e64fcedbbafdd1957dbca5ecc9a5e0c7631276d1bbe",
+        "f3a281c74f2073b9a450c269d86525de29579bee5b4a37e1992795c8361d2fc4"
       ],
-      "previewSha256": "46b54037bf9e6dd4072e820a6dfc08711ef5a66c528d458285eb0c4da0100411",
-      "pptxSha256": "8d40871cc4d0a6fdb584c095ab084eaf271074cc99b48877a1dddb7533098c50"
+      "previewSha256": "ffdf2dd32bd19226ec6e060c9fb29495684bf127f5124311b1e46204fb000ac3",
+      "pptxSha256": "6e80447c0d04a7b037ca2a9ea40d464736a3c6c5bc3c1755d93255007c9decb6"
     },
     {
       "slug": "03-long-title",
@@ -79,12 +79,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "b97e8d154be10c81ab9aab1d5943cb9258aaba36a0b502ecf8240e889986c244",
-        "81282c76de633aa63743226676d2de45a7bc8180f2d946f24a219c366fccb236",
-        "74925dedbf3bbf2945c1f22ae5a41b7307ab2855d770e4dd9cd5d9e7fc9bf606"
+        "75d5f59f146fb0c14c2f22ba76964a58442498fabbb43c555cd89785fa56881d",
+        "f36fc3ccebd401644b6273e2cbac1905bdaab27e48f334584890fc6ff289997c",
+        "729dd551fdee7b4e4720722252446fc947e2d91cf9fc0dc9754b850d8d8e7484"
       ],
-      "previewSha256": "b97e8d154be10c81ab9aab1d5943cb9258aaba36a0b502ecf8240e889986c244",
-      "pptxSha256": "d3ae2b1db2803e0dcc1052f80b301074cf7284edd3aad6ea5b448772ed0f660a"
+      "previewSha256": "75d5f59f146fb0c14c2f22ba76964a58442498fabbb43c555cd89785fa56881d",
+      "pptxSha256": "85b4bfa3823c7f16d3efc326427a09316507e90290dc9c05eb5295745ef3a43c"
     },
     {
       "slug": "04-table-docx",
@@ -106,12 +106,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "b5727721db5fa94eaa50917088d192f0c1c9359e4f83dbe7661df12d962e80d3",
-        "de30d133398454bdd8e79493048d44c11e5947892a6e69bb5e7023ced7ffcd77",
-        "105535e989f3c8e15e3e18a9f1607e8668516a52d674edfa61b316fa64047225"
+        "ba6cc5076b05c54fcd908c1ebdfa02aebca024dd067e4a56c138f7f0ddef42ac",
+        "c15f7513f2afe8763f511c2368a3714f46d5255832912e64d84f22bdb777b57e",
+        "9a2f12712186042d5ab9095e5de97338e678881c7d78e1e74fea71d633cef915"
       ],
-      "previewSha256": "b5727721db5fa94eaa50917088d192f0c1c9359e4f83dbe7661df12d962e80d3",
-      "pptxSha256": "15bd33dfd8b9431ea84e595abde8101ee8bbf22ad107fa3ca6585f8ef4abe5a1"
+      "previewSha256": "ba6cc5076b05c54fcd908c1ebdfa02aebca024dd067e4a56c138f7f0ddef42ac",
+      "pptxSha256": "5e1fa59386927bfa7db90c04ebeffdc9d11e5830bc3f9719afab2b5eb05d749e"
     },
     {
       "slug": "05-chart-pptx",
@@ -133,12 +133,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "ef21d6e05f6013ad9eb3d0c32e7d8a850f8270ea53c156c7e0cb1154d9df22da",
-        "e1d4614c1644b090d5ee8275ea59c48de73c7ce6f45135d1225539cbec32e09b",
-        "98e0099509b48022e3d2c624c343448c9306ddd8d433139246dda86cec5f0184"
+        "6e7ee4c47bcc7a6a7d0783e22b14d596a844f999e1660fa1dc624e316cbe71f9",
+        "be5f4f69492066c3264725886c7884af0d29aa831ae960464ba8f97f125789a3",
+        "6517b70e7266bb8cf98819e45f64abcd94204bf4557e665991ac835c2b1622bb"
       ],
-      "previewSha256": "ef21d6e05f6013ad9eb3d0c32e7d8a850f8270ea53c156c7e0cb1154d9df22da",
-      "pptxSha256": "3369dc671a6fda90f6be4f1623b57d6a5f55d7f1a44f1899102cf047dd47084e"
+      "previewSha256": "6e7ee4c47bcc7a6a7d0783e22b14d596a844f999e1660fa1dc624e316cbe71f9",
+      "pptxSha256": "b8063f14acb9649e3773596db9e3acbc93a2c2f42afae28cee68940db8a42380"
     },
     {
       "slug": "06-mixed-fonts",
@@ -160,12 +160,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "bda6eb483ca2976fbd7b2572d1eaf6ee4d188d53e8f426db0d981a2320cea90b",
-        "7fee10682ed9d814a3cb078e34971a28751d18db685dd15665081716079e2ab4",
-        "da4fbb7ad2428b1c7b6d0f681a9cdb18acdb74a6ce0b92cc5b791c8638ca1282"
+        "a4c7e98af318500351f0fc2fb1e204f0448f9b2cd0a64ed5b2a9fcfca76921e2",
+        "933e87bafe84c4d4baa1e16efdafeecafd8c043f9a07a230e7fb7b1315db8ea6",
+        "e3b946ba80840521277b499fb4431eb1adb6c3bc96bcfdd1f962ffd106c0181a"
       ],
-      "previewSha256": "bda6eb483ca2976fbd7b2572d1eaf6ee4d188d53e8f426db0d981a2320cea90b",
-      "pptxSha256": "6ea1a7a71f4b74b26930d4ecd6b7849f1adff6021dd2346b4f35c24bee089b4f"
+      "previewSha256": "a4c7e98af318500351f0fc2fb1e204f0448f9b2cd0a64ed5b2a9fcfca76921e2",
+      "pptxSha256": "2d7fb8898aadfd1913b636e1dcae765b6dc11ba9c984dd1316c54e91e2abe196"
     },
     {
       "slug": "07-template-brand",
@@ -187,12 +187,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "ad28e2834177c27cf9c829e8073741a22bb5894e1f0dd6f30e3a1977756a6bcb",
-        "a992002fd3c07f4c874b7df659f959048f4261bd778d256db1cb6e0aacd3adcf",
-        "c37469f2f163231c8a59230a45dd4291d1b5d2cf63b02bc7ff4f5b03c14adc9d"
+        "9e19838156a5a495827c3a80739d3d7ad9f861ed0fbd2bc2e03b373fa4af9d80",
+        "4a844a343534ef3ea35fb2819c11d92a8df9d9dbbff878b96936594dea8e48cf",
+        "59251eaaa1f992058c46331502406309813aa2c3dabc659cd0bee53a4021240a"
       ],
-      "previewSha256": "ad28e2834177c27cf9c829e8073741a22bb5894e1f0dd6f30e3a1977756a6bcb",
-      "pptxSha256": "d7d3415aacfed88de7fa97f4474947c13c6c965a28527b3113386c8541e1de54"
+      "previewSha256": "9e19838156a5a495827c3a80739d3d7ad9f861ed0fbd2bc2e03b373fa4af9d80",
+      "pptxSha256": "1f45f9a4b1c697fc5ada4dc682703b5760efd76bb0609adb26afbf3347ea0176"
     },
     {
       "slug": "08-dense-docx",
@@ -214,12 +214,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "feacbab4d3aabb84972183f6218d7880011638a457d890ef6580337c4665394a",
-        "c6f8ff634143c32377fa0b36d62083d7abe47ec0d34af32d57f6a6d89e3f5c78",
-        "ab4c419ac5504740c5afaf7de08055b1b960705f028b33e1615deeba32edc492"
+        "83a36f955023ca3db5c26335c95614ec86a5cc939726130cd1357664b62c529c",
+        "22951cbb0aed827b53261f99ebcd1c93377a849c8f5edcdfb486d9cd24717e3c",
+        "49c7429e19b0b9c1827e41c7f708c7f9418c8cf1233900f43163bd6cabe16c73"
       ],
-      "previewSha256": "feacbab4d3aabb84972183f6218d7880011638a457d890ef6580337c4665394a",
-      "pptxSha256": "7ec5a0f9c640e1092caff5a27e44f45fcbe8e0c0450134b563d90e6c08c56afc"
+      "previewSha256": "83a36f955023ca3db5c26335c95614ec86a5cc939726130cd1357664b62c529c",
+      "pptxSha256": "ada3bdb10599680ca1dbdb944403bce931144b343722bbc8f73b7eba769d60c1"
     },
     {
       "slug": "09-pdf-baseline",
@@ -241,12 +241,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "441aaa57eec0bf75d1d25ac020faf9e78cf64b8c19b8f03345a8da1f436b7727",
-        "f2076a7bd868aa03b7aa6050e9294a91f74dbe3b1126c266c5259af29acf34d0",
-        "cef29c2c224959f03ce4db587387e7782b324550fe67c71a7dff33043c60fa39"
+        "fd49775c446f222f30695d8c39070f93663343ccdbf7feb50793274efadc6af6",
+        "24324470f680c81c308ca1481ac5386317cec8b9f825b25dfc75c48be0ff210a",
+        "8398e8d4fb7bb1faf86e243e64ac798b41d303f312662e914af78aa3c87e8b5c"
       ],
-      "previewSha256": "441aaa57eec0bf75d1d25ac020faf9e78cf64b8c19b8f03345a8da1f436b7727",
-      "pptxSha256": "5f719f66813f996ba11dfd979ff690c6dbc2526cc86fe41fb993e30aed38a548"
+      "previewSha256": "fd49775c446f222f30695d8c39070f93663343ccdbf7feb50793274efadc6af6",
+      "pptxSha256": "0bd7d38300ef79159ff49445a1ebbc7bb2f704f5fd7c34496d86b427da5b7b9a"
     },
     {
       "slug": "10-multilingual-pptx",
@@ -268,12 +268,12 @@
       "mediaPartCount": 0,
       "mediaReferenceCount": 0,
       "svgSha256": [
-        "40abb674c5d7472ff8a9b085feeaa768d2772995722b6648bbe5ecc25aea1509",
-        "6cc425d50e07ed299045ebaaa9a10576bb0f7305c3f69daf17518347b0262663",
-        "d62c98b4a0d0c5b79430f9d93fb614727d326ae60ba5c49ef6bd2f923acc31e6"
+        "e01f05bd59222f78ce7a95069116cb84f6e102e5d036406514876e7906077f1a",
+        "12315ebb205c6626ed4c6a09271284296ff2c5628981f19c6601314a9a3c62bd",
+        "dff07772873bbce7c567d02de02bf8a4a967e84f0c5ab03b8b9940fffa09f133"
       ],
-      "previewSha256": "40abb674c5d7472ff8a9b085feeaa768d2772995722b6648bbe5ecc25aea1509",
-      "pptxSha256": "082f39f8eba417eab4c1e1011b1a8b5872f07e46d854ce7452cd9f2287b616f1"
+      "previewSha256": "e01f05bd59222f78ce7a95069116cb84f6e102e5d036406514876e7906077f1a",
+      "pptxSha256": "95ba8956c6b942365701e6fbea5f5f0fe42dcf100d11d11daa9f0dcd761951f4"
     }
   ]
 }

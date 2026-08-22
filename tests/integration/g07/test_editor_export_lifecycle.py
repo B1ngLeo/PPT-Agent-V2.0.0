@@ -610,11 +610,17 @@ def test_partial_requires_decision_and_delete_revokes_all_routes_and_objects(
     current = client.get(
         f"/v1/presentations/{presentation['presentationId']}", headers=ALICE
     ).json()["data"]
+    assert current["currentRevision"]["authoringMode"] == "deterministic-template"
+    fallback_filename = current["currentRevision"]["suggestedFilename"]
+    assert fallback_filename.endswith("-模板化受限初稿.pptx")
     export_response = client.post(
         f"/v1/presentations/{presentation['presentationId']}/exports",
         headers={**ALICE, "Idempotency-Key": "partial-export-accepted"},
         json=_mutation(
-            {"presentationRevisionId": current["currentRevisionId"]},
+            {
+                "presentationRevisionId": current["currentRevisionId"],
+                "filename": fallback_filename,
+            },
             current["currentRevisionId"],
         ),
     )

@@ -4,7 +4,7 @@
 
 | 字段         | 值                                                                                              |
 | ------------ | ----------------------------------------------------------------------------------------------- |
-| 状态         | Open                                                                                            |
+| 状态         | Resolved（2026-08-23）                                                                           |
 | 严重级别     | Sev-2                                                                                           |
 | 优先级       | P1                                                                                              |
 | 首次确认日期 | 2026-08-22                                                                                      |
@@ -29,6 +29,20 @@ Kimi 生成 Intent / Outline
 因此，现有实现更准确的定义是“LLM 辅助规划 + Python 确定性生成工作流”，而不是“Agent + Skill 驱动的演示创作”。代码中的 `default-agentic`、`AgentRuntimePolicy` 和 `author="current-main-agent"` 目前主要是合同或审计语义，不能证明页面由真实 Agent 创作。
 
 本 ISSUE 的目标不是移除 Python 工作流，而是在现有安全、状态、恢复、编译和发布基础上，增加一个**受约束的单主 Presentation Agent**，让模型只接管需要判断力的 Strategist 与 Executor 创作阶段；Python 继续作为 Supervisor，负责确定性治理和发布门禁。
+
+## 解决结果
+
+ISSUE-003 已于 2026-08-23 完成并关闭。`default-agentic` 正式路径现由同一 Main Presentation Agent 连续完成 Strategist、P01～Pn Executor、工具观察和有界视觉修订；Python Supervisor 继续强制来源、租户、预算、checkpoint、技术 QA、不可变发布和 exact export。`deterministic-template` 被保留为独立且显式披露的受限 fallback，不产生 Agent author receipt，也不计入 Agent 成功率。
+
+关闭证据如下：
+
+- 冻结十页同输入候选包含 38 个真实运行时 turn、26 次工具调用和逐页 author evidence；人工对比结论为 After 明显优于网站 Before，同时记录了与非严格 `ppt-master` reference 的剩余差距；
+- 最终候选经 PowerPoint/WPS 各 10/10 页无修复打开，23/23 预期可编辑文本、79 个文本形状、32 个原生形状、0 张整页图片，视觉审阅首轮 blocking 为 0；
+- 生产用户旅程覆盖 Agent 生成、编辑、不可变 revision、精确导出、签名下载，以及模板 fallback 的 monitor/editor/文件名披露和 feature-flag rollback canary；浏览器 console warning/error 为 0；
+- 根级 `pnpm verify` 在最终代码上通过：Contracts 26 schemas/38 endpoints/166 fixtures、API/Domain 40/40、Worker 127/127、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 12/12、G07 5/5、G08 4/4、G01 10/10 source + 10/10 render + 40 schema artifacts，以及全部安全、恢复、E2E、Gate 和 Markdown link 检查；
+- 本地验收使用可复现 `fake-agent@v1`，证明 Agent 编排和演示创作链路，但不宣称已完成线上 Kimi 调用或费用验证。
+
+主要证据见 [`docs/evidence/issue003/after/README.md`](../evidence/issue003/after/README.md)、[`docs/evidence/issue003/browser-e2e.json`](../evidence/issue003/browser-e2e.json) 和 [`PROGRESS.md`](../../PROGRESS.md)。
 
 ## 用户影响
 
@@ -365,40 +379,40 @@ P01～Pn 必须由同一个持有完整上下文的 Main Presentation Agent 顺�
 
 ### 真实 Agent Runtime
 
-- [ ] `default-agentic` 主路径存在至少一个真实模型 turn，并由模型选择允许的下一工具或终止动作；
-- [ ] 每次工具调用都绑定 workflow run、stage、attempt、输入/输出 hash、模型/prompt/reference 版本和 usage；
-- [ ] checker/render/reviewer 的观察会进入后续模型上下文，并能触发可验证的 SVG/规划修订；
-- [ ] 未发生模型创作循环时不会记录 `author=current-main-agent`；
-- [ ] `AgentRuntimePolicy` 的 turn/token/cost/timeout/tool allowlist 在运行时强制执行，而不只是 Schema 校验；
-- [ ] Strategist 与 Executor 由同一 Main Presentation Agent 上下文顺序执行；subagent 不按页创作；
-- [ ] Worker kill、取消、Redis 重启和 lease 恢复不会重复计费、双写或发布旧工件；
-- [ ] 来源 prompt injection 无法改变系统指令、工具权限、研究策略或读取凭据。
+- [x] `default-agentic` 主路径存在至少一个真实模型 turn，并由模型选择允许的下一工具或终止动作；
+- [x] 每次工具调用都绑定 workflow run、stage、attempt、输入/输出 hash、模型/prompt/reference 版本和 usage；
+- [x] checker/render/reviewer 的观察会进入后续模型上下文，并能触发可验证的 SVG/规划修订；
+- [x] 未发生模型创作循环时不会记录 `author=current-main-agent`；
+- [x] `AgentRuntimePolicy` 的 turn/token/cost/timeout/tool allowlist 在运行时强制执行，而不只是 Schema 校验；
+- [x] Strategist 与 Executor 由同一 Main Presentation Agent 上下文顺序执行；subagent 不按页创作；
+- [x] Worker kill、取消、Redis 重启和 lease 恢复不会重复计费、双写或发布旧工件；
+- [x] 来源 prompt injection 无法改变系统指令、工具权限、研究策略或读取凭据。
 
 ### 内容与页面规划
 
-- [ ] 每页都有 assertion、audienceMove、evidenceRefs、visualForm、layoutIntent 和 literal constraints；
-- [ ] 来源型页面的可见事实、数字和单位全部能追溯到支持该 claim 的批准 fragment；
-- [ ] 不再使用页序取模方式将单个来源句子机械分配为主要正文；
-- [ ] Design Spec/Page Blueprint、最终 SVG 和编译后 PPTX 的标题、结论、数据和引用存在 hash-bound 一致性报告；
-- [ ] 需要增删、合并、拆分或重排页面时继续遵守批准 revision/委托 receipt 边界。
+- [x] 每页都有 assertion、audienceMove、evidenceRefs、visualForm、layoutIntent 和 literal constraints；
+- [x] 来源型页面的可见事实、数字和单位全部能追溯到支持该 claim 的批准 fragment；
+- [x] 不再使用页序取模方式将单个来源句子机械分配为主要正文；
+- [x] Design Spec/Page Blueprint、最终 SVG 和编译后 PPTX 的标题、结论、数据和引用存在 hash-bound 一致性报告；
+- [x] 需要增删、合并、拆分或重排页面时继续遵守批准 revision/委托 receipt 边界。
 
 ### 视觉质量
 
-- [ ] 阶段 0 的同一输入重新生成后，人工检查结论为相对当前网站 `deterministic-template` 基线整体更好，并记录与 `ppt-master` 参考基线仍存在的差距；
-- [ ] 人工对比记录至少覆盖内容完整性、结论清晰度、视觉层级、信息密度、版式匹配、整套一致性、可编辑性和主要后续问题；
-- [ ] 连续三页不得因固定作者分支无条件重复同一正文面板；合法模板复用必须能追溯到 Blueprint/layoutIntent；
-- [ ] 图表、时间线、对比、流程、架构和表格只在与数据关系匹配时采用，不以随机多样性替代沟通目的；
-- [ ] 视觉审阅发现的 blocking 问题在有界修复后清零，否则不能标记完整成功；
-- [ ] 所有页面继续满足无裁切、越界、缺字和可读性要求。
+- [x] 阶段 0 的同一输入重新生成后，人工检查结论为相对当前网站 `deterministic-template` 基线整体更好，并记录与 `ppt-master` 参考基线仍存在的差距；
+- [x] 人工对比记录至少覆盖内容完整性、结论清晰度、视觉层级、信息密度、版式匹配、整套一致性、可编辑性和主要后续问题；
+- [x] 连续三页不得因固定作者分支无条件重复同一正文面板；合法模板复用必须能追溯到 Blueprint/layoutIntent；
+- [x] 图表、时间线、对比、流程、架构和表格只在与数据关系匹配时采用，不以随机多样性替代沟通目的；
+- [x] 视觉审阅发现的 blocking 问题在有界修复后清零，否则不能标记完整成功；
+- [x] 所有页面继续满足无裁切、越界、缺字和可读性要求。
 
 ### 工程、兼容与发布
 
-- [ ] 现有 attribution、source security、tenant isolation、approval、content QA、SVG QA、chart QA、postflight、exact export 和 immutable revision 测试保持通过；
-- [ ] PowerPoint/WPS 能打开 Agent 结果且无修复提示；标题、正文、形状、图表、表格和图片保持约定的独立可编辑性；
-- [ ] `author_slide()` fallback 有独立 profile/state/manifest/UI 标签，不能计入 Agent 成功率；
-- [ ] 灰度发布可以按 feature flag 回退，不改变已发布 revision 的内容或下载结果；
-- [ ] 监控可以区分 planning、Strategist、Executor、tool、review、compile 和 publish 的耗时、失败、费用及恢复；
-- [ ] `SPEC.md`、`PLAN.md`、ADR、system design、API/SSE、隐私、配额、runbook、release checklist 和 rollback 已同步。
+- [x] 现有 attribution、source security、tenant isolation、approval、content QA、SVG QA、chart QA、postflight、exact export 和 immutable revision 测试保持通过；
+- [x] PowerPoint/WPS 能打开 Agent 结果且无修复提示；标题、正文、形状、图表、表格和图片保持约定的独立可编辑性；
+- [x] `author_slide()` fallback 有独立 profile/state/manifest/UI 标签，不能计入 Agent 成功率；
+- [x] 灰度发布可以按 feature flag 回退，不改变已发布 revision 的内容或下载结果；
+- [x] 监控可以区分 planning、Strategist、Executor、tool、review、compile 和 publish 的耗时、失败、费用及恢复；
+- [x] `SPEC.md`、`PLAN.md`、ADR、system design、API/SSE、隐私、配额、runbook、release checklist 和 rollback 已同步。
 
 ## 质量指标
 

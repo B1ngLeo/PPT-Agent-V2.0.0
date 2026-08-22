@@ -31,6 +31,15 @@ from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.svg_author import author_chart_slide, author_deck, author_slide
 
 
+def _safe_presentation_filename(title: str) -> str:
+    safe = "".join(
+        "_" if character in '<>:"/\\|?*' or ord(character) < 32 else character
+        for character in title.strip()
+    ).strip(" .")
+    safe = safe[:120] or "AI 演示文稿"
+    return f"{safe}-模板化受限初稿.pptx"
+
+
 def _svg_visible_text(svg_paths: list[Path]) -> str:
     values: list[str] = []
     for path in svg_paths:
@@ -295,6 +304,10 @@ def render_deck(
         "engineVersion": WorkerContract().engine_version,
         "fontPackVersion": "system-safe-fonts@1",
         "engineProfile": "quick-engineering",
+        "authoringMode": "deterministic-template",
+        "authoringDisclosure": "template-limited-editable-draft",
+        "fallbackReason": "engineering-quick-renderer",
+        "suggestedFilename": _safe_presentation_filename(deck.title),
         "quickGenerate": True,
         "snapshotId": deck.snapshot_id,
         "presentationRevisionId": None,

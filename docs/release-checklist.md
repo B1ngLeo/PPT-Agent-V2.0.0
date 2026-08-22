@@ -70,7 +70,7 @@ new release review.
 
 ## ISSUE-003 Agent-authoring release addendum
 
-- [ ] The frozen ten-page input produces an Agent candidate with real Strategist/Executor
+- [x] The frozen ten-page input produces an Agent candidate with real Strategist/Executor
       turn and per-page tool evidence; a human same-input comparison records overall
       preference versus the deterministic website baseline and remaining reference gap.
 - [x] `agent-authoring` and `deterministic-template` freeze distinct snapshot/profile/state,
@@ -81,8 +81,10 @@ new release review.
       bounded turns, phases, tools, page writes, repairs, manual states, and fallback rate.
 - [x] Agent failure/fallback canary alerts and feature-flag rollback preserve all previously
       published immutable revisions and exact downloads.
-- [ ] Full contracts, Web build, API/Domain, Worker, integration, recovery/security,
+- [x] Full contracts, Web build, API/Domain, Worker, integration, recovery/security,
       PowerPoint/WPS, visual comparison, and user-view E2E evidence pass on the final commit.
 
-The unchecked items are ISSUE-003 release gates and do not revoke the already documented
-owner-operated G08 baseline. ISSUE-003 cannot be marked complete until both are checked.
+All ISSUE-003 release gates are satisfied on 2026-08-23. The local deterministic
+`fake-agent@v1` evidence validates the Agent runtime and authoring flow without claiming a
+live Kimi production call; expansion beyond the approved owner-operated scope still requires
+the applicable Provider and production KES/KMS review.

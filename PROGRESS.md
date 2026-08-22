@@ -5,14 +5,14 @@
 ## 当前 Goal
 
 - Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
-- 状态：in progress（2026-08-22 启动）
-- 当前阶段：根级全回归与发布收口
+- 状态：completed（2026-08-22 启动，2026-08-23 完成）
+- 当前阶段：ISSUE-003 已关闭；最终 Git/运行时证据归档
 - 已完成：阶段 0–F；冻结同一 10 页 snapshot 的最终 Agent after；PowerPoint/WPS 双应用 10/10 无修复；before/after 人工偏好与机器证据归档；Agent 完整用户旅程及修复后 fallback/canary/rollback 用户旅程
-- 进行中：执行根级 `pnpm verify`，修复任何回归，完成 release checklist/Issue 状态和 Git 审计收口
-- 后续模块：ISSUE-003 最终验收对照、release checklist/Issue 状态收口
+- 进行中：无功能模块；仅归档最终代码提交对应的干净运行时部署报告和 Git 操作日志
+- 后续模块：无；ISSUE-003 验收、E2E、发布清单和 Issue 状态均已收口
 - 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
-- 当前验证：Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 127/127；G06 12/12（新增模板回退不可变修订披露回归）；G07 5/5；Web lint/typecheck/生产构建；Ruff；14/14 告警；Markdown links；Compose config；Alembic head/drift；最终候选 Agent 38 turns/26 tools/视觉首轮 0 blocking、package QA、PowerPoint/WPS 各 10/10；生产浏览器 Agent 编辑/rev2 精确导出、fallback 编辑器/强制命名导出、rollback canary 和 0 console warning/error 全部通过
-- 问题与解决方案：生产浏览器 E2E 首次发现模板回退监控页正确、编辑器却误标为 Agent 初稿；第 1 次定位为旧确定性管线的 generation manifest 未携带 authoring/disclosure/filename，已在生产者补齐真实 0-turn/0-tool 模板作者证据，并在领域发布边界从批准 snapshot 防御性回填不可变修订字段。新增端到端集成回归后 G06 12/12 通过。最终候选迭代中的其他门禁缺陷均在 1–2 次内定位，未有同一问题达到 5 次；失败/旧候选均可恢复移动至 `.codex-tmp/`，没有覆盖用户数据
+- 当前验证：根级 `pnpm verify` exit 0；Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 127/127；G02 73/73；G03 8/8；G04 14/14；G05 4/4；G06 12/12；G07 5/5；G08 4/4；Golden source 10/10、render 10/10、40/40 Schema 工件；Web lint/typecheck/生产构建、Ruff、安全/恢复/E2E/Gate/Markdown links 全部通过。最终候选 Agent 38 turns/26 tools/视觉首轮 0 blocking、package QA、PowerPoint/WPS 各 10/10；生产浏览器 Agent 编辑/rev2 精确导出、fallback 编辑器/强制命名导出、rollback canary 和 0 console warning/error 全部通过
+- 问题与解决方案：生产浏览器 E2E 首次发现模板回退监控页正确、编辑器却误标为 Agent 初稿；第 1 次定位为旧确定性管线的 generation manifest 未携带 authoring/disclosure/filename，已在生产者补齐真实 0-turn/0-tool 模板作者证据，并在领域发布边界从批准 snapshot 防御性回填不可变修订字段。新增端到端集成回归后 G06 12/12 通过。根回归随后让 G07 的 engineering-quick 部分失败 fixture 首次获得正确 fallback 身份，导出门按合同拒绝旧测试的无披露文件名请求；第 1 次将测试改为使用 immutable revision 建议文件名后 G07 5/5 通过。Golden 合同门又发现 quick renderer 的 ArtifactManifest 未同步阶段 F 四个必填披露字段；第 1 次补齐真实 deterministic-template/engineering fallback/强制文件名后 6/6 定向单测、10/10 source、10/10 render 与 40/40 Schema 工件通过。未有同一问题达到 5 次；失败/旧候选均可恢复移动至 `.codex-tmp/`，没有覆盖用户数据
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
@@ -27,10 +27,11 @@
 | D Agent 顺序创作 | completed | P01 gate 后 P02–Pn；每页 SVG 追溯到 Agent turn/tool call；模板不再是 default-agentic 作者 |
 | E 有界视觉闭环 | completed | contact sheet、结构化 reviewer、最多两轮、blocking 清零或非成功 |
 | F 灰度、回退与发布 | completed | feature flag、manifest/UI/文件名披露、监控、文档与 rollback |
-| E2E 与最终回归 | in progress | 用户旅程、PPTX/WPS/PowerPoint、恢复/取消/安全/发布不变量已完成；根级 `pnpm verify` 进行中 |
+| E2E 与最终回归 | completed | 用户旅程、PPTX/WPS/PowerPoint、恢复/取消/安全/发布不变量完成；根级 `pnpm verify` exit 0 |
 
 ## 已完成事项
 
+- ISSUE-003 根级最终回归与关闭：根 `pnpm verify` 在同一不中断命令中 exit 0，覆盖 Contracts 26/38/166、Web lint/typecheck/生产构建、API/Domain 40/40、Worker 127/127、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 12/12、G07 5/5、G08 4/4、Golden 20/20 + 40 Schema artifacts、E2E、安全、恢复、告警、链接与 G00–G08 Gate；Issue 全部验收项和 release addendum 已据实关闭，无 waiver、无未解决阻塞。
 - ISSUE-003 生产浏览器用户旅程：从固定提交 `157dc2d…` 构建五服务一致运行时。Agent 路径完成草稿→批准→真实 8/8 生成→编辑 slide 2→revision 2→精确导出→签名下载，文件 27,070 bytes / SHA-256 `8d17ac37…`；修复后的 fallback 路径完成全新 8/8 生成，monitor/editor 均披露模板化受限初稿，0 workflow/turn/tool、8 template pages，精确导出强制命名且下载/数据库同为 25,499 bytes / `f21c5686…`。切回 Agent 模式后旧 fallback revision 仍保持模板身份，新 canary 以 32 turns/22 tools、8 Agent pages 发布并在编辑器显示 Agent 身份；浏览器 console warning/error 0。证据见 `docs/evidence/issue003/browser-e2e.json` 和两份最终部署报告。
 - ISSUE-003 fallback 编辑器披露修复：生产用户旅程发现旧确定性模板管线发布的 generation manifest 缺少 `engineProfile/contentMode/authoring/suggestedFilename`，导致 monitor 依据 snapshot 正确披露、editor 依据 immutable revision 却误标为 Agent。旧管线现发布 `deterministic-template`、`template-limited-editable-draft`、fallback reason、0 Agent turns/tools、模板页数和强制 `-模板化受限初稿.pptx` 文件名；Domain 发布层还会从批准 snapshot 防御性回填旧生产者缺失字段。新增从 feature flag 到真实生成、发布和 presentation API 的集成回归；停掉同库常驻消费者消除测试租约争用后 G06 12/12 通过。
 - ISSUE-003 crash replay 不可变请求修复：G06 在“工件已上传、数据库尚未发布”恢复时，从已被首次发布流程改写的 `GenerationJobSlide.title` 重建工作流请求，导致 hash-bound recovery 正确拒绝请求漂移。请求映射现强制从批准 snapshot outline 取标题，缺少批准 roster 直接失败；新增“运行时标题已变化但同 workflowRunId 请求完全相等”的回归，单元 3/3、真实 PostgreSQL/MinIO crash replay 聚焦 1/1 及 G06 全量 11/11 通过，未放宽 request hash 或对象字节一致性校验。
@@ -196,6 +197,7 @@
 | WPS COM 在全链路冷启动时偶发 `0x800706BE` RPC 失败                                      |        1 | Office 验证增加最多 3 次的有界进程重试；最新完整链路在第 3/3 次 WPS 尝试成功，未超过 5 次防循环上限，且 10/10 兼容与 30/30 视觉检查通过。                                                                        |
 | Prettier 初始扫描生成物、金样本、冻结计划与 vendor 输入，产生 120 个非源码格式告警      |        1 | 新增 `.prettierignore` 明确区分首方可维护文件与冻结/生成输入；格式化首方文件后 `pnpm format:check` 通过，契约、金样本和全仓验证再次通过。                                                                        |
 | Package QA 仅列出媒体清单且只间接证明文本，缺少悬空关系、原生图形和整页位图的直接断言   |        1 | 增加 OPC 内部目标解析、缺失/越界关系、孤立媒体、逐页计划文本计数、原生图形计数和整页图片回退门禁；新增破损媒体关系回归测试，10/10 金样本重新通过。                                                               |
+| Quick renderer 的 ArtifactManifest 未同步阶段 F 新增四个必填披露字段                   |        1 | 生产者写入真实 `deterministic-template`、limited disclosure、engineering fallback reason 和安全强制文件名；6/6 定向单测、20 条 golden 链与 40/40 Schema 工件通过。                                               |
 | G02 ORM 未声明 snapshot/job relationship，flush 时先插入依赖 job                        |        1 | 在同一事务内先显式 flush immutable snapshot，再插入带 organization 复合外键的 job；最小烟测与完整矩阵通过。                                                                                                      |
 | Redis Pub/Sub 测试在 `SUBSCRIBE` 确认帧消费前发布，偶发收不到 fanout                    |        1 | 测试先消费订阅确认再触发 outbox；10/10 fanout 通过，生产分发代码无错误。                                                                                                                                         |
 | Windows Celery solo 强杀后 Kombu 未按 3 秒配置自动恢复未确认消息                        |        3 | 保留 late ack/受限预取并对齐 visibility 配置；最终以 PostgreSQL lease 为真相，由 outbox 对账过期 lease 并按 lease token 去重重投，真实进程强杀 10/10 通过。                                                      |
@@ -226,6 +228,7 @@
 | G07 数据下载使用跨域签名 URL时浏览器导航离开编辑器                                      |        2 | 第 1 次定位原生 anchor 对跨域 `download` 不可靠；第 2 次改为授权 fetch→Blob→DOM 临时链接，PPTX/JSON 命名文件实际落盘且编辑器路由保持。                                                                           |
 | 应用内浏览器 download event 未捕获程序化 Blob 下载                                      |        2 | 两次等待均超时但页面成功消息、操作系统 Downloads 中两个 8,119-byte JSON 和 25,787-byte PPTX 均证明下载完成；记录为自动化 harness 限制，不重复修改正确产品路径。                                                  |
 | G07 export package QA 因封面多条正文没有沿用生成合并规则而失败                          |        1 | 导出 DeckPlan 对封面正文使用与 G06 一致的合并规则；真实引擎 export、manifest 与 package QA 回归通过。                                                                                                            |
+| G07 部分失败 fixture 在获得真实 fallback 身份后继续用旧的无文件名导出请求               |        1 | 保留产品对 fallback 强制披露文件名的 422 fail-closed；测试改为读取 immutable revision 的 `suggestedFilename` 并断言 `deterministic-template`，G07 5/5 通过。                                                       |
 | G07 单页重生成使用原生 prompt，在应用内浏览器被自动取消                                 |        1 | 替换为可访问的内联“AI 单页修改要求”输入框；生产浏览器真实重生成成功且 stable slideId 保持。                                                                                                                      |
 | Docker BuildKit 在中文工作区再次无法编码 session header                                 |        1 | 使用同一 Docker daemon 的 legacy builder 顺序构建 G07 API/Worker/outbox，三运行时启动和真实浏览器 E2E 通过；G08 将此纳入发布构建说明。                                                                           |
 | G06 生产 Worker 消费到数据库清理前遗留 broker 消息并记录异常                            |        1 | 真实任务包装器将不存在的旧 job 收敛为幂等 `noop_missing`；有效任务仍保持严格租约与重试。                                                                                                                         |
