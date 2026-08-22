@@ -120,6 +120,39 @@ def _safe_environment() -> dict[str, str]:
     return environment
 
 
+def _blocking_report_message(command: list[str]) -> str | None:
+    """Return the first structured blocking finding emitted by a gate command."""
+
+    try:
+        report_index = command.index("--json-output") + 1
+        report_path = Path(command[report_index])
+    except (ValueError, IndexError):
+        return None
+    if not report_path.is_file():
+        return None
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    blocking = report.get("categories", {}).get("blocking", {}).get("issues", [])
+    if isinstance(blocking, list):
+        for issue in blocking:
+            if isinstance(issue, dict) and str(issue.get("message") or "").strip():
+                return str(issue["message"]).strip()[:1500]
+    files = report.get("files", [])
+    if isinstance(files, list):
+        for file_result in files:
+            if not isinstance(file_result, dict):
+                continue
+            errors = file_result.get("errors", [])
+            if isinstance(errors, list) and errors:
+                message = str(errors[0]).strip()
+                if message:
+                    return message[:1500]
+    return None
+
+
 def _run(
     command: list[str],
     *,
@@ -145,6 +178,9 @@ def _run(
         raise AdapterError(error_code, f"workflow command timed out: {command[1]}") from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "workflow command failed").strip()
+        blocking_message = _blocking_report_message(command)
+        if blocking_message and blocking_message not in detail[-2500:]:
+            detail = f"{detail[-2500:]}\n[BLOCKING] {blocking_message}"
         raise AdapterError(error_code, detail[-4000:])
     return result
 
@@ -312,6 +348,47 @@ _CHART_VALUE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_CJK_CHART_VALUE_PATTERN = re.compile(
+    r"(?:^|[，,；;\s])(?:而|其中)?"
+    r"(?P<label>[\u3400-\u9fff][\u3400-\u9fffA-Za-z0-9._-]{0,24}?)\s*"
+    r"(?:达到|达|为|[:：=])\s*"
+    r"(?P<value>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>req/s|tokens?/s|ms|%|倍|亿元|万元|分)",
+    re.IGNORECASE,
+)
+
+_MARKDOWN_TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
+_MARKDOWN_TABLE_VALUE = re.compile(
+    r"^(?P<value>[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*"
+    r"(?P<unit>req/s|tokens?/s|ms|%|倍|亿元|万元|分|elo)?$",
+    re.IGNORECASE,
+)
+
+
+def _normalized_chart_unit(value: str | None, *, unitless: str = "分") -> str:
+    if not value:
+        return unitless
+    normalized = value.casefold()
+    if normalized == "elo":
+        return "Elo"
+    return normalized
+
+
+def _chart_matches(context: str) -> list[tuple[int, str, float, str]]:
+    values: list[tuple[int, str, float, str]] = []
+    for pattern in (_CHART_VALUE_PATTERN, _CJK_CHART_VALUE_PATTERN):
+        for match in pattern.finditer(context):
+            label = " ".join(match.group("label").split())
+            values.append(
+                (
+                    match.start(),
+                    label,
+                    float(match.group("value")),
+                    _normalized_chart_unit(match.group("unit")),
+                )
+            )
+    return sorted(values, key=lambda item: item[0])
+
 
 def _chart_context_candidate(
     context: str,
@@ -319,12 +396,10 @@ def _chart_context_candidate(
     conflict_is_error: bool = True,
 ) -> tuple[list[tuple[str, float]], str] | None:
     by_unit: dict[str, list[tuple[str, float]]] = {}
-    for match in _CHART_VALUE_PATTERN.finditer(context):
-        label = " ".join(match.group("label").split())
+    for _, label, value, unit in _chart_matches(context):
         if label.casefold() in {"sha256", "page", "fragment"}:
             continue
-        unit = match.group("unit").lower()
-        by_unit.setdefault(unit, []).append((label, float(match.group("value"))))
+        by_unit.setdefault(unit, []).append((label, value))
 
     candidates: list[tuple[list[tuple[str, float]], str]] = []
     for unit, raw_pairs in by_unit.items():
@@ -361,13 +436,129 @@ def _chart_context_label(context: str) -> str:
     return normalized[:80] if separator and normalized else ""
 
 
+def _markdown_table_cells(line: str) -> list[str] | None:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+    return [
+        " ".join(cell.replace(r"\|", "|").split()).strip("*_` ")
+        for cell in re.split(r"(?<!\\)\|", stripped[1:-1])
+    ]
+
+
+def _markdown_table_context(value: str) -> str:
+    normalized = " ".join(value.replace(r"\-", "-").split()).strip("*_` ")
+    for separator in (" / ", "／"):
+        if separator in normalized:
+            normalized = normalized.rsplit(separator, 1)[-1].strip()
+    return normalized[:80]
+
+
+def _markdown_table_row_candidate(
+    headers: list[str],
+    row: list[str],
+) -> tuple[list[tuple[str, float]], str] | None:
+    by_unit: dict[str, list[tuple[str, float]]] = {}
+    for label, cell in zip(headers[1:], row[1:], strict=False):
+        match = _MARKDOWN_TABLE_VALUE.fullmatch(cell.replace(r"\-", "-").strip())
+        if match is None:
+            continue
+        normalized_label = " ".join(label.replace(r"\-", "-").split()).strip("*_` ")
+        if not normalized_label:
+            continue
+        unit = _normalized_chart_unit(match.group("unit"))
+        value = float(match.group("value").replace(",", ""))
+        by_unit.setdefault(unit, []).append((normalized_label, value))
+
+    candidates: list[tuple[list[tuple[str, float]], str]] = []
+    for unit, raw_pairs in by_unit.items():
+        pairs: list[tuple[str, float]] = []
+        seen: dict[str, float] = {}
+        for label, value in raw_pairs:
+            key = label.casefold()
+            if key in seen and not math.isclose(
+                seen[key], value, rel_tol=1e-9, abs_tol=1e-9
+            ):
+                raise AdapterError(
+                    CONTENT_QA_FAILED,
+                    (
+                        f"approved table conflicts for chart label {label} "
+                        f"inside one row: {seen[key]:g} vs {value:g}"
+                    ),
+                )
+            if key not in seen:
+                seen[key] = value
+                pairs.append((label, value))
+        if len(pairs) >= 2:
+            candidates.append((pairs, unit))
+    return max(candidates, key=lambda item: len(item[0]), default=None)
+
+
+def _markdown_table_series(text: str) -> list[dict[str, Any]]:
+    lines = text.splitlines()
+    candidates: list[dict[str, Any]] = []
+    index = 0
+    while index + 2 < len(lines):
+        headers = _markdown_table_cells(lines[index])
+        separators = _markdown_table_cells(lines[index + 1])
+        if (
+            headers is None
+            or separators is None
+            or len(headers) < 3
+            or len(headers) != len(separators)
+            or not all(_MARKDOWN_TABLE_SEPARATOR.fullmatch(cell) for cell in separators)
+        ):
+            index += 1
+            continue
+        row_index = index + 2
+        while row_index < len(lines):
+            row = _markdown_table_cells(lines[row_index])
+            if row is None:
+                break
+            candidate = _markdown_table_row_candidate(headers, row)
+            context = _markdown_table_context(row[0]) if row else ""
+            if candidate is not None and context:
+                pairs, unit = candidate
+                candidates.append({"context": context, "values": pairs[:6], "unit": unit})
+            row_index += 1
+        index = max(row_index, index + 1)
+    return candidates
+
+
+def _append_chart_candidate(
+    candidates: list[dict[str, Any]],
+    seen: set[tuple[str, tuple[tuple[str, float], ...]]],
+    *,
+    context: str,
+    pairs: list[tuple[str, float]],
+    unit: str,
+) -> None:
+    key = (
+        unit,
+        tuple((label.casefold(), value) for label, value in pairs[:6]),
+    )
+    if key in seen:
+        return
+    seen.add(key)
+    candidates.append({"context": context, "values": pairs[:6], "unit": unit})
+
+
 def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return distinct coherent sourced series without merging benchmark contexts."""
 
     candidates: list[dict[str, Any]] = []
     seen: set[tuple[str, tuple[tuple[str, float], ...]]] = set()
     for fragment in fragments:
-        for raw_line in str(fragment["text"]).splitlines():
+        fragment_text = str(fragment["text"])
+        for table_candidate in _markdown_table_series(fragment_text):
+            _append_chart_candidate(
+                candidates,
+                seen,
+                context=str(table_candidate["context"]),
+                pairs=list(table_candidate["values"]),
+                unit=str(table_candidate["unit"]),
+            )
+        for raw_line in fragment_text.splitlines():
             line = raw_line.strip().lstrip("-*+ ")
             if not line:
                 continue
@@ -377,36 +568,24 @@ def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 candidate = _chart_context_candidate(context)
                 if candidate is not None:
                     pairs, unit = candidate
-                    key = (
-                        unit,
-                        tuple((label.casefold(), value) for label, value in pairs[:6]),
+                    _append_chart_candidate(
+                        candidates,
+                        seen,
+                        context=_chart_context_label(context),
+                        pairs=pairs,
+                        unit=unit,
                     )
-                    if key not in seen:
-                        seen.add(key)
-                        candidates.append(
-                            {
-                                "context": _chart_context_label(context),
-                                "values": pairs[:6],
-                                "unit": unit,
-                            }
-                        )
             if len(clauses) > 1:
                 combined = _chart_context_candidate(line, conflict_is_error=False)
                 if combined is not None:
                     pairs, unit = combined
-                    key = (
-                        unit,
-                        tuple((label.casefold(), value) for label, value in pairs[:6]),
+                    _append_chart_candidate(
+                        candidates,
+                        seen,
+                        context=_chart_context_label(line),
+                        pairs=pairs,
+                        unit=unit,
                     )
-                    if key not in seen:
-                        seen.add(key)
-                        candidates.append(
-                            {
-                                "context": _chart_context_label(line),
-                                "values": pairs[:6],
-                                "unit": unit,
-                            }
-                        )
     return sorted(candidates, key=lambda item: -len(item["values"]))
 
 

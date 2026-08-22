@@ -1,4 +1,5 @@
 import json
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
@@ -28,7 +29,7 @@ def test_default_lifecycle_tasks_use_v2_names_and_agentic_route() -> None:
     assert PROCESS_SLIDE_REGENERATION_TASK == "instant_ppt.v2.process_slide_regeneration"
 
 
-def test_long_cjk_cover_copy_is_fitted_before_upstream_qa(tmp_path: Path) -> None:
+def test_long_cjk_cover_copy_is_wrapped_before_upstream_qa(tmp_path: Path) -> None:
     deck = DeckPlan.model_validate(
         {
             "schemaVersion": 1,
@@ -51,7 +52,9 @@ def test_long_cjk_cover_copy_is_fitted_before_upstream_qa(tmp_path: Path) -> Non
                     "role": "cover",
                     "title": "G06 生产构建端到端恢复与不可变发布验证",
                     "body": [
-                        "围绕生产构建端到端恢复与不可变发布验证给出清晰而可执行的核心论点"
+                        "主题：GPT5.6 官方公告解读；沟通目标：帮助关注AI大模型动态的技术从业者、"
+                        "产品经理与科技爱好者形成“梳理GPT5.6官方公告的核心要点，介绍新模型能力、"
+                        "关键改进与潜在影响”的初步判断"
                     ],
                     "editable": True,
                 }
@@ -62,6 +65,9 @@ def test_long_cjk_cover_copy_is_fitted_before_upstream_qa(tmp_path: Path) -> Non
     report = json.loads(result["qa"].read_text(encoding="utf-8"))
     assert report["summary"]["errors"] == 0
     assert report["summary"]["passed"] == 1
+    svg = result["svg"].read_text(encoding="utf-8")
+    assert svg.count("<tspan") >= 2
+    assert "关键改进与潜在影响”的初步判断" in svg
 
     deck_plan_path = tmp_path / "deck-plan.json"
     deck_plan_path.write_text(deck.model_dump_json(by_alias=True), encoding="utf-8")
@@ -115,6 +121,53 @@ def test_single_long_timeline_fact_is_centered_inside_safe_bounds(tmp_path: Path
 
     assert report["summary"]["errors"] == 0
     assert report["summary"]["passed"] == 1
+
+
+def test_long_cjk_content_copy_is_wrapped_before_upstream_qa(tmp_path: Path) -> None:
+    long_recommendation = (
+        "建议：由关注AI大模型动态的技术从业者、产品经理与科技爱好者先对齐“梳理"
+        "GPT5.6官方公告的核心要点，介绍新模型能力、关键改进与潜在影响”"
+    )
+    deck = DeckPlan.model_validate(
+        {
+            "schemaVersion": 1,
+            "snapshotId": "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "title": "GPT5.6 官方公告解读",
+            "modeId": "native",
+            "templateBinding": {
+                "schemaVersion": 1,
+                "templateId": "01ARZ3NDEKTSV4RRFFQ69G5FAA",
+                "templateVersionId": "01ARZ3NDEKTSV4RRFFQ69G5FAB",
+                "compatibilityVersion": "ppt-master@v4.7.0",
+                "roleBindings": {"content": "free-design-content"},
+            },
+            "slides": [
+                {
+                    "schemaVersion": 1,
+                    "slideId": "01ARZ3NDEKTSV4RRFFQ69G5FAC",
+                    "outlineSlideId": "01ARZ3NDEKTSV4RRFFQ69G5FAD",
+                    "order": 0,
+                    "role": "content",
+                    "title": "公告概览与解读框架",
+                    "body": [
+                        "判断：本页需服务于GPT5.6官方公告解读的可执行选择",
+                        long_recommendation,
+                    ],
+                    "editable": True,
+                }
+            ],
+        }
+    )
+
+    result = render_slide_candidate(deck, tmp_path, visual_index=0)
+    report = json.loads(result["qa"].read_text(encoding="utf-8"))
+    svg = result["svg"].read_text(encoding="utf-8")
+    visible_text = "".join(ET.fromstring(svg).itertext())
+
+    assert report["summary"]["errors"] == 0
+    assert report["summary"]["passed"] == 1
+    assert svg.count("<tspan") >= 2
+    assert long_recommendation in visible_text
 
 
 def test_generated_cover_image_is_embedded_as_referenced_pptx_media(tmp_path: Path) -> None:

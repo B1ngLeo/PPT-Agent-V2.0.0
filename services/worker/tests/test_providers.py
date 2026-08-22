@@ -31,6 +31,8 @@ def test_provider_settings_use_expected_defaults_without_exposing_keys(
     assert kimi.base_url == "https://api.moonshot.cn/v1"
     assert kimi.protocol == "openai"
     assert kimi.reasoning_effort == "max"
+    assert kimi.transport_max_retries == 1
+    assert kimi.retry_backoff_seconds == 2
     assert image.backend == "openai"
     assert image.model == "gpt-image-2"
     assert image.enabled is False
@@ -146,6 +148,43 @@ def test_kimi_provider_sends_supported_k3_request() -> None:
     assert completion.completion_tokens == 7
 
 
+def test_kimi_provider_retries_remote_disconnect_once() -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.RemoteProtocolError(
+                "server disconnected without sending a response",
+                request=request,
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": "kimi-k3",
+                "choices": [{"message": {"content": '{"ok":true}'}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 4},
+            },
+        )
+
+    provider = KimiProvider(
+        KimiProviderSettings(
+            api_key="test-moonshot-key",
+            transport_max_retries=1,
+            retry_backoff_seconds=0,
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+    try:
+        completion = provider.complete([{"role": "user", "content": "hello"}])
+    finally:
+        provider.close()
+
+    assert attempts == 2
+    assert completion.content == '{"ok":true}'
+
+
 def test_openai_image_provider_decodes_gpt_image_2_response() -> None:
     image_bytes = b"\x89PNG\r\n\x1a\nfixture"
     observed: dict[str, object] = {}
@@ -247,8 +286,11 @@ def test_missing_keys_are_rejected_without_including_secret_values() -> None:
 
 def test_provider_http_error_is_sanitized() -> None:
     secret_body = "upstream detail that must not escape"
+    attempts = 0
 
     def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
         return httpx.Response(
             429,
             headers={"x-request-id": "req_safe"},
@@ -268,6 +310,8 @@ def test_provider_http_error_is_sanitized() -> None:
     assert "status=429" in str(captured.value)
     assert "request_id=req_safe" in str(captured.value)
     assert secret_body not in str(captured.value)
+    assert captured.value.failure_kind == "HTTPStatusError"
+    assert attempts == 1
 
 
 def test_structured_gateway_repairs_once_and_is_repeatable() -> None:

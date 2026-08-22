@@ -28,7 +28,9 @@ class KimiProviderSettings:
     model: str = "kimi-k3"
     protocol: str = "openai"
     reasoning_effort: str = "max"
-    timeout_seconds: float = 120.0
+    timeout_seconds: float = 240.0
+    transport_max_retries: int = 1
+    retry_backoff_seconds: float = 2.0
 
     @classmethod
     def from_env(cls) -> KimiProviderSettings:
@@ -38,7 +40,11 @@ class KimiProviderSettings:
             model=os.getenv("KIMI_MODEL", "kimi-k3").strip(),
             protocol=os.getenv("KIMI_PROTOCOL", "openai").strip().lower(),
             reasoning_effort=os.getenv("KIMI_REASONING_EFFORT", "max").strip(),
-            timeout_seconds=float(os.getenv("KIMI_TIMEOUT_SECONDS", "120")),
+            timeout_seconds=float(os.getenv("KIMI_TIMEOUT_SECONDS", "240")),
+            transport_max_retries=int(os.getenv("KIMI_TRANSPORT_MAX_RETRIES", "1")),
+            retry_backoff_seconds=float(
+                os.getenv("KIMI_RETRY_BACKOFF_SECONDS", "2")
+            ),
         )
 
     @property

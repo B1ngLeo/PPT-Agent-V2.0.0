@@ -32,7 +32,7 @@ class PlanningGatewaySettings:
     backend: str = "fake"
     gateway_url: str = "http://provider-gateway:8090/internal/v1"
     gateway_token: str = field(default="", repr=False)
-    timeout_seconds: float = 150.0
+    timeout_seconds: float = 300.0
 
     @classmethod
     def from_env(cls) -> PlanningGatewaySettings:
@@ -42,7 +42,7 @@ class PlanningGatewaySettings:
                 "PROVIDER_GATEWAY_URL", "http://provider-gateway:8090/internal/v1"
             ).strip(),
             gateway_token=os.getenv("PROVIDER_GATEWAY_TOKEN", "").strip(),
-            timeout_seconds=float(os.getenv("PROVIDER_GATEWAY_TIMEOUT_SECONDS", "150")),
+            timeout_seconds=float(os.getenv("PROVIDER_GATEWAY_TIMEOUT_SECONDS", "300")),
         )
 
 

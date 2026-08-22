@@ -11,6 +11,7 @@ import stat
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
 from defusedxml import ElementTree
@@ -27,6 +28,10 @@ MAX_ZIP_ENTRIES = 2_000
 MAX_ZIP_EXPANDED_BYTES = 80 * 1024 * 1024
 MAX_ZIP_RATIO = 100.0
 MAX_ZIP_DEPTH = 8
+MAX_PASSIVE_HYPERLINK_LENGTH = 2_048
+
+PASSIVE_HTML_LINK_TAGS = {"a", "area"}
+PASSIVE_WEB_SCHEMES = {"http", "https"}
 
 OFFICE_TYPES = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -51,6 +56,52 @@ def _finding(code: str, message: str) -> SecurityFinding:
     return SecurityFinding(code=code, message=message)
 
 
+def _split_url(value: str):
+    try:
+        return urlsplit(value.strip())
+    except ValueError:
+        return None
+
+
+def _is_external_reference(value: str) -> bool:
+    stripped = value.strip()
+    if stripped.startswith("//"):
+        return True
+    parsed = _split_url(stripped)
+    return parsed is None or bool(parsed.scheme)
+
+
+def _is_safe_passive_web_hyperlink(value: str) -> bool:
+    """Allow a clickable web citation without allowing the parser to fetch it."""
+
+    stripped = value.strip()
+    if not stripped or len(stripped) > MAX_PASSIVE_HYPERLINK_LENGTH:
+        return False
+    if any(ord(character) < 0x20 for character in stripped):
+        return False
+    parsed = _split_url(stripped)
+    if parsed is None or parsed.scheme.lower() not in PASSIVE_WEB_SCHEMES:
+        return False
+    if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+        return False
+    return True
+
+
+def _relationship_kind(relationship_type: str) -> str:
+    return relationship_type.rstrip("/").rsplit("/", 1)[-1].lower()
+
+
+def _office_external_relationship_message(
+    package_part: str,
+    relationship_type: str,
+    target: str,
+) -> str:
+    kind = _relationship_kind(relationship_type) or "unknown"
+    parsed = _split_url(target)
+    scheme = parsed.scheme.lower() if parsed is not None and parsed.scheme else "external"
+    return f"{package_part}: external {kind} relationship ({scheme})"
+
+
 def _inspect_html(path: Path) -> list[SecurityFinding]:
     findings: list[SecurityFinding] = []
     try:
@@ -63,13 +114,21 @@ def _inspect_html(path: Path) -> list[SecurityFinding]:
     for tag in soup.find_all(True):
         for attribute in ("href", "src", "action", "poster"):
             value = tag.get(attribute)
-            if isinstance(value, str) and re.match(r"(?i)^(https?:)?//", value.strip()):
-                findings.append(
-                    _finding(
-                        "SOURCE_HTML_EXTERNAL_REFERENCE", f"HTML contains external {attribute}"
-                    )
+            if not isinstance(value, str) or not _is_external_reference(value):
+                continue
+            if (
+                attribute == "href"
+                and tag.name in PASSIVE_HTML_LINK_TAGS
+                and _is_safe_passive_web_hyperlink(value)
+            ):
+                continue
+            findings.append(
+                _finding(
+                    "SOURCE_HTML_EXTERNAL_REFERENCE",
+                    f"HTML contains external {tag.name}[{attribute}]",
                 )
-                return findings
+            )
+            return findings
     if re.search(r"(?i)url\s*\(\s*['\"]?\s*(?:https?:)?//", text):
         findings.append(_finding("SOURCE_HTML_EXTERNAL_REFERENCE", "CSS contains an external URL"))
     return findings
@@ -116,12 +175,28 @@ def _inspect_office_zip(path: Path, suffix: str) -> list[SecurityFinding]:
                     for relationship in root.iter():
                         target_mode = relationship.attrib.get("TargetMode", "")
                         target = relationship.attrib.get("Target", "")
-                        if target_mode.lower() == "external" or re.match(
-                            r"(?i)^(?:https?|file|ftp):", target
+                        relationship_type = relationship.attrib.get("Type", "")
+                        is_external = (
+                            target_mode.lower() == "external"
+                            or _is_external_reference(target)
+                        )
+                        if not is_external:
+                            continue
+                        if (
+                            _relationship_kind(relationship_type) == "hyperlink"
+                            and _is_safe_passive_web_hyperlink(target)
                         ):
-                            findings.append(
-                                _finding("SOURCE_OFFICE_EXTERNAL_RELATIONSHIP", normalized)
+                            continue
+                        findings.append(
+                            _finding(
+                                "SOURCE_OFFICE_EXTERNAL_RELATIONSHIP",
+                                _office_external_relationship_message(
+                                    normalized,
+                                    relationship_type,
+                                    target,
+                                ),
                             )
+                        )
             if expanded > MAX_ZIP_EXPANDED_BYTES:
                 findings.append(_finding("SOURCE_ZIP_SIZE_LIMIT", "expanded archive exceeds limit"))
             names = {entry.filename for entry in entries}

@@ -65,7 +65,17 @@ def _wrap_lines(value: str, max_units: int, *, max_lines: int = 3) -> list[str]:
             hard_cut = position
             if character.isspace() or character in "，,；;。！？!?":
                 preferred_cut = position
-        cut = preferred_cut if preferred_cut >= max(1, hard_cut // 2) else hard_cut
+        remaining_lines = max_lines - len(lines) - 1
+        preferred_remainder_fits = (
+            preferred_cut > 0
+            and _display_units(remaining[preferred_cut:].lstrip())
+            <= remaining_lines * max_units
+        )
+        cut = (
+            preferred_cut
+            if preferred_cut >= max(1, hard_cut // 2) and preferred_remainder_fits
+            else hard_cut
+        )
         if (
             cut == hard_cut
             and 0 < cut < len(remaining)
@@ -73,7 +83,7 @@ def _wrap_lines(value: str, max_units: int, *, max_lines: int = 3) -> list[str]:
             and remaining[cut - 1].isalnum()
             and remaining[cut].isascii()
             and remaining[cut].isalnum()
-            and preferred_cut
+            and preferred_remainder_fits
         ):
             cut = preferred_cut
         if cut <= 0:
@@ -215,6 +225,20 @@ def author_slide(
         ),
     ]
     if slide.role == "cover":
+        cover_width = 440 if has_image_slot else 920
+        cover_max_lines = 5 if has_image_slot else 3
+        cover_font_size = max(
+            18,
+            min(
+                28,
+                (cover_width * 18 * cover_max_lines)
+                // (max(_display_units(body[0]), 1) * 10),
+            ),
+        )
+        # The upstream SVG checker uses conservative glyph bounds that are
+        # slightly wider than the display-unit estimate. Keep a 10% safety
+        # margin so wrapped lines stay inside both the panel and content group.
+        cover_line_units = max(20, (cover_width * 18) // (cover_font_size * 10))
         lines.extend(
             [
                 _element(
@@ -286,21 +310,19 @@ def author_slide(
                     if image_placeholder and not image_href
                     else []
                 ),
-                _element(
-                    "text",
+                _multiline_element(
                     f"cover-message-{index}",
                     {
                         "x": 160,
-                        "y": 344,
+                        "y": 304,
                         "font-family": "Arial, Microsoft YaHei, sans-serif",
-                        "font-size": _font_size_for_line(
-                            body[0],
-                            preferred=32,
-                            available_width=440 if has_image_slot else 920,
-                        ),
+                        "font-size": cover_font_size,
                         "fill": accent,
                     },
-                    _text(body[0]),
+                    body[0],
+                    max_units=cover_line_units,
+                    line_height=cover_font_size + 8,
+                    max_lines=cover_max_lines,
                 ),
             ]
         )
@@ -617,6 +639,9 @@ def author_slide(
             )
     else:
         panel_width = 500 if len(body) > 3 else 1056
+        body_columns = 2 if len(body) > 3 else 1
+        body_text_width = 400 if body_columns == 2 else 900
+        body_max_lines = 4 if body_columns == 2 else 3
         lines.append(
             _element(
                 "rect",
@@ -636,7 +661,19 @@ def author_slide(
             column = body_index // 3
             row = body_index % 3
             x = 152 + column * 528
-            y = 286 + row * 92
+            y = 260 + row * 120
+            body_font_size = max(
+                16,
+                min(
+                    22,
+                    (body_text_width * 18 * body_max_lines)
+                    // (max(_display_units(item), 1) * 10),
+                ),
+            )
+            body_line_units = max(
+                24,
+                (body_text_width * 18) // (body_font_size * 10),
+            )
             lines.append(
                 _element(
                     "circle",
@@ -645,21 +682,19 @@ def author_slide(
                 )
             )
             lines.append(
-                _element(
-                    "text",
+                _multiline_element(
                     f"body-{index}-{body_index}",
                     {
                         "x": x + 26,
                         "y": y,
                         "font-family": "Arial, Microsoft YaHei, sans-serif",
-                        "font-size": _font_size_for_line(
-                            item,
-                            preferred=22,
-                            available_width=850 if panel_width == 1056 else 390,
-                        ),
+                        "font-size": body_font_size,
                         "fill": "#1E293B",
                     },
-                    _text(item),
+                    item,
+                    max_units=body_line_units,
+                    line_height=body_font_size + 6,
+                    max_lines=body_max_lines,
                 )
             )
     lines.extend(

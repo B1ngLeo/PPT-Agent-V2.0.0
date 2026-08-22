@@ -57,6 +57,20 @@ def test_release_guard_blocks_issue_002_failure_modes(body: list[str], code: str
     assert code in {finding["code"] for finding in report["findings"]}
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        ["每个 token 带来更多智能，并为最艰巨的工作按需提供更强能力。"],
+        ["该流程无需提供额外凭据。"],
+        ["如需确认细节，请查阅已批准的来源。"],
+    ],
+)
+def test_release_guard_allows_non_placeholder_modal_phrases(body: list[str]) -> None:
+    report = evaluate_deck(_deck(body), stage="test")
+
+    assert report["passed"] is True
+
+
 def test_hash_bound_risk_receipt_prevents_dictionary_false_positive() -> None:
     deck = _deck(["风险边界：价格仍待核实，不应进入预算承诺", "行动：法务完成供应商报价复核"])
     text = deck.slides[0].body[0]

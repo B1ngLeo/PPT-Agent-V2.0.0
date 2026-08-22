@@ -812,9 +812,10 @@ export function WorkspaceApp() {
         current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
       }
       if (!current.currentOutline) {
-        setBusyMessage("正在生成可编辑大纲…");
+        setBusyMessage("正在生成可编辑大纲（通常需 2–4 分钟，请勿重复点击）…");
         await api<OutlineRevision>(`/v1/drafts/${draftId}/outline:generate`, {
           method: "POST",
+          signal: AbortSignal.timeout(620_000),
           headers: {
             "Content-Type": "application/json",
             "Idempotency-Key": planningIdempotencyKey(
@@ -836,9 +837,13 @@ export function WorkspaceApp() {
         setError(
           current.currentOutline
             ? "规划响应曾中断，但已从服务端恢复完整大纲。"
-            : current.currentIntent
-              ? "创作意图已保存。连接中断，请点击继续生成大纲。"
-              : "规划连接中断，尚未确认服务端结果，请稍后重新核对。",
+            : reason instanceof ApiError && reason.code === "provider_unavailable"
+              ? "AI 大纲生成超时，创作意图已保存。可直接点击继续生成大纲，无需重新上传。"
+              : reason instanceof DOMException && reason.name === "TimeoutError"
+                ? "大纲生成等待超时，已恢复操作按钮。请稍后继续，无需重新上传。"
+                : current.currentIntent
+                  ? "创作意图已保存。连接中断，请点击继续生成大纲。"
+                  : "规划连接中断，尚未确认服务端结果，请稍后重新核对。",
         );
       } catch {
         setError(

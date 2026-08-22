@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -28,6 +29,19 @@ from instant_ppt_worker.paths import ENGINE_SCRIPTS
 from instant_ppt_worker.settings import WorkerContract
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.svg_author import author_chart_slide, author_deck, author_slide
+
+
+def _svg_visible_text(svg_paths: list[Path]) -> str:
+    values: list[str] = []
+    for path in svg_paths:
+        root = ET.fromstring(path.read_text(encoding="utf-8"))
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] != "text":
+                continue
+            value = "".join(element.itertext()).strip()
+            if value:
+                values.append(value)
+    return "\n".join(values)
 
 
 def _normalize_office_zip(payload: bytes, *, normalize_slides: bool) -> bytes:
@@ -183,7 +197,7 @@ def render_deck(
         deck,
         stage="final-svg",
         subject_sha256=final_svg_digest.hexdigest(),
-        represented_text="\n".join(path.read_text(encoding="utf-8") for path in svg_paths),
+        represented_text=_svg_visible_text(svg_paths),
     )
     final_content_path = validation_dir / "content-final-svg.json"
     final_content_path.write_bytes(
@@ -444,7 +458,7 @@ def render_revision_deck(
         evidence_map=evidence_map,
         source_fragments=source_fragments,
         source_manifest_sha256=source_manifest_sha256,
-        represented_text="\n".join(path.read_text(encoding="utf-8") for path in svg_paths),
+        represented_text=_svg_visible_text(svg_paths),
     )
     final_content_path = validation_dir / "content-final-svg.json"
     final_content_path.write_bytes(

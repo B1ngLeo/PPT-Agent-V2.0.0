@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +19,7 @@ from instant_ppt_worker.providers import (
 )
 
 _MAX_REQUEST_BYTES = 256 * 1024
+logger = logging.getLogger(__name__)
 
 
 def _result(value: Any) -> dict[str, Any]:
@@ -104,8 +106,21 @@ class ProviderGatewayHandler(BaseHTTPRequestHandler):
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             self._write(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "invalid_request"})
         except ProviderConfigurationError:
+            logger.error(
+                "provider_gateway_not_configured path=%s",
+                self.path,
+            )
             self._write(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "provider_not_configured"})
-        except ProviderRequestError:
+        except ProviderRequestError as error:
+            logger.warning(
+                "provider_gateway_request_failed path=%s provider=%s status=%s "
+                "request_id=%s failure_kind=%s",
+                self.path,
+                error.provider,
+                error.status_code,
+                error.request_id,
+                error.failure_kind,
+            )
             self._write(HTTPStatus.BAD_GATEWAY, {"error": "provider_request_failed"})
 
     def log_message(self, format: str, *args: object) -> None:

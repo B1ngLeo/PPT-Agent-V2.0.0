@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
@@ -12,6 +14,16 @@ from typing import Any, Protocol, TypeVar
 import httpx
 
 from instant_ppt_worker.settings import KimiProviderSettings, OpenAIImageSettings
+
+logger = logging.getLogger(__name__)
+
+_RETRYABLE_KIMI_TRANSPORT_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadError,
+    httpx.ReadTimeout,
+    httpx.RemoteProtocolError,
+)
 
 
 class ProviderConfigurationError(RuntimeError):
@@ -21,10 +33,17 @@ class ProviderConfigurationError(RuntimeError):
 class ProviderRequestError(RuntimeError):
     """A sanitized provider failure safe to propagate to orchestration code."""
 
-    def __init__(self, provider: str, status_code: int | None, request_id: str | None) -> None:
+    def __init__(
+        self,
+        provider: str,
+        status_code: int | None,
+        request_id: str | None,
+        failure_kind: str | None = None,
+    ) -> None:
         self.provider = provider
         self.status_code = status_code
         self.request_id = request_id
+        self.failure_kind = failure_kind
         status = str(status_code) if status_code is not None else "transport_error"
         request = f" request_id={request_id}" if request_id else ""
         super().__init__(f"{provider} request failed: status={status}{request}")
@@ -95,6 +114,12 @@ class KimiProvider:
             raise ProviderConfigurationError("KIMI_PROTOCOL must be openai or anthropic")
         if settings.reasoning_effort not in {"low", "high", "max"}:
             raise ProviderConfigurationError("KIMI_REASONING_EFFORT must be low, high, or max")
+        if not 0 <= settings.transport_max_retries <= 2:
+            raise ProviderConfigurationError("KIMI_TRANSPORT_MAX_RETRIES must be between 0 and 2")
+        if not 0 <= settings.retry_backoff_seconds <= 30:
+            raise ProviderConfigurationError(
+                "KIMI_RETRY_BACKOFF_SECONDS must be between 0 and 30"
+            )
         self._settings = settings
         headers = {
             "Authorization": f"Bearer {settings.api_key}",
@@ -118,47 +143,73 @@ class KimiProvider:
         response_format: dict[str, Any] | None = None,
         max_completion_tokens: int | None = None,
     ) -> TextCompletion:
-        try:
-            if self._settings.protocol == "anthropic":
-                response = self._complete_anthropic(messages, max_completion_tokens)
-            else:
-                response = self._complete_openai(
-                    messages, response_format, max_completion_tokens
+        for attempt in range(self._settings.transport_max_retries + 1):
+            try:
+                if self._settings.protocol == "anthropic":
+                    response = self._complete_anthropic(messages, max_completion_tokens)
+                else:
+                    response = self._complete_openai(
+                        messages, response_format, max_completion_tokens
+                    )
+                response.raise_for_status()
+                body = response.json()
+                if self._settings.protocol == "anthropic":
+                    content = "".join(
+                        str(block.get("text") or "")
+                        for block in body["content"]
+                        if isinstance(block, dict) and block.get("type") == "text"
+                    )
+                    usage = body.get("usage") or {}
+                    prompt_tokens = int(usage.get("input_tokens") or 0)
+                    completion_tokens = int(usage.get("output_tokens") or 0)
+                else:
+                    message = body["choices"][0]["message"]
+                    content = message.get("content") or ""
+                    usage = body.get("usage") or {}
+                    prompt_tokens = int(usage.get("prompt_tokens") or 0)
+                    completion_tokens = int(usage.get("completion_tokens") or 0)
+                return TextCompletion(
+                    content=content,
+                    model=body.get("model") or self._settings.model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
                 )
-            response.raise_for_status()
-            body = response.json()
-            if self._settings.protocol == "anthropic":
-                content = "".join(
-                    str(block.get("text") or "")
-                    for block in body["content"]
-                    if isinstance(block, dict) and block.get("type") == "text"
-                )
-                usage = body.get("usage") or {}
-                prompt_tokens = int(usage.get("input_tokens") or 0)
-                completion_tokens = int(usage.get("output_tokens") or 0)
-            else:
-                message = body["choices"][0]["message"]
-                content = message.get("content") or ""
-                usage = body.get("usage") or {}
-                prompt_tokens = int(usage.get("prompt_tokens") or 0)
-                completion_tokens = int(usage.get("completion_tokens") or 0)
-            return TextCompletion(
-                content=content,
-                model=body.get("model") or self._settings.model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
-        except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
-            response = getattr(error, "response", None)
-            status_code = response.status_code if response is not None else None
-            request_id = (
-                response.headers.get("msh-request-id")
-                or response.headers.get("x-request-id")
-                or response.headers.get("request-id")
-                if response is not None
-                else None
-            )
-            raise ProviderRequestError("kimi", status_code, request_id) from error
+            except _RETRYABLE_KIMI_TRANSPORT_ERRORS as error:
+                if attempt < self._settings.transport_max_retries:
+                    delay = self._settings.retry_backoff_seconds * (2**attempt)
+                    logger.warning(
+                        "kimi_transport_retry attempt=%s max_retries=%s "
+                        "failure_kind=%s backoff_seconds=%s",
+                        attempt + 1,
+                        self._settings.transport_max_retries,
+                        type(error).__name__,
+                        delay,
+                    )
+                    if delay:
+                        time.sleep(delay)
+                    continue
+                raise self._request_error(error) from error
+            except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
+                raise self._request_error(error) from error
+        raise AssertionError("unreachable Kimi retry state")
+
+    @staticmethod
+    def _request_error(error: Exception) -> ProviderRequestError:
+        response = getattr(error, "response", None)
+        status_code = response.status_code if response is not None else None
+        request_id = (
+            response.headers.get("msh-request-id")
+            or response.headers.get("x-request-id")
+            or response.headers.get("request-id")
+            if response is not None
+            else None
+        )
+        return ProviderRequestError(
+            "kimi",
+            status_code,
+            request_id,
+            type(error).__name__,
+        )
 
     def _complete_openai(
         self,
@@ -262,6 +313,7 @@ class StructuredProviderGateway:
         messages: list[dict[str, Any]],
         *,
         validate: Callable[[dict[str, Any]], StructuredValue],
+        max_completion_tokens: int | None = None,
     ) -> StructuredCompletion:
         working_messages = [dict(message) for message in messages]
         last_error = "invalid structured output"
@@ -269,6 +321,7 @@ class StructuredProviderGateway:
             completion = self.provider.complete(
                 working_messages,
                 response_format={"type": "json_object"},
+                max_completion_tokens=max_completion_tokens,
             )
             try:
                 decoded = json.loads(completion.content)

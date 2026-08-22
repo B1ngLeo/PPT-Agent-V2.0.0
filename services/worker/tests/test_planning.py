@@ -36,6 +36,7 @@ def test_kimi_planning_service_validates_intent_and_preserves_source_refs() -> N
     assert result.provider == "fake"
     assert result.model == "deterministic-fake-v1"
     assert result.repair_count == 0
+    assert provider.calls[0]["maxCompletionTokens"] == 1600
 
 
 def test_kimi_planning_service_rejects_invented_citations() -> None:
@@ -68,6 +69,7 @@ def test_kimi_planning_service_rejects_invented_citations() -> None:
             action="generate",
             target_slide_id=None,
         )
+    assert provider.calls[0]["maxCompletionTokens"] == 2600
 
 
 def test_private_provider_gateway_requires_token_and_serves_planning(

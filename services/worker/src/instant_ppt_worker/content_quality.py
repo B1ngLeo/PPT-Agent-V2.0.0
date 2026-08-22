@@ -37,7 +37,10 @@ ENGINEERING_TEXT_PATTERNS = (
 )
 
 UNRESOLVED_PATTERNS = (
-    re.compile(r"(?:待|需)(?:官方(?:公告|原文|数据)?|补充|确认|核实|填充|完善|提供|获取|验证)"),
+    re.compile(
+        r"(?:待|(?<![按无如若所])需)"
+        r"(?:官方(?:公告|原文|数据)?|补充|确认|核实|填充|完善|提供|获取|验证)"
+    ),
     re.compile(r"内容待补充|数据待填充|核心结论[：:]?\s*待|未提供官方公告原文"),
     re.compile(r"\b(?:TBD|TK|PLACEHOLDER)\b", re.IGNORECASE),
 )

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -13,9 +14,38 @@ from instant_ppt_worker.workflow_models import WorkflowRequestV2
 
 from .test_workflow_contracts import _payload
 
+ROOT = Path(__file__).resolve().parents[3]
+
 
 def test_nested_workflow_tools_use_a_stable_python_hash_seed() -> None:
     assert workflow_module._safe_environment()["PYTHONHASHSEED"] == "0"
+
+
+def test_gate_failure_prefers_first_structured_blocking_finding(tmp_path: Path) -> None:
+    report_path = tmp_path / "quality-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "categories": {
+                    "blocking": {
+                        "issues": [
+                            {
+                                "file": "slide_01.svg",
+                                "message": "cover-message exceeds the root viewBox",
+                            }
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    message = workflow_module._blocking_report_message(
+        ["python", "checker.py", "--json-output", str(report_path)]
+    )
+
+    assert message == "cover-message exceeds the root viewBox"
 
 
 def test_conflicting_approved_chart_facts_are_blocking() -> None:
@@ -37,6 +67,59 @@ def test_same_label_in_distinct_benchmarks_is_not_a_false_conflict() -> None:
 
     assert values == [("Sol", 73.5), ("GPT-5.5", 47.9)]
     assert unit == "%"
+
+
+def test_chinese_labeled_values_form_a_sourced_chart_series() -> None:
+    fragments = [{"text": "方案甲为 73.5%，方案乙达到 47.9%。"}]
+
+    values, unit = workflow_module._chart_values(fragments)
+
+    assert values == [("方案甲", 73.5), ("方案乙", 47.9)]
+    assert unit == "%"
+
+
+def test_markdown_table_binds_headers_to_values_and_ignores_incomplete_rows() -> None:
+    table = "\n".join(
+        [
+            "| 评测 | Sol | Sol Ultra | Terra | GPT-5.5 |",
+            "| --- | ---: | ---: | ---: | ---: |",
+            "| Terminal-Bench 2.1 | 88.8% | 91.9% | 87.4% | 85.6% |",
+            "| 仅单值 | 80% | — | — | — |",
+            "",
+            "| 不是合法表格 | Sol | Terra |",
+            "| no separator | 90% | 80% |",
+        ]
+    )
+
+    series = workflow_module._chart_series([{"text": table, "kind": "table"}])
+
+    assert series == [
+        {
+            "context": "Terminal-Bench 2.1",
+            "values": [
+                ("Sol", 88.8),
+                ("Sol Ultra", 91.9),
+                ("Terra", 87.4),
+                ("GPT-5.5", 85.6),
+            ],
+            "unit": "%",
+        }
+    ]
+
+
+def test_conflicting_duplicate_markdown_table_headers_are_blocking() -> None:
+    table = "\n".join(
+        [
+            "| 评测 | Sol | Sol | Terra |",
+            "| --- | --- | --- | --- |",
+            "| BrowseComp | 92.2% | 99.9% | 87.5% |",
+        ]
+    )
+
+    with pytest.raises(AdapterError) as captured:
+        workflow_module._chart_series([{"text": table, "kind": "table"}])
+
+    assert captured.value.code == CONTENT_QA_FAILED
 
 
 def test_sentences_preserve_model_versions_decimals_and_skip_headings() -> None:
@@ -127,6 +210,42 @@ def test_data_slides_bind_distinct_benchmark_series() -> None:
         "BrowseComp 中，Sol Ultra 达到 92.2%，领先 Sol 2%",
         "SEC-Bench Pro 中，Sol Ultra 达到 74.3%，领先 Sol 4%",
     ]
+
+
+def test_real_gpt56_announcement_supplies_expected_table_chart_series(
+    tmp_path: Path,
+) -> None:
+    source = ROOT / "tests/OpenAI_GPT-5.6_发布公告_中文版_2026-07-09.docx"
+    markdown_path = tmp_path / "gpt56.md"
+    subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "vendor/ppt-master/scripts/source_to_md.py"),
+            str(source),
+            "-o",
+            str(markdown_path),
+            "--json",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    fragments = workflow_module._markdown_table_series(
+        markdown_path.read_text(encoding="utf-8")
+    )
+    by_context = {item["context"]: item for item in fragments}
+
+    assert by_context["Terminal-Bench 2.1"]["values"] == [
+        ("Sol", 88.8),
+        ("Sol Ultra", 91.9),
+        ("Terra", 87.4),
+        ("Luna", 84.7),
+        ("GPT-5.5", 85.6),
+    ]
+    assert by_context["BrowseComp"]["values"][1] == ("Sol Ultra", 92.2)
+    assert by_context["SEC-Bench Pro"]["values"][1] == ("Sol Ultra", 74.3)
 
 
 def test_no_source_limited_draft_authors_distinct_topic_specific_copy() -> None:
