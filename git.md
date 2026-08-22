@@ -13,17 +13,17 @@
 
 ## 当前仓库基线
 
-截至 2026-08-22：
+截至 2026-08-23：
 
 | 项目 | 状态 |
 | --- | --- |
 | 当前分支 | `codex/issue-003-presentation-agent` |
-| 当前提交 | `c156d90` (`docs(issue002): record final production verification`) |
-| 提交总数 | 17 |
+| 当前提交 | `9372959` (`fix(runtime): checkpoint verified provider and quality fixes`) |
+| 提交总数 | 19 |
 | 历史结构 | 单一直线历史，无合并提交 |
 | Git 远端 | 未配置 |
 | Git 标签 | 无 |
-| 工作区 | 从 ISSUE-002 分支保留 18 个已跟踪文件修改及多组未跟踪内容；ISSUE-003 开发尚未提交 |
+| 工作区 | ISSUE-003 阶段 0 及已验证的 runtime/provider 修复已分类提交；阶段 A 正在开发，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
 | GitHub 状态 | 尚未关联或上传 |
 
 注意：首次提交包含 13,213 个文件和约 40 万行新增内容。上传 GitHub 前应检查仓库体积、敏感信息、依赖目录和生成文件，避免把不适合公开或版本管理的内容推送出去。
@@ -49,6 +49,8 @@
 | 2026-08-19 22:32 | `72cd511` | `fix` | ISSUE-002：保留有来源的文案并增加图表多样性 |
 | 2026-08-19 23:10 | `ebed9eb` | `fix` | ISSUE-002：使崩溃重放结果保持字节级确定性 |
 | 2026-08-19 23:32 | `c156d90` | `docs` | ISSUE-002：记录最终生产验证结果 |
+| 2026-08-22 23:50 | `e8b54ff` | `docs` | ISSUE-003：冻结 before/reference 质量基线与 Agent 证据合同 |
+| 2026-08-22 23:58 | `9372959` | `fix` | 分类提交已验证的 provider timeout/retry 和质量修复 |
 
 ## 远端与 GitHub
 
@@ -97,6 +99,32 @@
 ## 操作日志
 
 最新记录放在最上方。
+
+### 2026-08-22 23:58 — 提交已验证的 runtime/provider 修复
+
+- 操作者：Codex
+- 目的：将切分 ISSUE-003 模块前已存在且完成验证的 provider timeout/retry、内容质量和 Web 修复单独归档，避免与新 Agent Runtime 混为一个提交。
+- 操作前状态：`codex/issue-003-presentation-agent@e8b54ff`；保留一个无关测试 Markdown 空行修改和未跟踪目录。
+- 执行命令：`git add <verified runtime files>`；`git commit -m "fix(runtime): checkpoint verified provider and quality fixes"`。
+- 变更范围：provider 超时/重试、grounding/content/SVG 质量及 Web 交互修复。
+- 验证结果：Ruff、53 项 Worker 定向测试、2 项 API planning 测试、Web lint/typecheck/build 及 `docker compose config --quiet` 通过。
+- 相关提交：`9372959bd4f92c3eac8d5dcc6122a000e1c95952`
+- 远端结果：未涉及，未推送。
+- 回退方式：`git revert 9372959`。
+- 状态：成功。
+
+### 2026-08-22 23:50 — 提交 ISSUE-003 基线与证据合同
+
+- 操作者：Codex
+- 目的：在修改默认工作流前冻结可重放的 before/reference 输入、PowerPoint 渲染和最小 Agent 证据合同。
+- 操作前状态：`codex/issue-003-presentation-agent@c156d90`，工作区含分支创建前保留的改动。
+- 执行命令：`git add <issue003 baseline files>`；`git commit -m "docs(issue003): freeze presentation quality baselines"`。
+- 变更范围：ISSUE-003 文档、基线封存/渲染/分析脚本、before/reference/user-lineage PPTX/PNG/contact sheet/指标和 Agent 证据合同。
+- 验证结果：3 份 PPTX 经 PowerPoint 逐页渲染 10/10/12 页，Repairs=0；Ruff、ZIP/JSON/hash 校验和 Markdown 链接通过。
+- 相关提交：`e8b54ff749372a6bd52c037b01b0216d5a9ed3ff`
+- 远端结果：未涉及，未推送。
+- 回退方式：`git revert e8b54ff`。
+- 状态：成功。
 
 ### 2026-08-22 23:27 — 创建 ISSUE-003 独立开发分支
 

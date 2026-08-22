@@ -29,6 +29,13 @@ from instant_ppt_worker.image_resources import (
 from instant_ppt_worker.models import DeckPlan
 from instant_ppt_worker.package_qa import inspect_pptx, write_package_report
 from instant_ppt_worker.paths import ENGINE_SCRIPTS
+from instant_ppt_worker.presentation_blueprint import (
+    canonical_sha256,
+    extract_literal_constraints,
+    semantic_support_score,
+    semantic_terms,
+    validate_page_blueprint,
+)
 from instant_ppt_worker.providers import ImageProvider
 from instant_ppt_worker.renderer import _normalize_pptx_zip
 from instant_ppt_worker.settings import OpenAIImageSettings
@@ -36,6 +43,7 @@ from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.svg_author import author_slide
 from instant_ppt_worker.workflow_models import (
     ApprovedOutlineSlide,
+    PageBlueprintArtifact,
     WorkflowArtifactRef,
     WorkflowError,
     WorkflowReceipt,
@@ -532,6 +540,7 @@ def _append_chart_candidate(
     context: str,
     pairs: list[tuple[str, float]],
     unit: str,
+    evidence_ref: str | None = None,
 ) -> None:
     key = (
         unit,
@@ -540,7 +549,10 @@ def _append_chart_candidate(
     if key in seen:
         return
     seen.add(key)
-    candidates.append({"context": context, "values": pairs[:6], "unit": unit})
+    candidate: dict[str, Any] = {"context": context, "values": pairs[:6], "unit": unit}
+    if evidence_ref:
+        candidate["evidenceRef"] = evidence_ref
+    candidates.append(candidate)
 
 
 def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -550,6 +562,7 @@ def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[tuple[str, tuple[tuple[str, float], ...]]] = set()
     for fragment in fragments:
         fragment_text = str(fragment["text"])
+        evidence_ref = str(fragment.get("fragmentId") or "") or None
         for table_candidate in _markdown_table_series(fragment_text):
             _append_chart_candidate(
                 candidates,
@@ -557,6 +570,7 @@ def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 context=str(table_candidate["context"]),
                 pairs=list(table_candidate["values"]),
                 unit=str(table_candidate["unit"]),
+                evidence_ref=evidence_ref,
             )
         for raw_line in fragment_text.splitlines():
             line = raw_line.strip().lstrip("-*+ ")
@@ -574,6 +588,7 @@ def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         context=_chart_context_label(context),
                         pairs=pairs,
                         unit=unit,
+                        evidence_ref=evidence_ref,
                     )
             if len(clauses) > 1:
                 combined = _chart_context_candidate(line, conflict_is_error=False)
@@ -585,6 +600,7 @@ def _chart_series(fragments: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         context=_chart_context_label(line),
                         pairs=pairs,
                         unit=unit,
+                        evidence_ref=evidence_ref,
                     )
     return sorted(candidates, key=lambda item: -len(item["values"]))
 
@@ -704,10 +720,46 @@ def _limited_general_body(
     ]
 
 
-def _build_deck(
+def _semantic_rank(query: str, evidence: str) -> float:
+    query_terms = semantic_terms(query)
+    if not query_terms:
+        return 0.0
+    overlap = len(query_terms & semantic_terms(evidence)) / len(query_terms)
+    return max(overlap, semantic_support_score(query, evidence))
+
+
+def _blueprint_query(request: WorkflowRequestV2, slide: ApprovedOutlineSlide) -> str:
+    return " ".join(
+        (
+            slide.title,
+            slide.audience_question,
+            request.intent.title,
+            request.intent.objective,
+            request.intent.desired_outcome,
+        )
+    )
+
+
+def _blueprint_relevance(
+    request: WorkflowRequestV2,
+    slide: ApprovedOutlineSlide,
+    evidence: str,
+) -> float:
+    """Weight page-specific semantics ahead of broad deck intent terms."""
+
+    return (
+        5 * _semantic_rank(slide.title, evidence)
+        + 3 * _semantic_rank(slide.audience_question, evidence)
+        + _semantic_rank(_blueprint_query(request, slide), evidence)
+    )
+
+
+def _build_page_blueprint(
     request: WorkflowRequestV2,
     fragments: list[dict[str, Any]],
-) -> tuple[DeckPlan, dict[str, Any]]:
+) -> PageBlueprintArtifact:
+    """Create a stable page contract by semantic evidence selection, never page rotation."""
+
     sentences = _sentences(fragments)
     chart_series = _chart_series(fragments)
     if any(slide.role == "data" for slide in request.outline) and not chart_series:
@@ -715,41 +767,227 @@ def _build_deck(
             CONTENT_QA_FAILED,
             "data page requires at least two sourced labeled values; no values may be invented",
         )
+    used_sentences: set[int] = set()
+    used_charts: set[int] = set()
+    pages: list[dict[str, Any]] = []
+    for outline in request.outline:
+        if not fragments:
+            body = _limited_general_body(request, outline)
+            pages.append(
+                {
+                    "schemaVersion": 1,
+                    "outlineSlideId": outline.outline_slide_id,
+                    "slideId": outline.slide_id,
+                    "pnn": outline.pnn,
+                    "order": outline.order,
+                    "role": outline.role,
+                    "assertion": outline.title,
+                    "audienceMove": (
+                        f"Answer '{outline.audience_question}' so {request.intent.audience} "
+                        f"can {request.intent.desired_outcome}."
+                    ),
+                    "evidenceRefs": [],
+                    "contentBlocks": [
+                        {
+                            "blockId": f"{outline.pnn}-message-{index}",
+                            "kind": "assertion" if index == 1 else "action",
+                            "hierarchy": index,
+                            "text": value,
+                            "relationship": "supports" if index == 1 else "acts-on",
+                            "evidenceRefs": [],
+                        }
+                        for index, value in enumerate(body, start=1)
+                    ],
+                    "visualForm": (
+                        "comparison"
+                        if outline.role == "comparison"
+                        else "timeline"
+                        if outline.role == "timeline"
+                        else "mixed"
+                    ),
+                    "layoutIntent": _layout_for_role(outline.role),
+                    "literalConstraints": [outline.title],
+                    "sourceMode": "no-source-limited",
+                }
+            )
+            continue
+
+        if outline.role == "data":
+            chart_index = max(
+                range(len(chart_series)),
+                key=lambda index: (
+                    _blueprint_relevance(
+                        request,
+                        outline,
+                        str(chart_series[index]["context"]),
+                    ),
+                    index not in used_charts,
+                    len(chart_series[index]["values"]),
+                    -index,
+                ),
+            )
+            used_charts.add(chart_index)
+            selected_chart = chart_series[chart_index]
+            evidence_ref = str(selected_chart.get("evidenceRef") or "")
+            if not evidence_ref:
+                raise AdapterError(
+                    CONTENT_QA_FAILED,
+                    "sourced chart series is missing immutable fragment provenance",
+                )
+            context = str(selected_chart["context"] or selected_chart["values"][0][0])
+            chart_values = list(selected_chart["values"])
+            unit = str(selected_chart["unit"])
+            assertion = _assertion_title(outline, [], chart_values, unit, context)
+            literal_constraints = [
+                value
+                for value in dict.fromkeys(
+                    [context]
+                    + [str(label) for label, _ in chart_values]
+                    + [f"{value:g}" for _, value in chart_values]
+                    + [unit]
+                )
+                if value
+            ]
+            pages.append(
+                {
+                    "schemaVersion": 1,
+                    "outlineSlideId": outline.outline_slide_id,
+                    "slideId": outline.slide_id,
+                    "pnn": outline.pnn,
+                    "order": outline.order,
+                    "role": outline.role,
+                    "assertion": assertion,
+                    "audienceMove": (
+                        f"Use the sourced {context} comparison to answer "
+                        f"'{outline.audience_question}'."
+                    ),
+                    "evidenceRefs": [evidence_ref],
+                    "contentBlocks": [
+                        {
+                            "blockId": f"{outline.pnn}-chart",
+                            "kind": "chart",
+                            "hierarchy": 1,
+                            "text": context,
+                            "relationship": "supports",
+                            "evidenceRefs": [evidence_ref],
+                        }
+                    ],
+                    "visualForm": "chart",
+                    "layoutIntent": _layout_for_role(outline.role),
+                    "literalConstraints": literal_constraints,
+                    "sourceMode": "approved-artifacts",
+                    "chartSpec": {
+                        "objectKey": "throughput-comparison",
+                        "context": context,
+                        "chartType": "column",
+                        "values": [
+                            {"label": label, "value": value}
+                            for label, value in chart_values
+                        ],
+                        "unit": unit,
+                        "comparisonBaseline": 0,
+                        "evidenceRefs": [evidence_ref],
+                    },
+                }
+            )
+            continue
+
+        sentence_index = max(
+            range(len(sentences)),
+            key=lambda index: (
+                _blueprint_relevance(request, outline, sentences[index][0]),
+                index not in used_sentences,
+                len(semantic_terms(sentences[index][0])),
+                -index,
+            ),
+        )
+        used_sentences.add(sentence_index)
+        sentence, evidence_ref = sentences[sentence_index]
+        assertion = sentence[:1000].rstrip()
+        literal_constraints = extract_literal_constraints(sentence)
+        if not literal_constraints:
+            literal_constraints = [assertion]
+        pages.append(
+            {
+                "schemaVersion": 1,
+                "outlineSlideId": outline.outline_slide_id,
+                "slideId": outline.slide_id,
+                "pnn": outline.pnn,
+                "order": outline.order,
+                "role": outline.role,
+                "assertion": assertion,
+                "audienceMove": (
+                    f"Connect the approved evidence to '{outline.audience_question}' for "
+                    f"{request.intent.audience}."
+                ),
+                "evidenceRefs": [evidence_ref],
+                "contentBlocks": [
+                    {
+                        "blockId": f"{outline.pnn}-evidence",
+                        "kind": "evidence",
+                        "hierarchy": 1,
+                        "text": sentence,
+                        "relationship": "supports",
+                        "evidenceRefs": [evidence_ref],
+                    }
+                ],
+                "visualForm": (
+                    "comparison"
+                    if outline.role == "comparison"
+                    else "timeline"
+                    if outline.role == "timeline"
+                    else "mixed"
+                ),
+                "layoutIntent": _layout_for_role(outline.role),
+                "literalConstraints": literal_constraints,
+                "sourceMode": "approved-artifacts",
+            }
+        )
+    return PageBlueprintArtifact.model_validate(
+        {
+            "schemaVersion": 1,
+            "workflowRunId": request.workflow_run_id,
+            "approvedSnapshotSha256": request.approval.snapshot_sha256,
+            "inputSha256": _request_hash(request),
+            "authoringMode": "deterministic-planner",
+            "modelVersion": "semantic-blueprint@v1",
+            "promptVersion": request.versions.prompt,
+            "referenceVersion": request.versions.reference,
+            "pages": pages,
+        }
+    )
+
+
+def _build_deck(
+    request: WorkflowRequestV2,
+    fragments: list[dict[str, Any]],
+    *,
+    blueprint: PageBlueprintArtifact | None = None,
+) -> tuple[DeckPlan, dict[str, Any]]:
+    blueprint = blueprint or _build_page_blueprint(request, fragments)
+    chart_series = _chart_series(fragments)
     slides: list[dict[str, Any]] = []
     roster: list[dict[str, Any]] = []
-    data_index = 0
-    for index, outline in enumerate(request.outline):
+    for index, (outline, page) in enumerate(zip(request.outline, blueprint.pages, strict=True)):
         chart_entry: dict[str, Any] | None = None
-        if outline.role == "data":
-            selected = chart_series[data_index % len(chart_series)]
-            data_index += 1
+        if page.chart_spec is not None:
             chart_entry = {
-                "objectKey": "throughput-comparison",
-                "context": selected["context"],
-                "values": selected["values"],
-                "unit": selected["unit"],
+                "objectKey": page.chart_spec.object_key,
+                "context": page.chart_spec.context,
+                "values": [(item.label, item.value) for item in page.chart_spec.values],
+                "unit": page.chart_spec.unit,
             }
-        fact_indexes = [index % len(sentences)] if sentences else []
-        if outline.role == "ending" and len(sentences) > 1:
-            fact_indexes.append((index + 1) % len(sentences))
-        facts = [sentences[item] for item in dict.fromkeys(fact_indexes)]
-        title = _assertion_title(
-            outline,
-            sentences,
-            list(chart_entry["values"]) if chart_entry else [],
-            str(chart_entry["unit"]) if chart_entry else "value",
-            str(chart_entry["context"]) if chart_entry else "",
-        )
-        body = [item[0] for item in facts] if facts else _limited_general_body(request, outline)
-        if outline.role == "data":
+        title = page.assertion if chart_entry else _concise_title(page.assertion)
+        body = [block.text for block in page.content_blocks]
+        if page.role == "data":
             body = ["对比结论直接来自已批准来源，未执行外部研究。"]
-        if outline.role == "ending":
+        if page.role == "ending":
             body = (
                 [
-                    f"结论：{facts[0][0]}",
+                    f"结论：{body[0]}",
                     f"行动：{request.intent.desired_outcome}",
                 ]
-                if facts
+                if page.evidence_refs
                 else _limited_general_body(request, outline)
             )
         plan_role = outline.role
@@ -774,8 +1012,17 @@ def _build_deck(
                 "role": outline.role,
                 "title": title,
                 "body": body,
-                "factIds": [item[1] for item in facts],
+                "factIds": page.evidence_refs,
                 "chart": chart_entry,
+                "assertion": page.assertion,
+                "audienceMove": page.audience_move,
+                "evidenceRefs": page.evidence_refs,
+                "contentBlocks": [
+                    item.model_dump(by_alias=True, mode="json") for item in page.content_blocks
+                ],
+                "visualForm": page.visual_form,
+                "layoutIntent": page.layout_intent,
+                "literalConstraints": page.literal_constraints,
             }
         )
     free_id = deterministic_ulid(hashlib.sha256(b"issue002-free-design").hexdigest())
@@ -999,15 +1246,21 @@ def _design_spec(
             [
                 f"#### Slide {item['order']:02d} / {item['pnn']} - {item['title']}",
                 "",
-                (
-                    "- **Audience move**: asks "
-                    f"“{request.outline[item['order'] - 1].audience_question}” "
-                    f"→ understands “{item['title']}”"
-                ),
+                f"- **Assertion**: {item['assertion']}",
+                f"- **Audience move**: {item['audienceMove']}",
+                f"- **Visual form**: {item['visualForm']}",
+                f"- **Layout intent**: {item['layoutIntent']}",
                 f"- **Layout**: {_layout_for_role(str(item['role']))}",
                 f"- **Title**: {item['title']}",
                 f"- **Core message**: {item['body'][0]}",
                 f"- **Content**: {'；'.join(item['body'])}",
+                (
+                    "- **Evidence refs**: "
+                    + (", ".join(item["evidenceRefs"]) or "none (approved limited draft)")
+                ),
+                "- **Content blocks**: "
+                + json.dumps(item["contentBlocks"], ensure_ascii=False, separators=(",", ":")),
+                "- **Literal constraints**: " + " | ".join(item["literalConstraints"]),
             ]
         )
         if item["chart"]:
@@ -1365,12 +1618,15 @@ def _bundle(project: Path, target: Path) -> None:
         project / "spec_lock.md",
         project / "deck-plan.json",
         project / "analysis" / "provider-request.json",
+        project / "analysis" / "page-blueprint.v1.json",
         project / "analysis" / "evidence-map.json",
         project / "analysis" / "image_analysis.csv",
         project / "analysis" / "image-resource-audit.json",
         project / "validation" / "svg_quality_first_page_report.json",
         project / "validation" / "svg_quality_report.json",
         project / "validation" / "chart-verification.json",
+        project / "validation" / "page-blueprint-support.json",
+        project / "validation" / "page-blueprint-consistency.json",
         project / "validation" / "content-design-spec.json",
         project / "validation" / "content-final-svg.json",
         project / "validation" / "content-pptx.json",
@@ -1474,6 +1730,18 @@ def _workflow_result(
     errors: list[WorkflowError] | None = None,
 ) -> WorkflowResultV2:
     artifact_paths = [
+        (
+            "page_blueprint",
+            project / "analysis" / "page-blueprint.v1.json",
+            "application/json",
+            "design_spec_gate1",
+        ),
+        (
+            "blueprint_consistency",
+            project / "validation" / "page-blueprint-consistency.json",
+            "application/json",
+            "pptx_content_gate",
+        ),
         ("design_spec", project / "design_spec.md", "text/markdown", "design_spec_gate1"),
         ("spec_lock", project / "spec_lock.md", "text/markdown", "spec_lock_gate2"),
         ("canonical_pptx", project / "exports" / "deck.pptx", PPTX_MEDIA_TYPE, "step7_export"),
@@ -1780,7 +2048,39 @@ def run_default_workflow(
             },
         )
 
-    deck, plan = _build_deck(request, fragments)
+    blueprint = _build_page_blueprint(request, fragments)
+    blueprint_payload = blueprint.model_dump(by_alias=True, mode="json")
+    blueprint_path = project / "analysis" / "page-blueprint.v1.json"
+    _write_json(blueprint_path, blueprint_payload)
+    blueprint_report = validate_page_blueprint(blueprint, request, fragments)
+    blueprint_report_path = project / "validation" / "page-blueprint-support.json"
+    _write_json(blueprint_report_path, blueprint_report)
+    if not blueprint_report["passed"]:
+        raise AdapterError(CONTENT_QA_FAILED, json.dumps(blueprint_report, ensure_ascii=False))
+    blueprint_sha256 = canonical_sha256(blueprint_payload)
+    _receipt(
+        project,
+        request,
+        receipts,
+        kind="page-blueprint-gate",
+        status="passed",
+        subject_sha256=blueprint_sha256,
+        payload={
+            "approvedSnapshotSha256": request.approval.snapshot_sha256,
+            "sourceManifestSha256": request.sources.manifest_sha256,
+            "supportReportSha256": sha256_file(blueprint_report_path),
+            "pageCount": len(blueprint.pages),
+            "roster": [page.pnn for page in blueprint.pages],
+        },
+    )
+    _event(
+        project,
+        "design_spec_gate1",
+        "page-blueprint-validated",
+        blueprintSha256=blueprint_sha256,
+        supportReportSha256=sha256_file(blueprint_report_path),
+    )
+    deck, plan = _build_deck(request, fragments, blueprint=blueprint)
     chart_slide_ids = {str(value["slideId"]) for value in plan["roster"] if value.get("chart")}
     if chart_slide_ids & set(image_preparation.by_slide):
         raise AdapterError(
@@ -1808,6 +2108,11 @@ def run_default_workflow(
         source_manifest_sha256=request.sources.manifest_sha256,
         represented_text=design_spec,
     )
+    design_content["pageBlueprintSha256"] = blueprint_sha256
+    design_content["blueprintSupportReportSha256"] = sha256_file(blueprint_report_path)
+    design_content["reportSha256"] = _sha(
+        {key: value for key, value in design_content.items() if key != "reportSha256"}
+    )
     _write_json(project / "validation" / "content-design-spec.json", design_content)
     if not design_content["passed"]:
         raise AdapterError(CONTENT_QA_FAILED, json.dumps(design_content, ensure_ascii=False))
@@ -1823,6 +2128,7 @@ def run_default_workflow(
             "roster": [item["pnn"] for item in plan["roster"]],
             "sourceManifestSha256": request.sources.manifest_sha256,
             "evidenceMapSha256": evidence_map["evidenceMapSha256"],
+            "pageBlueprintSha256": blueprint_sha256,
         },
     )
     if request.production.refine_spec:
@@ -1847,6 +2153,7 @@ def run_default_workflow(
         "spec_lock_gate2",
         receipts,
         request_sha256=request_sha256,
+        page_blueprint_sha256=blueprint_sha256,
         design_spec_sha256=design_spec_sha256,
     )
     _run(
@@ -2152,6 +2459,11 @@ def run_default_workflow(
         source_manifest_sha256=request.sources.manifest_sha256,
         represented_text=_svg_visible_text(svg_paths),
     )
+    final_content["pageBlueprintSha256"] = blueprint_sha256
+    final_content["blueprintSupportReportSha256"] = sha256_file(blueprint_report_path)
+    final_content["reportSha256"] = _sha(
+        {key: value for key, value in final_content.items() if key != "reportSha256"}
+    )
     _write_json(project / "validation" / "content-final-svg.json", final_content)
     if not final_content["passed"]:
         raise AdapterError(CONTENT_QA_FAILED, json.dumps(final_content, ensure_ascii=False))
@@ -2165,6 +2477,7 @@ def run_default_workflow(
         payload={
             "reportSha256": sha256_file(project / "validation" / "content-final-svg.json"),
             "evidenceMapSha256": evidence_map["evidenceMapSha256"],
+            "pageBlueprintSha256": blueprint_sha256,
         },
     )
 
@@ -2481,6 +2794,8 @@ def run_default_workflow(
         representation_verified=bool(package_report["passed"]),
     )
     pptx_content["editableNativeChartCount"] = package_report["editableNativeShapeCount"]
+    pptx_content["pageBlueprintSha256"] = blueprint_sha256
+    pptx_content["blueprintSupportReportSha256"] = sha256_file(blueprint_report_path)
     pptx_content["reportSha256"] = _sha(
         {key: value for key, value in pptx_content.items() if key != "reportSha256"}
     )
@@ -2496,8 +2811,50 @@ def run_default_workflow(
             "reportSha256": sha256_file(project / "validation" / "content-pptx.json"),
             "packageQaSha256": sha256_file(package_report_path),
             "evidenceMapSha256": evidence_map["evidenceMapSha256"],
+            "pageBlueprintSha256": blueprint_sha256,
         },
     )
+    consistency_report = {
+        "schema": "instant-ppt.page-blueprint-consistency.v1",
+        "workflowRunId": request.workflow_run_id,
+        "approvedSnapshotSha256": request.approval.snapshot_sha256,
+        "pageBlueprintSha256": blueprint_sha256,
+        "designSpecSha256": design_spec_sha256,
+        "finalSvgSha256": final_svg_sha256,
+        "compiledPptxSha256": pptx_sha256,
+        "evidenceMapSha256": evidence_map["evidenceMapSha256"],
+        "reports": {
+            "blueprintSupport": sha256_file(blueprint_report_path),
+            "designSpec": sha256_file(project / "validation" / "content-design-spec.json"),
+            "finalSvg": sha256_file(project / "validation" / "content-final-svg.json"),
+            "compiledPptx": sha256_file(project / "validation" / "content-pptx.json"),
+        },
+        "pages": [
+            {
+                "pnn": page.pnn,
+                "slideId": page.slide_id,
+                "assertion": page.assertion,
+                "renderedTitle": roster["title"],
+                "evidenceRefs": page.evidence_refs,
+                "literalConstraints": page.literal_constraints,
+            }
+            for page, roster in zip(blueprint.pages, plan["roster"], strict=True)
+        ],
+        "passed": bool(
+            blueprint_report["passed"]
+            and design_content["passed"]
+            and final_content["passed"]
+            and pptx_content["passed"]
+            and package_report["passed"]
+        ),
+    }
+    consistency_report["reportSha256"] = _sha(consistency_report)
+    _write_json(
+        project / "validation" / "page-blueprint-consistency.json",
+        consistency_report,
+    )
+    if not consistency_report["passed"]:
+        raise AdapterError(CONTENT_QA_FAILED, json.dumps(consistency_report, ensure_ascii=False))
 
     if request.production.effective_narration_audio == "enabled":
         _receipt(
@@ -2558,6 +2915,7 @@ def run_default_workflow(
         "publish",
         receipts,
         request_sha256=request_sha256,
+        page_blueprint_sha256=blueprint_sha256,
         design_spec_sha256=design_spec_sha256,
         spec_lock_sha256=spec_lock_sha256,
         final_svg_sha256=final_svg_sha256,

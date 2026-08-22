@@ -1,0 +1,385 @@
+{
+  "$defs": {
+    "BlueprintChartSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "objectKey": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Objectkey",
+          "type": "string"
+        },
+        "context": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Context",
+          "type": "string"
+        },
+        "chartType": {
+          "enum": [
+            "bar",
+            "column",
+            "line",
+            "area",
+            "scatter"
+          ],
+          "title": "Charttype",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "$ref": "#/$defs/BlueprintDataPoint"
+          },
+          "maxItems": 16,
+          "minItems": 2,
+          "title": "Values",
+          "type": "array"
+        },
+        "unit": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Unit",
+          "type": "string"
+        },
+        "comparisonBaseline": {
+          "default": 0,
+          "title": "Comparisonbaseline",
+          "type": "number"
+        },
+        "evidenceRefs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Evidencerefs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "objectKey",
+        "context",
+        "chartType",
+        "values",
+        "unit",
+        "evidenceRefs"
+      ],
+      "title": "BlueprintChartSpec",
+      "type": "object"
+    },
+    "BlueprintContentBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "blockId": {
+          "pattern": "^P\\d{2,3}-[a-z][a-z0-9-]{1,48}$",
+          "title": "Blockid",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "assertion",
+            "evidence",
+            "comparison",
+            "sequence",
+            "action",
+            "chart",
+            "table",
+            "annotation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "hierarchy": {
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Hierarchy",
+          "type": "integer"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "relationship": {
+          "enum": [
+            "supports",
+            "contrasts",
+            "precedes",
+            "follows",
+            "qualifies",
+            "acts-on",
+            "summarizes"
+          ],
+          "title": "Relationship",
+          "type": "string"
+        },
+        "evidenceRefs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Evidencerefs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "blockId",
+        "kind",
+        "hierarchy",
+        "text",
+        "relationship"
+      ],
+      "title": "BlueprintContentBlock",
+      "type": "object"
+    },
+    "BlueprintDataPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "title": "BlueprintDataPoint",
+      "type": "object"
+    },
+    "PageBlueprint": {
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": 1,
+          "default": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "outlineSlideId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Outlineslideid",
+          "type": "string"
+        },
+        "slideId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Slideid",
+          "type": "string"
+        },
+        "pnn": {
+          "pattern": "^P\\d{2,3}$",
+          "title": "Pnn",
+          "type": "string"
+        },
+        "order": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Order",
+          "type": "integer"
+        },
+        "role": {
+          "enum": [
+            "cover",
+            "section",
+            "content",
+            "data",
+            "comparison",
+            "timeline",
+            "risk_action",
+            "ending"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "assertion": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Assertion",
+          "type": "string"
+        },
+        "audienceMove": {
+          "maxLength": 1500,
+          "minLength": 1,
+          "title": "Audiencemove",
+          "type": "string"
+        },
+        "evidenceRefs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Evidencerefs",
+          "type": "array"
+        },
+        "contentBlocks": {
+          "items": {
+            "$ref": "#/$defs/BlueprintContentBlock"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Contentblocks",
+          "type": "array"
+        },
+        "visualForm": {
+          "enum": [
+            "text",
+            "comparison",
+            "timeline",
+            "process",
+            "architecture",
+            "chart",
+            "table",
+            "diagram",
+            "mixed"
+          ],
+          "title": "Visualform",
+          "type": "string"
+        },
+        "layoutIntent": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Layoutintent",
+          "type": "string"
+        },
+        "literalConstraints": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Literalconstraints",
+          "type": "array"
+        },
+        "sourceMode": {
+          "enum": [
+            "approved-artifacts",
+            "no-source-limited"
+          ],
+          "title": "Sourcemode",
+          "type": "string"
+        },
+        "chartSpec": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlueprintChartSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "outlineSlideId",
+        "slideId",
+        "pnn",
+        "order",
+        "role",
+        "assertion",
+        "audienceMove",
+        "evidenceRefs",
+        "contentBlocks",
+        "visualForm",
+        "layoutIntent",
+        "literalConstraints",
+        "sourceMode"
+      ],
+      "title": "PageBlueprint",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "workflowRunId": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Workflowrunid",
+      "type": "string"
+    },
+    "approvedSnapshotSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Approvedsnapshotsha256",
+      "type": "string"
+    },
+    "inputSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Inputsha256",
+      "type": "string"
+    },
+    "authoringMode": {
+      "enum": [
+        "agent-strategist",
+        "deterministic-planner"
+      ],
+      "title": "Authoringmode",
+      "type": "string"
+    },
+    "strategistTurnId": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Strategistturnid"
+    },
+    "modelVersion": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Modelversion",
+      "type": "string"
+    },
+    "promptVersion": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Promptversion",
+      "type": "string"
+    },
+    "referenceVersion": {
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Referenceversion",
+      "type": "string"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PageBlueprint"
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Pages",
+      "type": "array"
+    }
+  },
+  "required": [
+    "workflowRunId",
+    "approvedSnapshotSha256",
+    "inputSha256",
+    "authoringMode",
+    "modelVersion",
+    "promptVersion",
+    "referenceVersion",
+    "pages"
+  ],
+  "title": "PageBlueprintArtifact",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v1/page-blueprint.v1.schema.json"
+}

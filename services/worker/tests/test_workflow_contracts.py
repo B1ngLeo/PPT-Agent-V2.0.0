@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from instant_ppt_worker.models import AdapterRequest
-from instant_ppt_worker.workflow_models import WorkflowRequestV2
+from instant_ppt_worker.workflow_models import PageBlueprintArtifact, WorkflowRequestV2
 from instant_ppt_worker.workflow_state import WorkflowTransitionError, validate_stage_entry
 from pydantic import TypeAdapter, ValidationError
 
@@ -315,6 +315,7 @@ def test_stage1_and_gate2_cannot_be_silently_skipped() -> None:
         "stage1-confirmation": {"status": "passed", "subjectSha256": HASH},
         "template-handoff": {"status": "passed", "subjectSha256": HASH},
         "stage2-confirmation": {"status": "passed", "subjectSha256": HASH},
+        "page-blueprint-gate": {"status": "passed", "subjectSha256": HASH},
         "design-spec-gate1": {"status": "passed", "subjectSha256": HASH},
     }
     with pytest.raises(WorkflowTransitionError, match="refine-spec-approval"):
@@ -322,6 +323,7 @@ def test_stage1_and_gate2_cannot_be_silently_skipped() -> None:
             "spec_lock_gate2",
             receipts,
             request_sha256=HASH,
+            page_blueprint_sha256=HASH,
             design_spec_sha256=HASH,
             refine_spec=True,
         )
@@ -344,5 +346,14 @@ def test_materialized_v2_schema_matches_pydantic_source() -> None:
     assert path.is_file()
     on_disk = json.loads(path.read_text(encoding="utf-8"))
     generated = WorkflowRequestV2.model_json_schema()
+    for key in ("$defs", "properties", "required", "title", "type"):
+        assert on_disk[key] == generated[key]
+
+
+def test_materialized_page_blueprint_schema_matches_pydantic_source() -> None:
+    path = Path("services/worker/contracts/page-blueprint.v1.schema.json")
+    assert path.is_file()
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    generated = PageBlueprintArtifact.model_json_schema()
     for key in ("$defs", "properties", "required", "title", "type"):
         assert on_disk[key] == generated[key]

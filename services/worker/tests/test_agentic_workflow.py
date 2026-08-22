@@ -9,6 +9,10 @@ import instant_ppt_worker.agentic_workflow as workflow_module
 import pytest
 from instant_ppt_worker.adapter import run_request
 from instant_ppt_worker.errors import CONTENT_QA_FAILED, AdapterError
+from instant_ppt_worker.presentation_blueprint import (
+    canonical_sha256,
+    validate_page_blueprint,
+)
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.workflow_models import WorkflowRequestV2
 
@@ -274,6 +278,70 @@ def test_no_source_limited_draft_authors_distinct_topic_specific_copy() -> None:
     assert "结论：" in bodies[-1] and "行动：" in bodies[-1]
 
 
+def test_page_blueprint_uses_semantic_evidence_instead_of_page_position() -> None:
+    workflow = _payload()
+    workflow["outline"][0].update(
+        {
+            "role": "content",
+            "title": "安全审计结论",
+            "audienceQuestion": "安全审计是否通过？",
+        }
+    )
+    workflow["outline"][1].update(
+        {
+            "role": "content",
+            "title": "性能吞吐结论",
+            "audienceQuestion": "性能吞吐是否达标？",
+        }
+    )
+    request = WorkflowRequestV2.model_validate(workflow)
+    fragments = [
+        {
+            "fragmentId": "performance-fragment",
+            "kind": "paragraph",
+            "text": "性能吞吐测试稳定达到预定目标，建议进入受控试点。",
+        },
+        {
+            "fragmentId": "security-fragment",
+            "kind": "paragraph",
+            "text": "安全审计已通过全部强制检查，未发现阻断问题。",
+        },
+    ]
+
+    blueprint = workflow_module._build_page_blueprint(request, fragments)
+    repeated = workflow_module._build_page_blueprint(request, fragments)
+
+    assert blueprint.pages[0].evidence_refs == ["security-fragment"]
+    assert blueprint.pages[1].evidence_refs == ["performance-fragment"]
+    assert [(page.slide_id, page.pnn, page.order) for page in blueprint.pages] == [
+        (slide.slide_id, slide.pnn, slide.order) for slide in request.outline
+    ]
+    assert canonical_sha256(blueprint.model_dump(by_alias=True, mode="json")) == canonical_sha256(
+        repeated.model_dump(by_alias=True, mode="json")
+    )
+    assert validate_page_blueprint(blueprint, request, fragments)["passed"] is True
+
+
+def test_page_blueprint_gate_rejects_an_unsupported_assertion() -> None:
+    workflow = _payload()
+    request = WorkflowRequestV2.model_validate(workflow)
+    fragments = [
+        fragment.model_dump(by_alias=True, mode="json")
+        for artifact in request.sources.artifacts
+        for fragment in artifact.fragments
+    ]
+    blueprint = workflow_module._build_page_blueprint(request, fragments)
+    blueprint.pages[0].assertion = "未经批准的财务收益增长 99%"
+
+    report = validate_page_blueprint(blueprint, request, fragments)
+
+    assert report["passed"] is False
+    assert any(
+        finding["code"] == "BLUEPRINT_ASSERTION_UNSUPPORTED"
+        for finding in report["findings"]
+    )
+
+
 def test_no_source_limited_vertical_slice_passes_all_release_gates(
     tmp_path: Path,
 ) -> None:
@@ -371,6 +439,19 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
     evidence_map = json.loads(
         (project / "analysis" / "evidence-map.json").read_text(encoding="utf-8")
     )
+    blueprint = json.loads(
+        (project / "analysis" / "page-blueprint.v1.json").read_text(encoding="utf-8")
+    )
+    blueprint_support = json.loads(
+        (project / "validation" / "page-blueprint-support.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blueprint_consistency = json.loads(
+        (project / "validation" / "page-blueprint-consistency.json").read_text(
+            encoding="utf-8"
+        )
+    )
     content_reports = {
         stage: json.loads((project / "validation" / filename).read_text(encoding="utf-8"))
         for stage, filename in {
@@ -380,6 +461,15 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
         }.items()
     }
     assert all(report["passed"] for report in content_reports.values())
+    blueprint_sha256 = canonical_sha256(blueprint)
+    assert blueprint_support["passed"] is True
+    assert blueprint_support["blueprintSha256"] == blueprint_sha256
+    assert blueprint_consistency["passed"] is True
+    assert blueprint_consistency["pageBlueprintSha256"] == blueprint_sha256
+    assert all(
+        report["pageBlueprintSha256"] == blueprint_sha256
+        for report in content_reports.values()
+    )
     assert all(
         report["evidenceMapSha256"] == evidence_map["evidenceMapSha256"]
         and report["grounding"]["passed"] is True

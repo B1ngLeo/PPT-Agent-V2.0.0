@@ -8,6 +8,17 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+SlideRole = Literal[
+    "cover",
+    "section",
+    "content",
+    "data",
+    "comparison",
+    "timeline",
+    "risk_action",
+    "ending",
+]
+
 
 class WorkflowContractModel(BaseModel):
     model_config = ConfigDict(
@@ -52,16 +63,7 @@ class ApprovedOutlineSlide(WorkflowContractModel):
     slide_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
     pnn: str = Field(pattern=r"^P\d{2,3}$")
     order: int = Field(ge=1, le=30)
-    role: Literal[
-        "cover",
-        "section",
-        "content",
-        "data",
-        "comparison",
-        "timeline",
-        "risk_action",
-        "ending",
-    ]
+    role: SlideRole
     title: str = Field(min_length=1, max_length=300)
     audience_question: str = Field(min_length=1, max_length=1000)
 
@@ -269,6 +271,149 @@ class ResearchPolicy(WorkflowContractModel):
         return self
 
 
+class BlueprintContentBlock(WorkflowContractModel):
+    block_id: str = Field(pattern=r"^P\d{2,3}-[a-z][a-z0-9-]{1,48}$")
+    kind: Literal[
+        "assertion",
+        "evidence",
+        "comparison",
+        "sequence",
+        "action",
+        "chart",
+        "table",
+        "annotation",
+    ]
+    hierarchy: int = Field(ge=1, le=4)
+    text: str = Field(min_length=1, max_length=4000)
+    relationship: Literal[
+        "supports",
+        "contrasts",
+        "precedes",
+        "follows",
+        "qualifies",
+        "acts-on",
+        "summarizes",
+    ]
+    evidence_refs: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def validate_evidence_refs(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)) or any(not item.strip() for item in value):
+            raise ValueError("content block evidenceRefs must be non-empty and unique")
+        return value
+
+
+class BlueprintDataPoint(WorkflowContractModel):
+    label: str = Field(min_length=1, max_length=160)
+    value: float
+
+
+class BlueprintChartSpec(WorkflowContractModel):
+    object_key: str = Field(min_length=1, max_length=160)
+    context: str = Field(min_length=1, max_length=500)
+    chart_type: Literal["bar", "column", "line", "area", "scatter"]
+    values: list[BlueprintDataPoint] = Field(min_length=2, max_length=16)
+    unit: str = Field(min_length=1, max_length=40)
+    comparison_baseline: float = 0
+    evidence_refs: list[str] = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_chart(self) -> BlueprintChartSpec:
+        labels = [item.label.casefold() for item in self.values]
+        if len(labels) != len(set(labels)):
+            raise ValueError("chart value labels must be unique")
+        if len(self.evidence_refs) != len(set(self.evidence_refs)):
+            raise ValueError("chart evidenceRefs must be unique")
+        return self
+
+
+class PageBlueprint(WorkflowContractModel):
+    schema_version: Literal[1] = 1
+    outline_slide_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
+    slide_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
+    pnn: str = Field(pattern=r"^P\d{2,3}$")
+    order: int = Field(ge=1, le=30)
+    role: SlideRole
+    assertion: str = Field(min_length=1, max_length=1000)
+    audience_move: str = Field(min_length=1, max_length=1500)
+    evidence_refs: list[str] = Field(max_length=32)
+    content_blocks: list[BlueprintContentBlock] = Field(min_length=1, max_length=16)
+    visual_form: Literal[
+        "text",
+        "comparison",
+        "timeline",
+        "process",
+        "architecture",
+        "chart",
+        "table",
+        "diagram",
+        "mixed",
+    ]
+    layout_intent: str = Field(min_length=1, max_length=2000)
+    literal_constraints: list[str] = Field(min_length=1, max_length=64)
+    source_mode: Literal["approved-artifacts", "no-source-limited"]
+    chart_spec: BlueprintChartSpec | None = None
+
+    @model_validator(mode="after")
+    def validate_page_blueprint(self) -> PageBlueprint:
+        if len(self.evidence_refs) != len(set(self.evidence_refs)):
+            raise ValueError("page evidenceRefs must be unique")
+        if len(self.literal_constraints) != len(set(self.literal_constraints)):
+            raise ValueError("literalConstraints must be unique")
+        if self.source_mode == "approved-artifacts" and not self.evidence_refs:
+            raise ValueError("approved source pages require exact evidenceRefs")
+        if self.source_mode == "no-source-limited" and self.evidence_refs:
+            raise ValueError("no-source-limited pages cannot claim source evidence")
+        block_refs = {
+            reference for block in self.content_blocks for reference in block.evidence_refs
+        }
+        if not block_refs.issubset(set(self.evidence_refs)):
+            raise ValueError("content block evidenceRefs must be declared by the page")
+        if self.visual_form == "chart" and self.chart_spec is None:
+            raise ValueError("chart visualForm requires chartSpec")
+        if self.chart_spec is not None:
+            if self.visual_form not in {"chart", "mixed"}:
+                raise ValueError("chartSpec requires chart or mixed visualForm")
+            if not set(self.chart_spec.evidence_refs).issubset(set(self.evidence_refs)):
+                raise ValueError("chart evidenceRefs must be declared by the page")
+        return self
+
+
+class PageBlueprintArtifact(WorkflowContractModel):
+    schema_version: Literal[1] = 1
+    workflow_run_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
+    approved_snapshot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    input_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    authoring_mode: Literal["agent-strategist", "deterministic-planner"]
+    strategist_turn_id: str | None = Field(
+        default=None, pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$"
+    )
+    model_version: str = Field(min_length=1, max_length=160)
+    prompt_version: str = Field(min_length=1, max_length=160)
+    reference_version: str = Field(min_length=1, max_length=160)
+    pages: list[PageBlueprint] = Field(min_length=1, max_length=30)
+
+    @model_validator(mode="after")
+    def validate_artifact(self) -> PageBlueprintArtifact:
+        if self.authoring_mode == "agent-strategist" and self.strategist_turn_id is None:
+            raise ValueError("agent strategist artifacts require a real strategistTurnId")
+        if self.authoring_mode == "deterministic-planner" and self.strategist_turn_id is not None:
+            raise ValueError("deterministic planner artifacts cannot claim a strategist turn")
+        orders = [page.order for page in self.pages]
+        if orders != list(range(1, len(self.pages) + 1)):
+            raise ValueError("Page Blueprint order must be contiguous")
+        if [page.pnn for page in self.pages] != [
+            f"P{index:02d}" for index in range(1, len(self.pages) + 1)
+        ]:
+            raise ValueError("Page Blueprint PNN values must match the exact roster")
+        for attribute in ("slide_id", "outline_slide_id"):
+            values = [getattr(page, attribute) for page in self.pages]
+            if len(values) != len(set(values)):
+                raise ValueError(f"Page Blueprint {attribute} values must be unique")
+        return self
+
+
 class AgentRuntimePolicy(WorkflowContractModel):
     allowed_tools: list[
         Literal[
@@ -434,6 +579,7 @@ class WorkflowReceipt(WorkflowContractModel):
         "template-handoff",
         "stage2-confirmation",
         "image-resources",
+        "page-blueprint-gate",
         "design-spec-gate1",
         "refine-spec-approval",
         "spec-lock-gate2",

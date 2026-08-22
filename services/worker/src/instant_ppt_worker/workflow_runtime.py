@@ -30,6 +30,7 @@ _RECEIPT_STAGES = {
     "template-handoff": "template_handoff",
     "stage2-confirmation": "stage2",
     "image-resources": "design_spec_gate1",
+    "page-blueprint-gate": "design_spec_gate1",
     "design-spec-gate1": "design_spec_gate1",
     "refine-spec-approval": "refine_spec",
     "spec-lock-gate2": "spec_lock_gate2",

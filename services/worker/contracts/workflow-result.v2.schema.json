@@ -117,6 +117,7 @@
             "template-handoff",
             "stage2-confirmation",
             "image-resources",
+            "page-blueprint-gate",
             "design-spec-gate1",
             "refine-spec-approval",
             "spec-lock-gate2",
