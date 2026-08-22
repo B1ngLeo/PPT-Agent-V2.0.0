@@ -1,0 +1,86 @@
+{
+  "additionalProperties": false,
+  "description": "One model-selected action in the presentation authoring loop.",
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "role": {
+      "enum": [
+        "strategist",
+        "executor"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "action": {
+      "enum": [
+        "tool",
+        "complete",
+        "pause",
+        "fail"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "toolName": {
+      "anyOf": [
+        {
+          "enum": [
+            "read_approved_context",
+            "write_planning_artifact",
+            "read_design_catalog",
+            "write_or_patch_slide_svg",
+            "run_svg_gate",
+            "render_slide_or_deck",
+            "run_chart_gate",
+            "request_visual_review",
+            "complete_or_pause_stage"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Toolname"
+    },
+    "arguments": {
+      "additionalProperties": true,
+      "title": "Arguments",
+      "type": "object"
+    },
+    "reason": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "terminationReason": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Terminationreason"
+    }
+  },
+  "required": [
+    "role",
+    "action",
+    "reason"
+  ],
+  "title": "AgentDecision",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v1/agent-decision.v1.schema.json"
+}

@@ -101,6 +101,19 @@
 
 最新记录放在最上方。
 
+### 2026-08-23 00:32 — 提交 ISSUE-003 阶段 B 受约束设计工具
+
+- 操作者：Codex
+- 目的：为 Main Presentation Agent 提供安全、可审计且足以表达可编辑演示文稿的语义工具层。
+- 操作前状态：`codex/issue-003-presentation-agent@2246ed8`；阶段 A 已验证提交。
+- 执行命令：`git add <stage-b files>`；`git diff --cached --check`；`git commit -m "feat(agent): add constrained presentation design tools"`。
+- 变更范围：9 个精确工具、Scene Graph v1、可编辑文本/形状/分组/图片/native chart/table、受校验直接 SVG escape hatch、项目/页面/证据权限和 hash/attempt/stale tool evidence。
+- 验证结果：Ruff、42/42 合并回归和 vendored SVG final checker 0 blocking/exit 0 通过。
+- 相关提交：`e22a04544b240265c2dbeb221e2f81e19653d169`
+- 远端结果：未涉及，未推送。
+- 回退方式：`git revert e22a045`。
+- 状态：成功。
+
 ### 2026-08-23 00:18 — 提交 ISSUE-003 阶段 A Page Blueprint
 
 - 操作者：Codex

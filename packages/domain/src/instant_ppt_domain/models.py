@@ -15,6 +15,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -1466,6 +1467,96 @@ class WorkflowStageAttempt(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowAgentTurn(Base):
+    __tablename__ = "workflow_agent_turns"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_agent_turns_run_org",
+        ),
+        UniqueConstraint("id", "organization_id", name="uq_workflow_agent_turns_id_org"),
+        UniqueConstraint(
+            "workflow_run_id",
+            "sequence",
+            name="uq_workflow_agent_turns_run_sequence",
+        ),
+        CheckConstraint("sequence >= 1", name="sequence_positive"),
+        CheckConstraint("role IN ('strategist', 'executor')", name="valid_role"),
+        CheckConstraint("input_tokens >= 0", name="input_tokens_nonnegative"),
+        CheckConstraint("output_tokens >= 0", name="output_tokens_nonnegative"),
+        CheckConstraint("cost_microunits >= 0", name="cost_nonnegative"),
+        CheckConstraint("elapsed_seconds >= 0", name="elapsed_nonnegative"),
+        Index("ix_workflow_agent_turns_run_phase", "workflow_run_id", "phase_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    phase_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False)
+    provider_model: Mapped[str | None] = mapped_column(String(160))
+    model_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    reference_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    prompt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_sha256: Mapped[str | None] = mapped_column(String(64))
+    decision: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    observation_sha256: Mapped[str | None] = mapped_column(String(64))
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_microunits: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    elapsed_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowAgentToolCall(Base):
+    __tablename__ = "workflow_agent_tool_calls"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_run_id", "organization_id"],
+            ["workflow_runs.id", "workflow_runs.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_agent_tool_calls_run_org",
+        ),
+        ForeignKeyConstraint(
+            ["agent_turn_id", "organization_id"],
+            ["workflow_agent_turns.id", "workflow_agent_turns.organization_id"],
+            ondelete="CASCADE",
+            name="fk_workflow_agent_tool_calls_turn_org",
+        ),
+        CheckConstraint("author_attempt BETWEEN 1 AND 5", name="author_attempt_bounded"),
+        Index("ix_workflow_agent_tool_calls_run_stage", "workflow_run_id", "stage"),
+        Index("ix_workflow_agent_tool_calls_turn", "agent_turn_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    agent_turn_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    stage: Mapped[str] = mapped_column(String(80), nullable=False)
+    current_pnn: Mapped[str | None] = mapped_column(String(8))
+    author_attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    arguments_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    observation: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    stale: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    model_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    reference_version: Mapped[str] = mapped_column(String(160), nullable=False)
+    usage_before: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class WorkflowCheckpointSet(Base):

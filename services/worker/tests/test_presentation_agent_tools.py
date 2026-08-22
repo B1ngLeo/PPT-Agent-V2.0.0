@@ -45,7 +45,9 @@ def _context(
     allowed_tools: frozenset[str] | None = None,
     callbacks: ToolCallbacks | None = None,
 ) -> PresentationToolContext:
-    request = WorkflowRequestV2.model_validate(_payload())
+    payload = _payload()
+    payload["runtime"]["allowedTools"].extend(AGENT_TOOL_NAMES)
+    request = WorkflowRequestV2.model_validate(payload)
     fragments = _fragments(request)
     blueprint = _build_page_blueprint(request, fragments)
     project = tmp_path / "project"

@@ -41,3 +41,15 @@ def test_supervisor_rejects_non_image_scoped_environment_before_launch(tmp_path)
             heartbeat=lambda: None,
             image_environment={"DATABASE_URL": "must-not-cross-boundary"},
         )
+
+
+def test_supervisor_rejects_non_text_scoped_environment_before_launch(tmp_path) -> None:
+    with pytest.raises(AdapterError, match="unsafe keys"):
+        run_default_workflow_supervised(
+            tmp_path,
+            object(),
+            hard_timeout_seconds=60,
+            cancellation_requested=lambda: False,
+            heartbeat=lambda: None,
+            text_environment={"DATABASE_URL": "must-not-cross-boundary"},
+        )

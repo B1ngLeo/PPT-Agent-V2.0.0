@@ -107,6 +107,37 @@ def _scoped_image_environment(
     }
 
 
+def _scoped_text_environment(
+    snapshot: GenerationSnapshot,
+    request: WorkflowRequestV2,
+) -> dict[str, str]:
+    if "provider-text" not in request.runtime.allowed_tools:
+        return {}
+    configuration = dict(
+        snapshot.payload.get("providerConfiguration", {}).get("planning") or {}
+    )
+    return {
+        "MOONSHOT_API_KEY": os.getenv("MOONSHOT_API_KEY", "").strip(),
+        "KIMI_BASE_URL": str(
+            configuration.get("baseUrl") or "https://api.moonshot.cn/v1"
+        ),
+        "KIMI_MODEL": str(configuration.get("model") or request.versions.model),
+        "KIMI_PROTOCOL": str(configuration.get("protocol") or "openai"),
+        "KIMI_REASONING_EFFORT": str(
+            configuration.get("reasoningEffort") or "max"
+        ),
+        "KIMI_TIMEOUT_SECONDS": str(
+            float(configuration.get("timeoutSeconds") or 240)
+        ),
+        "KIMI_TRANSPORT_MAX_RETRIES": str(
+            int(configuration.get("transportMaxRetries") or 1)
+        ),
+        "KIMI_RETRY_BACKOFF_SECONDS": str(
+            float(configuration.get("retryBackoffSeconds") or 2)
+        ),
+    }
+
+
 def _persist_image_provider_calls(
     session_factory: sessionmaker[Session],
     *,
@@ -370,6 +401,7 @@ def _process_default_generation_job(
                 hard_timeout_seconds=request.runtime.hard_timeout_seconds,
                 cancellation_requested=cancellation_requested,
                 heartbeat=heartbeat,
+                text_environment=_scoped_text_environment(snapshot, request),
                 image_environment=_scoped_image_environment(snapshot, request),
             )
         except WorkflowCancelled:

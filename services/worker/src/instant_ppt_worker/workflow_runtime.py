@@ -12,6 +12,8 @@ from instant_ppt_domain.models import (
     Artifact,
     GenerationJob,
     GenerationSnapshot,
+    WorkflowAgentToolCall,
+    WorkflowAgentTurn,
     WorkflowCheckpointSet,
     WorkflowGateReceipt,
     WorkflowIntermediateArtifact,
@@ -167,6 +169,70 @@ def persist_workflow_evidence(
     project: Path,
     result: WorkflowResultV2,
 ) -> WorkflowCheckpointSet:
+    for path in sorted((project / "agent" / "turns").glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if session.get(WorkflowAgentTurn, payload["turnId"]) is not None:
+            continue
+        usage = payload.get("usage") or {}
+        session.add(
+            WorkflowAgentTurn(
+                id=payload["turnId"],
+                organization_id=run.organization_id,
+                workflow_run_id=run.id,
+                sequence=int(payload["sequence"]),
+                phase_id=payload["phaseId"],
+                role=payload["role"],
+                status=payload["status"],
+                provider=payload["provider"],
+                provider_model=payload.get("providerModel"),
+                model_version=payload["modelVersion"],
+                prompt_version=payload["promptVersion"],
+                reference_version=payload["referenceVersion"],
+                prompt_sha256=payload["promptSha256"],
+                response_sha256=payload.get("responseSha256"),
+                decision=payload.get("decision") or {},
+                observation_sha256=payload.get("observationSha256"),
+                input_tokens=int(usage.get("inputTokens") or 0),
+                output_tokens=int(usage.get("outputTokens") or 0),
+                cost_microunits=int(usage.get("costMicrounits") or 0),
+                elapsed_seconds=float(usage.get("elapsedSeconds") or 0),
+                created_at=datetime.fromisoformat(payload["createdAt"]),
+            )
+        )
+    session.flush()
+    for path in sorted((project / "agent" / "tool-calls").glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if session.get(WorkflowAgentToolCall, payload["toolCallId"]) is not None:
+            continue
+        author_turn_id = payload.get("authorTurnId")
+        if not author_turn_id or session.get(WorkflowAgentTurn, author_turn_id) is None:
+            raise RuntimeError("Agent tool evidence is missing its persisted author turn")
+        session.add(
+            WorkflowAgentToolCall(
+                id=payload["toolCallId"],
+                organization_id=run.organization_id,
+                workflow_run_id=run.id,
+                agent_turn_id=author_turn_id,
+                stage=payload["stage"],
+                current_pnn=payload.get("currentPnn"),
+                author_attempt=int(payload["authorAttempt"]),
+                tool_name=payload["toolName"],
+                status=payload["status"],
+                arguments_sha256=payload["argumentsSha256"],
+                input_sha256=payload["inputSha256"],
+                output_sha256=payload["outputSha256"],
+                subject_sha256=payload["subjectSha256"],
+                observation=payload["observation"],
+                stale=list(payload.get("stale") or []),
+                model_version=payload["modelVersion"],
+                prompt_version=payload["promptVersion"],
+                reference_version=payload["referenceVersion"],
+                usage_before=payload.get("usageBefore") or {},
+                started_at=datetime.fromisoformat(payload["startedAt"]),
+                completed_at=datetime.fromisoformat(payload["completedAt"]),
+            )
+        )
+    session.flush()
     event_path = project / "validation" / "workflow-events.jsonl"
     events = [
         json.loads(line)

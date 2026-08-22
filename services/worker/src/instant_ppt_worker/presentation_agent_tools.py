@@ -586,6 +586,8 @@ class PresentationAgentToolRegistry:
         tool_name: str,
         arguments: dict[str, Any],
         input_sha256: str,
+        author_turn_id: str | None = None,
+        usage_before: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         if _TOOL_ID.fullmatch(tool_call_id) is None:
             raise ToolPolicyError("toolCallId must be a ULID")
@@ -614,6 +616,11 @@ class PresentationAgentToolRegistry:
             "authorAttempt": self.context.author_attempt,
             "currentPnn": self.context.current_pnn,
             "toolName": tool_name,
+            "authorTurnId": author_turn_id,
+            "modelVersion": self.context.request.versions.model,
+            "promptVersion": self.context.request.versions.prompt,
+            "referenceVersion": self.context.request.versions.reference,
+            "usageBefore": usage_before or {},
             "argumentsSha256": canonical_sha256(arguments),
             "inputSha256": input_sha256,
             "outputSha256": output_sha256,

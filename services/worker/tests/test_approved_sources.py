@@ -15,7 +15,10 @@ from instant_ppt_domain.models import (
     SourceArtifact,
 )
 from instant_ppt_worker.approved_sources import resolve_approved_sources
-from instant_ppt_worker.default_generation_pipeline import _scoped_image_environment
+from instant_ppt_worker.default_generation_pipeline import (
+    _scoped_image_environment,
+    _scoped_text_environment,
+)
 from instant_ppt_worker.default_workflow_request import build_default_workflow_request
 from instant_ppt_worker.errors import AdapterError
 
@@ -256,7 +259,15 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
     assert "provider-image" in image_request.runtime.allowed_tools
 
     snapshot.payload["providerConfiguration"] = {
-        "planning": {"model": "kimi-k3"},
+        "planning": {
+            "model": "kimi-k3",
+            "baseUrl": "https://text.example/v1",
+            "protocol": "openai",
+            "reasoningEffort": "high",
+            "timeoutSeconds": 123,
+            "transportMaxRetries": 2,
+            "retryBackoffSeconds": 3,
+        },
         "image": {
             "enabled": True,
             "backend": "openai",
@@ -274,3 +285,16 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
     assert environment["OPENAI_BASE_URL"] == "https://frozen.example/v1"
     assert environment["IMAGE_MAX_PER_DECK"] == "1"
     assert "DATABASE_URL" not in environment
+
+    monkeypatch.setenv("MOONSHOT_API_KEY", "moonshot-runtime-secret")
+    text_environment = _scoped_text_environment(snapshot, image_request)
+    assert text_environment == {
+        "MOONSHOT_API_KEY": "moonshot-runtime-secret",
+        "KIMI_BASE_URL": "https://text.example/v1",
+        "KIMI_MODEL": "kimi-k3",
+        "KIMI_PROTOCOL": "openai",
+        "KIMI_REASONING_EFFORT": "high",
+        "KIMI_TIMEOUT_SECONDS": "123.0",
+        "KIMI_TRANSPORT_MAX_RETRIES": "2",
+        "KIMI_RETRY_BACKOFF_SECONDS": "3.0",
+    }

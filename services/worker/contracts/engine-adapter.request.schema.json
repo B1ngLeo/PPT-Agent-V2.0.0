@@ -62,6 +62,34 @@
           "title": "Maxcostmicrounits",
           "type": "integer"
         },
+        "maxCompletionTokensPerTurn": {
+          "default": 8000,
+          "maximum": 100000,
+          "minimum": 128,
+          "title": "Maxcompletiontokensperturn",
+          "type": "integer"
+        },
+        "maxContextCharacters": {
+          "default": 600000,
+          "maximum": 4000000,
+          "minimum": 10000,
+          "title": "Maxcontextcharacters",
+          "type": "integer"
+        },
+        "inputCostMicrounitsPer1K": {
+          "default": 0,
+          "maximum": 10000000,
+          "minimum": 0,
+          "title": "Inputcostmicrounitsper1K",
+          "type": "integer"
+        },
+        "outputCostMicrounitsPer1K": {
+          "default": 0,
+          "maximum": 10000000,
+          "minimum": 0,
+          "title": "Outputcostmicrounitsper1K",
+          "type": "integer"
+        },
         "softTimeoutSeconds": {
           "maximum": 43200,
           "minimum": 30,

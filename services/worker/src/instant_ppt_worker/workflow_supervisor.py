@@ -60,6 +60,18 @@ _SCOPED_IMAGE_ENVIRONMENT = frozenset(
         "OPENAI_IMAGE_TIMEOUT_SECONDS",
     }
 )
+_SCOPED_TEXT_ENVIRONMENT = frozenset(
+    {
+        "MOONSHOT_API_KEY",
+        "KIMI_BASE_URL",
+        "KIMI_MODEL",
+        "KIMI_PROTOCOL",
+        "KIMI_REASONING_EFFORT",
+        "KIMI_TIMEOUT_SECONDS",
+        "KIMI_TRANSPORT_MAX_RETRIES",
+        "KIMI_RETRY_BACKOFF_SECONDS",
+    }
+)
 
 
 def minimal_subprocess_environment(source: dict[str, str] | None = None) -> dict[str, str]:
@@ -119,6 +131,7 @@ def run_default_workflow_supervised(
     hard_timeout_seconds: int,
     cancellation_requested: Callable[[], bool],
     heartbeat: Callable[[], None],
+    text_environment: dict[str, str] | None = None,
     image_environment: dict[str, str] | None = None,
     poll_seconds: float = 0.25,
     termination_grace_seconds: float = 5.0,
@@ -129,6 +142,9 @@ def run_default_workflow_supervised(
     unexpected_image_keys = set(image_environment or {}) - _SCOPED_IMAGE_ENVIRONMENT
     if unexpected_image_keys:
         raise AdapterError(RENDER_FAILED, "image subprocess environment contains unsafe keys")
+    unexpected_text_keys = set(text_environment or {}) - _SCOPED_TEXT_ENVIRONMENT
+    if unexpected_text_keys:
+        raise AdapterError(RENDER_FAILED, "text subprocess environment contains unsafe keys")
     request_path = workspace / "workflow-request.json"
     request_path.write_text(
         request.model_dump_json(by_alias=True, indent=2),
@@ -136,6 +152,13 @@ def run_default_workflow_supervised(
     )
     creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     child_environment = minimal_subprocess_environment()
+    child_environment.update(
+        {
+            key: value
+            for key, value in (text_environment or {}).items()
+            if key in _SCOPED_TEXT_ENVIRONMENT and value
+        }
+    )
     child_environment.update(
         {
             key: value
