@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "issue": "ISSUE-003",
+  "status": "passed",
+  "executedAt": "2026-08-23T04:31:00+08:00",
+  "runtime": {
+    "buildRevision": "157dc2d22bf46fcf08fcacb51ffe22c7c55a21e0",
+    "runtimeContractVersion": "instant-ppt-runtime@v2",
+    "workflowContractVersion": "instant-ppt-default@v2.0.0",
+    "workerFamilyImageId": "sha256:ba212886810fafc4000908c97e120f0ee953d4194177eea142c28638281ec082",
+    "planningBackend": "fake",
+    "planningModel": "fake-agent@v1",
+    "liveKimiClaimed": false
+  },
+  "agentUserJourney": {
+    "runtimeBuildRevision": "900308568ba2524ac91c1d07d7e00c5a40272f9d",
+    "workerFamilyImageId": "sha256:dd0f869ca600028413af8371a97bba3c5258876b2068e24d109d8fea74f455a8",
+    "draftId": "01M0NH0RE6Z6N9596PAPHY2MCN",
+    "generationJobId": "01M0NH4J75NK4X6S5TD5Y9REBN",
+    "presentationId": "01PGCRM6R78VMYV5MSTY1N5X6B",
+    "editedRevisionId": "01M0NH5VM6CJKTTMKPQK42DKDK",
+    "exportJobId": "01M0NH63MPZS7FCD0141PF2N71",
+    "exportArtifactId": "017AAGV6D6FPC0B5SYVAHDC19A",
+    "authoringMode": "agent-authoring",
+    "engineProfile": "default-agentic",
+    "generatedPages": 8,
+    "generationAttempt": 1,
+    "agentTurns": 32,
+    "agentToolCalls": 22,
+    "editedSlideTitle": "一页结论（用户编辑已验证）",
+    "exportedRevisionNumber": 2,
+    "download": {
+      "filename": "面向产品团队的 ISSUE-003 Agent 演示生成闭环.pptx",
+      "path": "C:\\Users\\Xiaobing Li\\Downloads\\面向产品团队的 ISSUE-003 Agent 演示生成闭环.pptx",
+      "sizeBytes": 27070,
+      "sha256": "8d17ac37d9dcbba5d2f721febae4c0aafee337213ba69f33a6bd6f3ae0419fcd"
+    },
+    "checks": {
+      "monitorDisclosedAgentAuthoring": true,
+      "editorDisclosedAgentAuthoring": true,
+      "limitedSourceWarningVisible": true,
+      "userEditCreatedImmutableRevision": true,
+      "exactRevisionExportSucceeded": true,
+      "signedDownloadSucceeded": true
+    }
+  },
+  "fixedTemplateFallbackJourney": {
+    "runtimeBuildRevision": "157dc2d22bf46fcf08fcacb51ffe22c7c55a21e0",
+    "draftId": "01M0NJEARDBMYE93XVV1053W41",
+    "generationJobId": "01M0NJEV14M16ZEYTM68PE3CJC",
+    "snapshotId": "01M0NJEV10MSPAMA6H4PSEFD4S",
+    "presentationId": "017BWFHQJ7M0F30S5G6B6R212F",
+    "revisionId": "01NQEFSTM830FBZX9K3W0X3TN9",
+    "exportJobId": "01M0NJG2ZJZ930NMJEE4GGKTXH",
+    "exportArtifactId": "01WZCBZ5E8ZVRXZXV4AYE07TJE",
+    "authoringMode": "deterministic-template",
+    "authoringDisclosure": "template-limited-editable-draft",
+    "fallbackReason": "operator-feature-flag",
+    "contentMode": "limited-general-draft",
+    "generatedPages": 8,
+    "templateAuthoredPages": 8,
+    "agentAuthoredPages": 0,
+    "workflowRuns": 0,
+    "agentTurns": 0,
+    "agentToolCalls": 0,
+    "suggestedFilename": "ISSUE-003 修复后模板披露与精确导出验收-模板化受限初稿.pptx",
+    "download": {
+      "filename": "ISSUE-003 修复后模板披露与精确导出验收-模板化受限初稿.pptx",
+      "path": "C:\\Users\\Xiaobing Li\\Downloads\\ISSUE-003 修复后模板披露与精确导出验收-模板化受限初稿.pptx",
+      "sizeBytes": 25499,
+      "sha256": "f21c56865236fdbcfaa21b3efe102765cc44ae0cb433c16b0880a3f041edab14"
+    },
+    "checks": {
+      "monitorDisclosedTemplateFallback": true,
+      "editorDisclosedTemplateFallback": true,
+      "editorAgentMislabelAbsent": true,
+      "limitedSourceWarningVisible": true,
+      "fallbackFilenameMarkerEnforced": true,
+      "exactRevisionExportSucceeded": true,
+      "downloadHashMatchesArtifact": true
+    }
+  },
+  "rollbackCanary": {
+    "runtimeBuildRevision": "157dc2d22bf46fcf08fcacb51ffe22c7c55a21e0",
+    "generationJobId": "01M0NJKXD7ZZWXTS5FXN6DADXC",
+    "snapshotId": "01M0NJKXD4KGVMJTT3PKGK954S",
+    "presentationId": "01FRXF5ZQXB0P0EK96SJD3FHJA",
+    "revisionId": "01ZTE1ZPDS7FJGQN5WT641VT0F",
+    "workflowRunId": "014N7KQTMAWNF2SJ7RWFPHGPQE",
+    "authoringMode": "agent-authoring",
+    "authoringDisclosure": "agent-authored-editable-draft",
+    "generatedPages": 8,
+    "agentAuthoredPages": 8,
+    "templateAuthoredPages": 0,
+    "agentTurns": 32,
+    "agentToolCalls": 22,
+    "checks": {
+      "newJobsUseAgentAfterRollback": true,
+      "agentEditorIdentityCorrect": true,
+      "priorFallbackRevisionRemainedTemplateAfterRollback": true,
+      "snapshotAndRevisionIdentityDidNotDrift": true
+    }
+  },
+  "browserConsole": {
+    "errorCount": 0,
+    "warningCount": 0
+  }
+}
