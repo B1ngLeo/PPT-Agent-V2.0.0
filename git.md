@@ -18,12 +18,12 @@
 | 项目 | 状态 |
 | --- | --- |
 | 当前分支 | `codex/issue-003-presentation-agent` |
-| 当前提交 | `2246ed8` (`feat(agent): add semantic page blueprint gate`) |
-| 提交总数 | 20 |
+| 当前提交 | `9230485` (`feat(agent): author slides through main agent`) |
+| 提交总数 | 23 |
 | 历史结构 | 单一直线历史，无合并提交 |
 | Git 远端 | 未配置 |
 | Git 标签 | 无 |
-| 工作区 | ISSUE-003 阶段 0/A 及已验证的 runtime/provider 修复已分类提交；阶段 B 正在开发，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
+| 工作区 | ISSUE-003 阶段 0–D 已分类提交；阶段 E 正在开发，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
 | GitHub 状态 | 尚未关联或上传 |
 
 注意：首次提交包含 13,213 个文件和约 40 万行新增内容。上传 GitHub 前应检查仓库体积、敏感信息、依赖目录和生成文件，避免把不适合公开或版本管理的内容推送出去。
@@ -52,6 +52,9 @@
 | 2026-08-22 23:50 | `e8b54ff` | `docs` | ISSUE-003：冻结 before/reference 质量基线与 Agent 证据合同 |
 | 2026-08-22 23:58 | `9372959` | `fix` | 分类提交已验证的 provider timeout/retry 和质量修复 |
 | 2026-08-23 00:18 | `2246ed8` | `feat` | ISSUE-003：新增语义 Page Blueprint 和 hash-bound 一致性门禁 |
+| 2026-08-23 00:32 | `e22a045` | `feat` | ISSUE-003：新增受约束演示文稿设计工具 |
+| 2026-08-23 00:49 | `0b29374` | `feat` | ISSUE-003：新增可恢复 Main Presentation Agent Runtime |
+| 2026-08-23 01:06 | `9230485` | `feat` | ISSUE-003：同一 Main Agent 顺序创作并绑定逐页证据 |
 
 ## 远端与 GitHub
 
@@ -100,6 +103,19 @@
 ## 操作日志
 
 最新记录放在最上方。
+
+### 2026-08-23 01:06 — 提交 ISSUE-003 阶段 D Main Agent 顺序 SVG 创作
+
+- 操作者：Codex
+- 目的：让 `default-agentic` 的真实 Strategist/Executor 会话接管逐页 SVG 写入，并把当前页 hash 绑定到实际 turn/tool evidence。
+- 操作前状态：`codex/issue-003-presentation-agent@0b29374`；阶段 C 已验证提交。
+- 执行命令：`git add <stage-d files>`；`git diff --cached --check`；`git commit -m "feat(agent): author slides through main agent"`。
+- 变更范围：Strategist 策略落盘、P01→first-page gate→P02…Pn Executor 循环、Scene Graph 逐页 author evidence、上下文压缩、可编辑文本分形和 production/fake Provider 边界。
+- 验证结果：Ruff/compile 和 Agentic Workflow/Runtime/Tool/Contract/Source/Image/Provider 合并回归通过，含 2 页 native chart、8 页、AI/provided 图片路径。
+- 相关提交：`923048537afd5e42303152c6053b1cbefeb242e0`
+- 远端结果：未涉及，未推送。
+- 回退方式：`git revert 9230485`。
+- 状态：成功。
 
 ### 2026-08-23 00:49 — 提交 ISSUE-003 阶段 C 可恢复 Main Agent Runtime
 

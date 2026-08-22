@@ -667,6 +667,21 @@ class MainPresentationAgent:
         elapsed = max(0.0, self.clock() - started)
         self.state["usage"]["elapsedSeconds"] += elapsed
         self.state["usage"]["toolCalls"] += 1
+        nested_usage = (
+            record.get("observation", {}).get("report", {}).get("providerUsage", {})
+            if isinstance(record.get("observation"), dict)
+            else {}
+        )
+        if isinstance(nested_usage, dict):
+            self.state["usage"]["inputTokens"] += int(
+                nested_usage.get("inputTokens") or 0
+            )
+            self.state["usage"]["outputTokens"] += int(
+                nested_usage.get("outputTokens") or 0
+            )
+            self.state["usage"]["costMicrounits"] += int(
+                nested_usage.get("costMicrounits") or 0
+            )
         if failed:
             self.state["usage"]["toolFailures"] += 1
         observation_sha256 = canonical_sha256(record)

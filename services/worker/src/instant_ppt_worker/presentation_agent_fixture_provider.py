@@ -28,6 +28,12 @@ class DeterministicPresentationAgentProvider:
         max_completion_tokens: int | None = None,
     ) -> TextCompletion:
         del response_format, max_completion_tokens
+        if any(
+            "Visual Review Agent" in str(message.get("content") or "")
+            for message in messages
+            if message.get("role") == "system"
+        ):
+            return _visual_review_completion(messages)
         phase_index, phase = _latest_phase(messages)
         observations = _observations(messages[phase_index + 1 :])
         decision = (
@@ -43,6 +49,54 @@ class DeterministicPresentationAgentProvider:
             prompt_tokens=max(1, prompt_characters // 4),
             completion_tokens=max(1, len(content) // 4),
         )
+
+
+def _visual_review_completion(messages: list[dict[str, Any]]) -> TextCompletion:
+    context: dict[str, Any] | None = None
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        text = next(
+            (
+                str(part.get("text") or "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ),
+            "",
+        )
+        marker = "reviewContext="
+        start = text.find(marker)
+        if start < 0:
+            continue
+        context, _ = json.JSONDecoder().raw_decode(text[start + len(marker) :])
+        break
+    if context is None:
+        raise RuntimeError("visual review fixture received no hash-bound review context")
+    payload = {
+        "schemaVersion": 1,
+        "workflowRunId": context["workflowRunId"],
+        "reviewRound": context["reviewRound"],
+        "subjectSha256": context["subjectSha256"],
+        "renderSetSha256": context["renderSetSha256"],
+        "contactSheetSha256": context["contactSheetSha256"],
+        "passed": True,
+        "issues": [],
+        "summary": "Fixture reviewer found no blocking visual issue in the rendered roster.",
+    }
+    rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    image_count = sum(
+        1
+        for message in messages
+        for part in (message.get("content") if isinstance(message.get("content"), list) else [])
+        if isinstance(part, dict) and part.get("type") == "image_url"
+    )
+    return TextCompletion(
+        content=rendered,
+        model="deterministic-visual-review-fixture@v1",
+        prompt_tokens=1000 + image_count * 1000,
+        completion_tokens=max(1, len(rendered) // 4),
+    )
 
 
 def _latest_phase(messages: list[dict[str, Any]]) -> tuple[int, dict[str, Any]]:
@@ -159,10 +213,30 @@ def _executor_decision(
 ) -> dict[str, Any]:
     context = phase["context"]
     pnn = str(context["page"]["pnn"])
+    if context.get("mode") == "visual-review":
+        observations = [
+            value
+            for value in observations
+            if value.get("stage") == phase["phaseId"]
+        ]
+        if "request_visual_review" not in _tool_names(observations):
+            return _decision(
+                "executor",
+                tool_name="request_visual_review",
+                reason="Request read-only multimodal review of the current rendered deck hash.",
+            )
+        return _decision(
+            "executor",
+            reason="The hash-bound structured visual review observation is recorded.",
+            termination_reason=f"visual-review-round-{context['reviewRound']}-observed",
+        )
+    expected_stage = (
+        "visual-repair" if phase["phaseId"].startswith("visual-repair-") else "executor"
+    )
     observations = [
         value
         for value in observations
-        if value.get("stage") == "executor" and value.get("currentPnn") == pnn
+        if value.get("stage") == expected_stage and value.get("currentPnn") == pnn
     ]
     tools = _tool_names(observations)
     if "read_approved_context" not in tools:
@@ -209,7 +283,12 @@ def _executor_decision(
             arguments={
                 "pnn": pnn,
                 "mode": "scene-graph",
-                "sceneGraph": _scene_graph(context, revision=len(write_indexes) + 1),
+                "sceneGraph": _scene_graph(
+                    context,
+                    revision=max(
+                        int(context.get("authorAttempt") or 1), len(write_indexes) + 1
+                    ),
+                ),
             },
             reason=(
                 "Revise the page using the complete checker observation."
@@ -217,7 +296,7 @@ def _executor_decision(
                 else "Author the page from its Blueprint with editable semantic objects."
             ),
         )
-    if pnn == "P01" and (
+    if expected_stage == "executor" and pnn == "P01" and (
         not gate_indexes or gate_indexes[-1] < write_indexes[-1]
     ):
         return _decision(
@@ -349,6 +428,7 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
     title = _wrapped(str(slide["title"]), 28)
     body = [str(value) for value in slide.get("body") or []]
     role = str(page["role"])
+    accent = "#0F766E" if revision > 1 else "#2563EB"
     nodes: list[dict[str, Any]] = [
         _shape_node(
             "top-rule",
@@ -356,8 +436,8 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
             y=0,
             width=1280,
             height=12,
-            fill="#2563EB",
-            stroke="#2563EB",
+            fill=accent,
+            stroke=accent,
             shape="rect",
         ),
         _text_node(

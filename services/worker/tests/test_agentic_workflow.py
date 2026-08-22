@@ -4,16 +4,22 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import instant_ppt_worker.agentic_workflow as workflow_module
 import pytest
 from instant_ppt_worker.adapter import run_request
 from instant_ppt_worker.errors import CONTENT_QA_FAILED, AdapterError
+from instant_ppt_worker.presentation_agent_fixture_provider import (
+    DeterministicPresentationAgentProvider,
+)
 from instant_ppt_worker.presentation_blueprint import (
     canonical_sha256,
     validate_page_blueprint,
 )
+from instant_ppt_worker.providers import TextCompletion
 from instant_ppt_worker.source_parser import deterministic_ulid
+from instant_ppt_worker.visual_review_runtime import VisualReviewReport
 from instant_ppt_worker.workflow_models import WorkflowRequestV2
 
 from .test_workflow_contracts import _payload
@@ -611,24 +617,13 @@ def test_narration_is_owned_by_generate_audio_and_cannot_be_claimed_by_exporter(
     assert '"stage": "publish"' not in events
 
 
-def test_explicit_visual_review_renders_then_waits_for_review_agent(
+def test_explicit_visual_review_renders_and_passes_structured_reviewer(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workflow = _payload()
     workflow["production"]["visualReview"] = True
     workflow["runtime"]["allowSubagentReview"] = True
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
-    original_run = workflow_module._run
-
-    def run_with_render_receipt(
-        command: list[str], **kwargs: object
-    ) -> subprocess.CompletedProcess[str]:
-        if any(str(value).endswith("visual_review.py") for value in command):
-            return subprocess.CompletedProcess(command, 0, '{"rendered":2}', "")
-        return original_run(command, **kwargs)
-
-    monkeypatch.setattr(workflow_module, "_run", run_with_render_receipt)
     request = {
         "schemaVersion": 2,
         "requestId": "issue-002-stage-e-visual-review",
@@ -645,9 +640,160 @@ def test_explicit_visual_review_renders_then_waits_for_review_agent(
     result = json.loads((project / "workflow-result.json").read_text(encoding="utf-8"))
     review = json.loads((project / "validation" / "visual-review.json").read_text(encoding="utf-8"))
     events = (project / "validation" / "workflow-events.jsonl").read_text(encoding="utf-8")
-    assert result["status"] == "needs_manual"
-    assert result["stage"] == "visual_review"
-    assert review["status"] == "needs-agent-review"
-    assert review["explicitOptIn"] is True
+    assert result["status"] == "succeeded"
+    assert result["stage"] == "publish"
+    assert review["passed"] is True
+    assert review["issues"] == []
+    assert review["reviewRound"] == 1
+    assert (project / ".preview" / "round-1" / "contact-sheet.png").is_file()
+    assert len(list((project / ".preview" / "round-1").glob("slide_*.png"))) == 2
+    assert (project / "agent" / "visual-reviews" / "round-1.json").is_file()
     assert '"stage": "visual_review"' in events
+    assert '"action": "passed"' in events
+    assert (project / "exports" / "deck.pptx").is_file()
+
+
+class _VisualRepairFixtureProvider:
+    provider_name = "visual-repair-fixture"
+
+    def __init__(self, *, clear_on_second_review: bool = True) -> None:
+        self.delegate = DeterministicPresentationAgentProvider()
+        self.clear_on_second_review = clear_on_second_review
+        self.visual_calls = 0
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+    ) -> TextCompletion:
+        completion = self.delegate.complete(
+            messages,
+            response_format=response_format,
+            max_completion_tokens=max_completion_tokens,
+        )
+        if not any(
+            "Visual Review Agent" in str(message.get("content") or "")
+            for message in messages
+            if message.get("role") == "system"
+        ):
+            return completion
+        self.visual_calls += 1
+        payload = json.loads(completion.content)
+        if self.visual_calls == 1 or not self.clear_on_second_review:
+            payload.update(
+                {
+                    "passed": False,
+                    "issues": [
+                        {
+                            "issueId": "VR01",
+                            "category": "hierarchy",
+                            "severity": "blocking",
+                            "scope": "page",
+                            "pnn": "P01",
+                            "owner": "executor",
+                            "message": "P01 headline and evidence panel have equal visual weight.",
+                            "region": "P01 title/evidence panel",
+                            "suggestedAction": (
+                                "Strengthen the title-to-evidence hierarchy without changing copy."
+                            ),
+                        }
+                    ],
+                    "summary": "P01 hierarchy blocks a clean visual reading order.",
+                }
+            )
+        rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        return TextCompletion(
+            content=rendered,
+            model="visual-repair-fixture@v1",
+            prompt_tokens=completion.prompt_tokens,
+            completion_tokens=max(1, len(rendered) // 4),
+        )
+
+
+def test_visual_blocking_observation_repairs_owned_page_and_rereviews(
+    tmp_path: Path,
+) -> None:
+    workflow = _payload()
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    provider = _VisualRepairFixtureProvider()
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        tmp_path / "visual-repair_ppt169_20260818",
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    project = tmp_path / "visual-repair_ppt169_20260818"
+    result = outcome["result"]
+    round_one = json.loads(
+        (project / "validation" / "visual-review-round-1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    final_review = json.loads(
+        (project / "validation" / "visual-review.json").read_text(encoding="utf-8")
+    )
+    scene = json.loads(
+        (project / "agent" / "scene-graphs" / "P01.json").read_text(encoding="utf-8")
+    )
+    stale = json.loads(
+        (project / "validation" / "agent-stale.json").read_text(encoding="utf-8")
+    )
+
+    assert result.status == "succeeded"
+    assert provider.visual_calls == 2
+    assert round_one["passed"] is False
+    assert round_one["issues"][0]["category"] == "hierarchy"
+    assert final_review["passed"] is True
+    assert final_review["reviewRound"] == 2
+    assert VisualReviewReport.model_validate(final_review).passed is True
+    assert scene["authorAttempt"] == 2
+    assert len(list((project / ".preview").glob("round-*/contact-sheet.png"))) == 2
+    assert any(entry["pnn"] == "P01" for entry in stale["entries"])
+    final_gate = json.loads(
+        (project / "validation" / "receipts" / "final-svg-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert final_gate["payload"]["rerunAfterVisualRepairRound"] == 1
+    assert final_gate["subjectSha256"] != final_gate["payload"][
+        "stalePreviousSubjectSha256"
+    ]
+
+
+def test_visual_review_stops_without_export_when_round_two_remains_blocking(
+    tmp_path: Path,
+) -> None:
+    workflow = _payload()
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    provider = _VisualRepairFixtureProvider(clear_on_second_review=False)
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        tmp_path / "visual-blocked_ppt169_20260818",
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    project = tmp_path / "visual-blocked_ppt169_20260818"
+    result = outcome["result"]
+    final_review = json.loads(
+        (project / "validation" / "visual-review.json").read_text(encoding="utf-8")
+    )
+
+    assert result.status == "needs_manual"
+    assert result.stage == "visual_review"
+    assert [error.code for error in result.errors] == ["VISUAL_REVIEW_BLOCKING"]
+    assert provider.visual_calls == 2
+    assert final_review["reviewRound"] == 2
+    assert final_review["passed"] is False
     assert not (project / "exports" / "deck.pptx").exists()
+    assert not (project / "canonical-project-bundle.zip").exists()
+    assert not (project / "validation" / "receipts" / "visual-review.json").exists()

@@ -54,11 +54,18 @@ from instant_ppt_worker.providers import (
     ImageProvider,
     KimiProvider,
     ProviderConfigurationError,
+    ProviderRequestError,
     TextProvider,
 )
 from instant_ppt_worker.renderer import _normalize_pptx_zip
 from instant_ppt_worker.settings import KimiProviderSettings, OpenAIImageSettings
 from instant_ppt_worker.source_parser import deterministic_ulid
+from instant_ppt_worker.visual_review_runtime import (
+    VisualReviewError,
+    blocking_pages,
+    render_visual_assets,
+    review_visual_assets,
+)
 from instant_ppt_worker.workflow_models import (
     ApprovedOutlineSlide,
     PageBlueprintArtifact,
@@ -1668,8 +1675,11 @@ def _bundle(project: Path, target: Path) -> None:
         "locked-context",
         "checkpoints",
         "scene-graphs",
+        "visual-reviews",
     ):
         included.extend(sorted((project / "agent" / agent_directory).glob("*.json")))
+    included.extend(sorted((project / "validation").glob("visual-*.json")))
+    included.extend(sorted((project / ".preview").glob("round-*/*.png")))
     included.extend(
         path
         for path in (
@@ -2002,6 +2012,28 @@ def _first_page_agent_gate(
     }
 
 
+def _run_final_svg_checker(workspace_root: Path, project: Path) -> dict[str, Any]:
+    report_path = project / "validation" / "svg_quality_report.json"
+    _run(
+        [
+            sys.executable,
+            str(ENGINE_SCRIPTS / "svg_quality_checker.py"),
+            str(project),
+            "--format",
+            "ppt169",
+            "--stage",
+            "final",
+            "--json-output",
+            str(report_path),
+        ],
+        cwd=workspace_root,
+        timeout=240,
+        error_code=RENDER_FAILED,
+    )
+    _normalize_project_paths(report_path, project)
+    return json.loads(report_path.read_text(encoding="utf-8"))
+
+
 def _executor_locked_context(
     request: WorkflowRequestV2,
     blueprint: PageBlueprintArtifact,
@@ -2013,6 +2045,7 @@ def _executor_locked_context(
     completed_pages: list[dict[str, Any]],
     image_href: str | None,
     image_crop: str,
+    author_attempt: int = 1,
 ) -> dict[str, Any]:
     page = blueprint.pages[index]
     slide = deck.slides[index]
@@ -2026,7 +2059,7 @@ def _executor_locked_context(
         "completedPages": completed_pages,
         "imageHref": image_href,
         "imageCrop": image_crop,
-        "authorAttempt": 1,
+        "authorAttempt": author_attempt,
         "requiredTools": (
             ["read_approved_context", "write_or_patch_slide_svg", "run_svg_gate"]
             if page.pnn == "P01"
@@ -2765,23 +2798,7 @@ def run_default_workflow(
             RENDER_FAILED,
             "images changed after analysis; regenerate image_analysis.csv before final QA",
         )
-    _run(
-        [
-            sys.executable,
-            str(ENGINE_SCRIPTS / "svg_quality_checker.py"),
-            str(project),
-            "--format",
-            "ppt169",
-            "--stage",
-            "final",
-            "--json-output",
-            str(project / "validation" / "svg_quality_report.json"),
-        ],
-        cwd=workspace_root,
-        timeout=240,
-        error_code=RENDER_FAILED,
-    )
-    _normalize_project_paths(project / "validation" / "svg_quality_report.json", project)
+    _run_final_svg_checker(workspace_root, project)
     _receipt(
         project,
         request,
@@ -2794,6 +2811,290 @@ def run_default_workflow(
             "exactRoster": [item["pnn"] for item in plan["roster"]],
         },
     )
+
+    if request.production.visual_review:
+        review_provider, review_provider_owned = _presentation_text_provider(
+            request, text_provider
+        )
+        final_review: dict[str, Any] | None = None
+        final_review_evidence: dict[str, Any] | None = None
+        try:
+            review_agent = MainPresentationAgent(
+                project=project,
+                request=request,
+                provider=review_provider,
+            )
+            for review_round in range(1, 3):
+                render_set = render_visual_assets(project, review_round=review_round)
+                review_phase_id = f"visual-review-r{review_round}"
+
+                def visual_review_callback(
+                    _project: Path,
+                    review_subject: str,
+                    *,
+                    current_round: int = review_round,
+                    current_render_set: dict[str, Any] = render_set,
+                ) -> dict[str, Any]:
+                    return review_visual_assets(
+                        review_provider,
+                        request,
+                        project,
+                        review_round=current_round,
+                        subject_sha256=review_subject,
+                        render_set=current_render_set,
+                    )
+
+                review_tools = PresentationAgentToolRegistry(
+                    PresentationToolContext(
+                        project=project,
+                        request=request,
+                        blueprint=blueprint,
+                        blueprint_sha256=blueprint_sha256,
+                        fragments=tuple(fragments),
+                        allowed_tools=frozenset({"request_visual_review"}),
+                        current_pnn="P01",
+                        stage=review_phase_id,
+                        author_attempt=review_round,
+                        callbacks=ToolCallbacks(visual_review=visual_review_callback),
+                    )
+                )
+                review_result = review_agent.run_phase(
+                    phase_id=review_phase_id,
+                    role="executor",
+                    goal=(
+                        "Request a read-only multimodal review of the current rendered deck. "
+                        "Record the strict hash-bound report without editing any page."
+                    ),
+                    locked_context={
+                        "schema": "instant-ppt.visual-review-phase-context.v1",
+                        "mode": "visual-review",
+                        "workflowRunId": request.workflow_run_id,
+                        "reviewRound": review_round,
+                        "page": blueprint.pages[0].model_dump(
+                            by_alias=True, mode="json"
+                        ),
+                        "renderSet": render_set,
+                        "requiredTools": ["request_visual_review"],
+                    },
+                    tools=review_tools,
+                    required_tools=frozenset({"request_visual_review"}),
+                )
+                _require_agent_phase(review_result, review_phase_id)
+                review_record = next(
+                    record
+                    for record in reversed(_agent_tool_records(project, review_result))
+                    if record.get("toolName") == "request_visual_review"
+                )
+                final_review_evidence = dict(review_record["observation"]["report"])
+                final_review = dict(final_review_evidence["structuredReport"])
+                _write_json(
+                    project / "validation" / f"visual-review-round-{review_round}.json",
+                    final_review,
+                )
+                _event(
+                    project,
+                    "visual_review",
+                    "passed" if final_review["passed"] else "blocking-observed",
+                    reviewRound=review_round,
+                    reviewToolCallId=review_record["toolCallId"],
+                    subjectSha256=review_record["subjectSha256"],
+                    blockingCount=sum(
+                        1
+                        for issue in final_review["issues"]
+                        if issue["severity"] == "blocking"
+                    ),
+                )
+                if final_review["passed"]:
+                    break
+                if review_round == 2:
+                    continue
+                findings_by_page = blocking_pages(
+                    final_review, [item["pnn"] for item in plan["roster"]]
+                )
+                if not findings_by_page:
+                    raise VisualReviewError(
+                        "blocking visual review returned no strategist/executor repair owner"
+                    )
+                before_review_repair_sha256 = final_svg_sha256
+                for pnn, findings in findings_by_page.items():
+                    page_index = next(
+                        index
+                        for index, page in enumerate(blueprint.pages)
+                        if page.pnn == pnn
+                    )
+                    slide = deck.slides[page_index]
+                    image_path = image_preparation.by_slide.get(slide.slide_id)
+                    image_href = (
+                        f"../images/{Path(image_path).name}"
+                        if image_path is not None
+                        else None
+                    )
+                    resource = image_resource_by_slide.get(slide.slide_id)
+                    requested_crop = str(
+                        resource.get("cropPolicy", "cover") if resource else "cover"
+                    )
+                    repair_context = _executor_locked_context(
+                        request,
+                        blueprint,
+                        blueprint_sha256,
+                        deck,
+                        plan,
+                        index=page_index,
+                        completed_pages=completed_pages,
+                        image_href=image_href,
+                        image_crop=(
+                            "contain"
+                            if requested_crop in {"contain", "fit"}
+                            else "cover"
+                        ),
+                        author_attempt=review_round + 1,
+                    )
+                    repair_context.update(
+                        {
+                            "mode": "visual-repair",
+                            "reviewRound": review_round,
+                            "reviewSubjectSha256": final_review["subjectSha256"],
+                            "visualFindings": findings,
+                        }
+                    )
+                    repair_tools = PresentationAgentToolRegistry(
+                        PresentationToolContext(
+                            project=project,
+                            request=request,
+                            blueprint=blueprint,
+                            blueprint_sha256=blueprint_sha256,
+                            fragments=tuple(fragments),
+                            allowed_tools=frozenset(
+                                {
+                                    "read_approved_context",
+                                    "read_design_catalog",
+                                    "write_or_patch_slide_svg",
+                                }
+                            ),
+                            current_pnn=pnn,
+                            stage="visual-repair",
+                            author_attempt=review_round + 1,
+                        )
+                    )
+                    repair_phase_id = f"visual-repair-r{review_round}-{pnn.lower()}"
+                    repair_result = review_agent.run_phase(
+                        phase_id=repair_phase_id,
+                        role="executor",
+                        goal=(
+                            f"Repair {pnn} for the complete structured visual review finding "
+                            "set. Preserve approved facts, IDs, chart values, and page ownership."
+                        ),
+                        locked_context=repair_context,
+                        tools=repair_tools,
+                        required_tools=frozenset(
+                            {"read_approved_context", "write_or_patch_slide_svg"}
+                        ),
+                    )
+                    _require_agent_phase(repair_result, repair_phase_id)
+                    svg_path = svg_dir / f"slide_{page_index + 1:02d}.svg"
+                    repair_receipt = _agent_page_author_receipt(
+                        project,
+                        repair_result,
+                        pnn=pnn,
+                        svg_path=svg_path,
+                        require_svg_gate=False,
+                    )
+                    completed_pages[page_index] = {
+                        "pnn": pnn,
+                        "slideId": slide.slide_id,
+                        "subjectSha256": repair_receipt["subjectSha256"],
+                        "turnId": repair_receipt["turnId"],
+                        "toolCallId": repair_receipt["toolCallId"],
+                    }
+                    _event(
+                        project,
+                        "visual_repair",
+                        "agent-repaired",
+                        reviewRound=review_round,
+                        issueIds=[finding["issueId"] for finding in findings],
+                        **repair_receipt,
+                    )
+                svg_paths = sorted(svg_dir.glob("*.svg"))
+                final_svg_sha256 = _svg_roster_hash(svg_paths)
+                if final_svg_sha256 == before_review_repair_sha256:
+                    raise VisualReviewError(
+                        "visual repair completed without changing the owned SVG roster hash"
+                    )
+                _run_final_svg_checker(workspace_root, project)
+                _receipt(
+                    project,
+                    request,
+                    receipts,
+                    kind="final-svg-gate",
+                    status="passed",
+                    subject_sha256=final_svg_sha256,
+                    payload={
+                        "pageCount": len(svg_paths),
+                        "exactRoster": [item["pnn"] for item in plan["roster"]],
+                        "rerunAfterVisualRepairRound": review_round,
+                        "stalePreviousSubjectSha256": before_review_repair_sha256,
+                    },
+                )
+        except (AgentRuntimeError, ProviderRequestError, VisualReviewError) as error:
+            raise AdapterError(RENDER_FAILED, f"bounded visual review failed: {error}") from error
+        finally:
+            _close_owned_text_provider(review_provider, review_provider_owned)
+        if final_review is None:
+            raise AdapterError(RENDER_FAILED, "visual review produced no structured report")
+        if final_review_evidence is None:
+            raise AdapterError(RENDER_FAILED, "visual review produced no audit evidence")
+        _write_json(project / "validation" / "visual-review.json", final_review)
+        if not final_review["passed"]:
+            result = _workflow_result(
+                project,
+                request,
+                request_sha256,
+                receipts,
+                status="needs_manual",
+                stage="visual_review",
+                checkpoint_id=checkpoint_id,
+                errors=[
+                    WorkflowError(
+                        code="VISUAL_REVIEW_BLOCKING",
+                        message=(
+                            "blocking visual findings remain after the bounded review/repair loop"
+                        ),
+                        owner="runtime",
+                        recovery_stage="visual_review",
+                        retryable=True,
+                    )
+                ],
+            )
+            _write_json(
+                project / "workflow-result.json",
+                result.model_dump(by_alias=True, mode="json"),
+            )
+            return {
+                "result": result,
+                "paths": [
+                    project / "design_spec.md",
+                    project / "spec_lock.md",
+                    project / "validation" / "visual-review.json",
+                    project / "workflow-result.json",
+                    *svg_paths,
+                ],
+            }
+        _receipt(
+            project,
+            request,
+            receipts,
+            kind="visual-review",
+            status="passed",
+            subject_sha256=final_svg_sha256,
+            payload={
+                "reviewRound": final_review["reviewRound"],
+                "reviewSubjectSha256": final_review["subjectSha256"],
+                "renderSetSha256": final_review["renderSetSha256"],
+                "contactSheetSha256": final_review["contactSheetSha256"],
+                "evidenceSha256": final_review_evidence["evidenceSha256"],
+                "blockingCount": 0,
+            },
+        )
 
     chart_roster = [item for item in plan["roster"] if item["chart"] is not None]
     if chart_roster:
@@ -2983,64 +3284,6 @@ def run_default_workflow(
         )
     elif (project / "notes" / "total.md").exists():
         raise AdapterError(RENDER_FAILED, "disabled speaker notes created an unexpected artifact")
-
-    if request.production.visual_review:
-        try:
-            rendered = _run(
-                [
-                    sys.executable,
-                    str(ENGINE_SCRIPTS / "visual_review.py"),
-                    str(project),
-                ],
-                cwd=workspace_root,
-                timeout=300,
-                error_code=RENDER_FAILED,
-            )
-            render_sha256 = hashlib.sha256(rendered.stdout.encode("utf-8")).hexdigest()
-            review_status = "needs-agent-review"
-            review_detail = "rendered PNG roster requires rubric review before Step 7"
-        except AdapterError as error:
-            render_sha256 = hashlib.sha256(str(error).encode("utf-8")).hexdigest()
-            review_status = "prereq-failed"
-            review_detail = str(error)[-1000:]
-        review_report = {
-            "schemaVersion": 1,
-            "subjectSha256": final_svg_sha256,
-            "status": review_status,
-            "detail": review_detail,
-            "renderReceiptSha256": render_sha256,
-            "explicitOptIn": True,
-        }
-        _write_json(project / "validation" / "visual-review.json", review_report)
-        _event(project, "visual_review", review_status, explicitOptIn=True)
-        result = _workflow_result(
-            project,
-            request,
-            request_sha256,
-            receipts,
-            status="needs_manual",
-            stage="visual_review",
-            checkpoint_id=checkpoint_id,
-            errors=[
-                WorkflowError(
-                    code="VISUAL_REVIEW_REQUIRES_REVIEW_AGENT",
-                    message=review_detail,
-                    owner="runtime",
-                    recovery_stage="visual_review",
-                    retryable=True,
-                )
-            ],
-        )
-        _write_json(project / "workflow-result.json", result.model_dump(by_alias=True, mode="json"))
-        return {
-            "result": result,
-            "paths": [
-                project / "design_spec.md",
-                project / "spec_lock.md",
-                project / "validation" / "visual-review.json",
-                project / "workflow-result.json",
-            ],
-        }
 
     if request.production.effective_custom_animations == "enabled":
         animation_path = _write_animation_plan(project, deck)

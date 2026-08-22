@@ -603,6 +603,7 @@ class WorkflowReceipt(WorkflowContractModel):
         "chart-gate",
         "content-gate",
         "final-svg-content-gate",
+        "visual-review",
         "speaker-notes",
         "custom-animations",
         "step7-finalize",

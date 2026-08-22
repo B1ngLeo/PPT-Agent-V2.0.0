@@ -1,0 +1,160 @@
+{
+  "$defs": {
+    "VisualReviewFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "issueId": {
+          "pattern": "^VR\\d{2,3}$",
+          "title": "Issueid",
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "hierarchy",
+            "density-whitespace",
+            "alignment-rhythm-balance",
+            "consecutive-repetition",
+            "content-visual-fit",
+            "image-crop-contrast-readability",
+            "deck-consistency"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "blocking",
+            "advisory"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "page",
+            "deck"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "pnn": {
+          "anyOf": [
+            {
+              "pattern": "^P\\d{2,3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pnn"
+        },
+        "owner": {
+          "enum": [
+            "strategist",
+            "executor"
+          ],
+          "title": "Owner",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "region": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Region",
+          "type": "string"
+        },
+        "suggestedAction": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Suggestedaction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issueId",
+        "category",
+        "severity",
+        "scope",
+        "owner",
+        "message",
+        "region",
+        "suggestedAction"
+      ],
+      "title": "VisualReviewFinding",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "workflowRunId": {
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "title": "Workflowrunid",
+      "type": "string"
+    },
+    "reviewRound": {
+      "maximum": 2,
+      "minimum": 1,
+      "title": "Reviewround",
+      "type": "integer"
+    },
+    "subjectSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Subjectsha256",
+      "type": "string"
+    },
+    "renderSetSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Rendersetsha256",
+      "type": "string"
+    },
+    "contactSheetSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Contactsheetsha256",
+      "type": "string"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/VisualReviewFinding"
+      },
+      "maxItems": 80,
+      "title": "Issues",
+      "type": "array"
+    },
+    "summary": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workflowRunId",
+    "reviewRound",
+    "subjectSha256",
+    "renderSetSha256",
+    "contactSheetSha256",
+    "passed",
+    "summary"
+  ],
+  "title": "VisualReviewReport",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.instant-ppt.example/worker/v1/visual-review.v1.schema.json"
+}

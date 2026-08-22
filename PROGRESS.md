@@ -6,13 +6,13 @@
 
 - Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
 - 状态：in progress（2026-08-22 启动）
-- 当前阶段：阶段 E — 有界视觉反馈闭环
-- 已完成：阶段 0 基线/证据合同；阶段 A Page Blueprint；阶段 B 受约束工具；阶段 C 可恢复 Runtime；阶段 D 同一 Main Presentation Agent 的 Strategist→P01 gate→P02…Pn 顺序 SVG 创作与逐页 author evidence
-- 进行中：渲染逐页 PNG/contact sheet，以支持视觉输入的严格 Schema reviewer 返回问题，Main Agent 按 ownership 修复并最多重跑两轮，旧 gate 随 SVG hash 变化而 stale
+- 当前阶段：阶段 F — 灰度、回退与发布
+- 已完成：阶段 0 基线/证据合同；阶段 A Page Blueprint；阶段 B 受约束工具；阶段 C 可恢复 Runtime；阶段 D 同一 Main Presentation Agent 的 Strategist→P01 gate→P02…Pn 顺序 SVG 创作与逐页 author evidence；阶段 E 两轮多模态视觉审阅与所有权约束反馈闭环
+- 进行中：增加 `agent-authoring` / `deterministic-template` feature flag、显式 fallback 披露、manifest/UI 标识、指标/告警、运维/隐私/配额/发布/回滚文档
 - 后续模块：A Page Blueprint；B 受约束设计工具层；C 单主 Agent 模型—工具循环与持久化；D 顺序 SVG authoring；E 两轮视觉反馈闭环；F feature flag/fallback/UI/发布文档；完整 E2E
 - 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
-- 当前验证：阶段 D Ruff/compile 通过；Agentic Workflow、Runtime、Tool、合同、批准来源、图片资源和 Provider 合并回归全绿（含 2 页事实+native chart、8 页受限初稿、AI/provided 图片）；主路径事件不再出现伪造的 `current-main-agent`，Blueprint 为 `agent-strategist`，每页 current SVG hash 均绑定实际 Agent turn/tool call，P01 checker observation 进入模型上下文
-- 问题与解决方案：阶段 A–C 问题保留于历史记录；阶段 D 首轮 P02 fixture 因 Provider message 重排误读 P01 observation，按 stage/PNN 隔离；chart insight 1 次越界后重新分行；8 页路径重复携带所有 locked phase 导致 P04 token budget，改为当前页精确上下文+既往 phase hash/receipt/策略观察，批准事实仍由每页工具完整读取；8 页 footer 字号 recurrence 和 timeline 越界各 1 次后回到 spec role/收窄布局；PPTX 两次发现多段正文被合并成单 shape 导致 exact editability gate 缺失，最终让每个批准正文块拥有独立 `<text>`/PPT shape；图片 `adaptive` crop 1 次不符合 Scene Graph literal，规范映射为 `cover`
+- 当前验证：阶段 E Ruff 通过；Agentic Workflow、Visual Review、Runtime、Tool、Workflow Contract 和 Provider 纵向回归 73/73 通过；成功、首轮阻断后定向修复、二轮仍阻断三条路径均有覆盖，联系表已人工检查
+- 问题与解决方案：阶段 A–D 问题保留于历史记录；阶段 E 首轮新 receipt kind 未加入严格合同导致成功路径拒绝 1 次，已增加 `visual-review` 并重生 Schema；P01 视觉反修阶段的 fixture 连续请求不允许的首页 gate，消耗预算 1 次，已使 P01 gate 仅限初始 Executor 阶段，反修阶段在 hash-bound write 后终止；视觉 provider 的 base64 输入不再按字符长度伪计 token，以可控图片预算计费
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
@@ -25,12 +25,13 @@
 | B 受约束设计工具 | completed | allowlist、路径隔离、Scene Graph/直接 SVG、hash/tool call/attempt/stale |
 | C Main Presentation Agent Runtime | completed | 实际模型 turn→工具→观察→修订→终止；预算/超时/恢复/持久化 |
 | D Agent 顺序创作 | completed | P01 gate 后 P02–Pn；每页 SVG 追溯到 Agent turn/tool call；模板不再是 default-agentic 作者 |
-| E 有界视觉闭环 | in progress | contact sheet、结构化 reviewer、最多两轮、blocking 清零或非成功 |
-| F 灰度、回退与发布 | pending | feature flag、manifest/UI/文件名披露、监控、文档与 rollback |
+| E 有界视觉闭环 | completed | contact sheet、结构化 reviewer、最多两轮、blocking 清零或非成功 |
+| F 灰度、回退与发布 | in progress | feature flag、manifest/UI/文件名披露、监控、文档与 rollback |
 | E2E 与最终回归 | pending | 同输入用户旅程、PPTX/WPS/PowerPoint、恢复/取消/安全/发布不变量 |
 
 ## 已完成事项
 
+- ISSUE-003 阶段 E / 有界视觉反馈闭环：对每页当前 Scene Graph 渲染 1280×720 PNG 和 deck contact sheet，将联系表+逐页图像作为真实多模态输入交给只读 Visual Review Agent；strict `VisualReviewReport` v1 覆盖层级、密度/留白、对齐/节奏/平衡、连续重复、内容-视觉匹配、图片裁切/对比度/可读性和整稿一致性，且绑定 workflow/SVG roster/render/contact hash。阻断 finding 按 page/deck ownership 映射回同一 Main Agent，只重写所有页，标记旧 gate stale，重跑 final checker 并最多复审两轮；二轮仍有 blocking 则 `needs_manual` 且不导出。Reviewer 用量纳入同一 runtime 预算，报告、图像和 provider evidence 进入 canonical bundle。Ruff 及 73/73 纵向回归通过，联系表人工检查通过。
 - ISSUE-003 阶段 D / Agent 顺序接管 SVG 创作：`agentic_workflow.py` 主路径已删除对固定 `author_slide()` 的页面写入，先由真实 Strategist 读取批准上下文/设计目录并落盘策略，再在同一 session 以 Executor 严格执行 P01→首屏 checker observation→P02…Pn。每页 Scene Graph 写入绑定实际 model turn/tool call/current SVG hash，P01 gate 只有当前 hash 通过才可进入后续页；Blueprint 由真实 strategistTurnId 升级为 `agent-strategist`，结果 usage 记录真实 turn/token/cost/time，canonical bundle 包含 turn/tool/phase/scene/checkpoint 证据。历史 phase 只保留不可变 hash/receipt 和小型策略观察，当前页事实/Design Spec/spec lock 每次精确读取，避免重复 token 计费。2 页 native chart、8 页多角色、AI/provided 图片和完整兼容/内容门合并回归通过。
 - ISSUE-003 阶段 C / 真实 Main Presentation Agent Runtime：新增 strict `AgentDecision` 和同一会话 `Strategist → Executor` 有界模型—工具循环；Provider 决定下一工具/终止，Supervisor 强制 role/allowlist/attempt、turn/token/cost/soft/hard timeout 与取消。每次 Provider 前先写 pending checkpoint，每次工具前写确定性 pending call；崩溃恢复复用已完成 turn/幂等 tool，未知 Provider 结果则暂停而不重复计费。批准来源、Design Spec、spec lock/stable ID 作为不可有损压缩的 locked context，tainted 来源指令不能扩权。新增 tenant-scoped `workflow_agent_turns`/`workflow_agent_tool_calls`、Alembic migration、文件证据→数据库幂等桥、Agent decision Schema 和严格 Kimi 子进程环境白名单。Ruff、45/45 合并回归及真实 PostgreSQL migration roundtrip/drift 通过。
 - ISSUE-003 阶段 B / 受约束语义设计工具：新增 9 个精确 Agent 工具的闭包注册表，只读当页批准 Blueprint/来源/Design Spec/lock/roster，只写当页 SVG 或 run 拥有的 planning JSON；新增物化 `SlideSceneGraph` v1，可表达文本、图形、分组、项目内图片、可编辑原生 chart/table 和自由组合排版，同时保留拒绝 active/external content 的直接 SVG escape hatch。图表/表格值必须与当页 Blueprint 完全相等，直接 SVG 也不能绕过；每次工具调用绑定 workflow/stage/PNN/attempt/input/arguments/output/subject hash，幂等重放且写入传播后续 gate stale。Agent 无 shell、网络、数据库或通用文件系统工具。Ruff、42/42 回归及 vendored SVG final checker 0 blocking 通过。
@@ -128,6 +129,8 @@
 
 | 问题                                                                                    | 尝试次数 | 处理结果                                                                                                                                                                                                         |
 | --------------------------------------------------------------------------------------- | -------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage E 成功路径初次写入新 `visual-review` receipt 时被严格 kind 合同拒绝 |        1 | 在 `WorkflowReceipt` 显式增加该 kind，重生 workflow-result/visual-review JSON Schema，成功与二轮阻断路径均通过。 |
+| P01 视觉反修 fixture 在不允许 `run_svg_gate` 的 repair phase 反复请求该工具并用尽 token 预算 |        1 | 将 P01 首页 gate 决策限定在初始 `executor` stage；`visual-repair` 只需精确读取+当页 hash-bound write，修复后工作流统一重跑 final SVG checker。 |
 | 批准来源的 12 页稿中，只含一个长事实的 timeline 节点被固定在左端导致 SVG 水平越界 |        1 | 保留完整事实文本与引擎质量门，将单节点 timeline 改为安全区正中；定向 SVG QA 与基于同一冻结快照/批准来源的保留工作目录复现均通过，12 页 PPTX 53,738 bytes 成功编译。 |
 | ASCII 句点被无条件当作句号，将 `GPT-5.6`、`53.6`、`2.8` 拆成残句并泄漏 Markdown heading |        1 | 只在 ASCII 终止符后是空白/文末时拆句，中文标点保持独立规则，跳过 heading/table 且清理列表标记；新增版本/小数/标题回归用例并通过。 |
 | `_build_deck` 只选取一组全局 chart values，所有 data 页因而生成相同图表与标题 |        1 | 提取去重后的多 benchmark 系列，按 data 页顺序绑定 Terminal-Bench/BrowseComp/SEC-Bench 等不同上下文；渲染和 chart gate 均从逐页 roster 取值，新增三页三系列回归用例并通过。 |
