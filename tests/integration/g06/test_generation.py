@@ -393,6 +393,55 @@ def test_real_generation_crash_replay_publishes_one_immutable_revision(
             session.commit()
 
 
+def test_template_fallback_persists_disclosure_in_presentation_revision(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PRESENTATION_AUTHORING_MODE", "deterministic-template")
+    approved = _approved_draft(client, slide_count=1)
+    created = _create_job(client, approved["draft"]["draftId"])
+    assert created["authoringMode"] == "deterministic-template"
+    assert created["fallbackReason"] == "operator-feature-flag"
+
+    store = MemoryGenerationStore()
+    assert (
+        process_generation_job(
+            session_factory,
+            created["jobId"],
+            "template-fallback-worker",
+            organization_id=created["organizationId"],
+            object_store=store,
+        )
+        == "succeeded"
+    )
+
+    job = client.get(f"/v1/jobs/{created['jobId']}", headers=ALICE).json()["data"]
+    response = client.get(
+        f"/v1/presentations/{job['presentation']['presentationId']}", headers=ALICE
+    )
+    assert response.status_code == 200, response.text
+    revision = response.json()["data"]["currentRevision"]
+    assert revision["engineProfile"] == "deterministic-template"
+    assert revision["contentMode"] == "limited-general-draft"
+    assert revision["authoringMode"] == "deterministic-template"
+    assert revision["authoringDisclosure"] == "template-limited-editable-draft"
+    assert revision["authoring"]["fallbackReason"] == "operator-feature-flag"
+    assert revision["authoring"]["agentAuthoredPageCount"] == 0
+    assert revision["authoring"]["templateAuthoredPageCount"] == 1
+    assert revision["suggestedFilename"].endswith("-模板化受限初稿.pptx")
+
+    with session_factory() as session:
+        manifest_artifact = session.scalar(
+            select(Artifact).where(Artifact.artifact_type == "generation_manifest")
+        )
+        assert manifest_artifact is not None
+        manifest = json.loads(store.objects[manifest_artifact.object_key])
+        assert manifest["authoring"]["mode"] == "deterministic-template"
+        assert manifest["authoring"]["turnCount"] == 0
+        assert manifest["suggestedFilename"].endswith("-模板化受限初稿.pptx")
+
+
 def test_image_provider_environment_alone_cannot_enable_default_workflow_images(
     client: TestClient,
     session_factory: sessionmaker[Session],

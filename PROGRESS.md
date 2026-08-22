@@ -6,13 +6,13 @@
 
 - Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
 - 状态：in progress（2026-08-22 启动）
-- 当前阶段：最终用户旅程与根回归
+- 当前阶段：最终用户旅程中的 fallback 编辑器披露修复与根回归
 - 已完成：阶段 0–F；冻结同一 10 页 snapshot 的最终 Agent after；PowerPoint/WPS 双应用 10/10 无修复；before/after 人工偏好与机器证据归档
-- 进行中：提交并从固定 Git revision 重建最终运行时，执行创建/监控/编辑/精确导出/下载、fallback/canary/rollback 与 snapshot 不变量的用户旅程，并跑根回归
+- 进行中：提交 fallback 不可变修订披露修复，从固定 Git revision 重建运行时，重新执行 fallback 编辑器/精确导出/下载、canary/rollback 与 snapshot 不变量，并跑根回归
 - 后续模块：ISSUE-003 最终验收对照、release checklist/Issue 状态收口
 - 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
-- 当前验证：Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 127/127；G06 11/11；G07 5/5；Web lint/typecheck/生产构建；Ruff；14/14 告警；Markdown links；Compose config；Alembic head/drift；最终候选 Agent 38 turns/26 tools/视觉首轮 0 blocking、package QA、PowerPoint/WPS 各 10/10 全部通过
-- 问题与解决方案：最终候选迭代中自动门禁分别拦截 BOM、8px/overflow、可见字符校验、视觉证据字段、Blueprint 支撑、结构标题 grounding 与 Markdown/PPTX 表示等不同缺陷；每项均在 1–2 次内定位并新增回归，未有同一问题达到 5 次。最终清除内部提示/blueprint 哈希、元数据误选和主题证据错配；失败/旧候选均可恢复移动至 `.codex-tmp/`，没有覆盖用户数据
+- 当前验证：Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 127/127；G06 12/12（新增模板回退不可变修订披露回归）；G07 5/5；Web lint/typecheck/生产构建；Ruff；14/14 告警；Markdown links；Compose config；Alembic head/drift；最终候选 Agent 38 turns/26 tools/视觉首轮 0 blocking、package QA、PowerPoint/WPS 各 10/10 全部通过
+- 问题与解决方案：生产浏览器 E2E 首次发现模板回退监控页正确、编辑器却误标为 Agent 初稿；第 1 次定位为旧确定性管线的 generation manifest 未携带 authoring/disclosure/filename，已在生产者补齐真实 0-turn/0-tool 模板作者证据，并在领域发布边界从批准 snapshot 防御性回填不可变修订字段。新增端到端集成回归后 G06 12/12 通过。最终候选迭代中的其他门禁缺陷均在 1–2 次内定位，未有同一问题达到 5 次；失败/旧候选均可恢复移动至 `.codex-tmp/`，没有覆盖用户数据
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
@@ -31,6 +31,7 @@
 
 ## 已完成事项
 
+- ISSUE-003 fallback 编辑器披露修复：生产用户旅程发现旧确定性模板管线发布的 generation manifest 缺少 `engineProfile/contentMode/authoring/suggestedFilename`，导致 monitor 依据 snapshot 正确披露、editor 依据 immutable revision 却误标为 Agent。旧管线现发布 `deterministic-template`、`template-limited-editable-draft`、fallback reason、0 Agent turns/tools、模板页数和强制 `-模板化受限初稿.pptx` 文件名；Domain 发布层还会从批准 snapshot 防御性回填旧生产者缺失字段。新增从 feature flag 到真实生成、发布和 presentation API 的集成回归；停掉同库常驻消费者消除测试租约争用后 G06 12/12 通过。
 - ISSUE-003 crash replay 不可变请求修复：G06 在“工件已上传、数据库尚未发布”恢复时，从已被首次发布流程改写的 `GenerationJobSlide.title` 重建工作流请求，导致 hash-bound recovery 正确拒绝请求漂移。请求映射现强制从批准 snapshot outline 取标题，缺少批准 roster 直接失败；新增“运行时标题已变化但同 workflowRunId 请求完全相等”的回归，单元 3/3、真实 PostgreSQL/MinIO crash replay 聚焦 1/1 及 G06 全量 11/11 通过，未放宽 request hash 或对象字节一致性校验。
 - ISSUE-003 最终纵向恢复回归：在 crash replay 修复和语义质量改动后，G06 11/11 与 G07 5/5 均使用真实 PostgreSQL/Redis/MinIO、真实 Agent turn/tool/reviewer runtime 及本地确定性 Provider 通过；编辑、单页重生成、精确 revision 导出、恢复、取消与幂等发布不变量全部保持。
 - ISSUE-003 同输入最终 Agent 候选与人工偏好：以冻结 snapshot `fdb0cd6f…`、来源 `81133341…` 和同一 10 页 stable ID roster 重放真实 Agent turn/tool/reviewer 运行时；因本机无 `MOONSHOT_API_KEY` 明确使用本地 `fake-agent@v1`，不虚报线上 Kimi。最终 PPTX SHA-256 `57ea3e54…`，38 turns/26 tools、视觉首轮 0 blocking；内容形成概览、3 节点时间线、Programmatic Tool Calling、Terminal-Bench 原生图表、模型对比、定价、风险/行动与结尾闭环。PowerPoint/WPS 各 10/10 无修复，23/23 预期可编辑文本匹配、79 个文本形状、32 个原生形状、0 张整页图片；人工判定 After 明显优于 Before，证据见 `docs/evidence/issue003/after/README.md`。
@@ -218,7 +219,7 @@
 | 应用内浏览器 Tab/Enter 键注入不产生焦点移动或激活事件                                   |        5 | 按防循环规则停止继续尝试并固化 harness limitation；原生 button/link、label、键盘文本输入、dialog 焦点恢复、44px 目标与完整真实点击旅程作为补偿证据，clean console 为 0。                                         |
 | G06 迁移 drop check constraint 被 Alembic naming convention 再次拼接表名前缀            |        1 | 对既有约束名使用 `op.f(...)` 标记为已格式化名称；迁移双向演练与 schema drift 检查通过。                                                                                                                          |
 | G06 SSE effect 随每次 job 对象刷新重建连接                                              |        1 | effect 只绑定稳定 job ID 与 terminal 标志；普通状态刷新保持同一事件流。                                                                                                                                          |
-| G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                        |        3 | 本轮全量回归再次被常驻生产 Worker 抢占两个测试任务；停止套件外 API/Worker/Agent Worker/outbox/Provider Gateway 后租约失败消失，保留基础 PostgreSQL/Redis/MinIO 继续执行隔离回归。                                  |
+| G06 恢复测试与手工浏览器 Worker 同时争用同一租约                                        |        4 | fallback 回归期间常驻 outbox/Worker 再次抢占 crash-recovery 测试任务；停止套件外 Worker/Agent Worker/outbox 后 G06 12/12 通过，保留基础 PostgreSQL/Redis/MinIO 继续执行隔离回归。                                  |
 | Default crash replay 的 `svg_final` XML 属性顺序跨进程漂移                              |        2 | 第 1 次只固定监督器子进程种子，发现二级工具会重建白名单环境并丢弃该值；第 2 次同时固定顶层与嵌套 `PYTHONHASHSEED=0`，相同快照 bundle 字节一致，真实崩溃重放测试通过。                                                |
 | 最终 E2E 来源选择误用旧生成 PPT 与带内部 taint 包装的 workflow-input                    |        3 | 第 1 次旧 8 页占位 PPT 无 benchmark，内容门禁正确拒绝 data 页；第 2 次包装后的诊断输入把 taint 标记当普通来源文字；第 3 次改用已审计的纯事实来源工件，12/12 生产生成、exact export 与视觉检查全部通过。             |
 | G07 数据下载使用跨域签名 URL时浏览器导航离开编辑器                                      |        2 | 第 1 次定位原生 anchor 对跨域 `download` 不可靠；第 2 次改为授权 fetch→Blob→DOM 临时链接，PPTX/JSON 命名文件实际落盘且编辑器路由保持。                                                                           |

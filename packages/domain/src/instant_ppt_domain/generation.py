@@ -115,6 +115,53 @@ def _authoring_policy() -> dict[str, Any]:
     }
 
 
+def _safe_presentation_filename(title: str, authoring_mode: str) -> str:
+    safe = "".join(
+        "_" if character in '<>:"/\\|?*' or ord(character) < 32 else character
+        for character in title.strip()
+    ).strip(" .")
+    safe = safe[:120] or "AI 演示文稿"
+    suffix = "-模板化受限初稿" if authoring_mode == "deterministic-template" else ""
+    return f"{safe}{suffix}.pptx"
+
+
+def _publication_authoring_metadata(
+    snapshot: GenerationSnapshot,
+    manifest_payload: dict[str, Any],
+) -> tuple[dict[str, Any], str, str, str]:
+    """Resolve immutable disclosure metadata, including legacy producer fallback."""
+
+    policy = dict(snapshot.payload.get("authoringPolicy") or {})
+    authoring = dict(manifest_payload.get("authoring") or {})
+    mode = str(authoring.get("mode") or policy.get("mode") or "deterministic-template")
+    disclosure = str(
+        authoring.get("disclosure")
+        or (
+            "template-limited-editable-draft"
+            if mode == "deterministic-template"
+            else "agent-authored-editable-draft"
+        )
+    )
+    fallback_reason = authoring.get("fallbackReason")
+    if fallback_reason is None:
+        fallback_reason = policy.get("fallbackReason")
+    if not authoring:
+        authoring = {
+            "policyVersion": policy.get("policyVersion", "presentation-authoring@v1"),
+            "mode": mode,
+            "profile": manifest_payload.get("engineProfile")
+            or snapshot.payload.get("engineProfile"),
+            "disclosure": disclosure,
+            "fallbackReason": fallback_reason,
+        }
+    title = str(snapshot.payload.get("intent", {}).get("title") or "AI 演示文稿")
+    suggested_filename = str(
+        manifest_payload.get("suggestedFilename")
+        or _safe_presentation_filename(title, mode)
+    )
+    return authoring, mode, disclosure, suggested_filename
+
+
 class GenerationApprovalRequired(ValueError):
     pass
 
@@ -1018,6 +1065,9 @@ def publish_generation_result(
     snapshot = session.get(GenerationSnapshot, job.snapshot_id)
     if snapshot is None:
         raise RuntimeError("generation snapshot disappeared during publication")
+    authoring, authoring_mode, authoring_disclosure, suggested_filename = (
+        _publication_authoring_metadata(snapshot, manifest_payload)
+    )
     if presentation is None:
         presentation = Presentation(
             id=presentation_id,
@@ -1055,14 +1105,18 @@ def publish_generation_result(
         "generationJobId": job.id,
         "snapshotId": job.snapshot_id,
         "publicationVersion": publication_version,
-        "contentMode": manifest_payload.get("contentMode"),
-        "engineProfile": manifest_payload.get("engineProfile"),
-        "authoring": manifest_payload.get("authoring"),
-        "authoringMode": (manifest_payload.get("authoring") or {}).get("mode"),
-        "authoringDisclosure": (manifest_payload.get("authoring") or {}).get(
-            "disclosure"
+        "contentMode": manifest_payload.get("contentMode")
+        or (
+            "source-grounded"
+            if snapshot.payload.get("sourceHashes")
+            else "limited-general-draft"
         ),
-        "suggestedFilename": manifest_payload.get("suggestedFilename"),
+        "engineProfile": manifest_payload.get("engineProfile")
+        or snapshot.payload.get("engineProfile"),
+        "authoring": authoring,
+        "authoringMode": authoring_mode,
+        "authoringDisclosure": authoring_disclosure,
+        "suggestedFilename": suggested_filename,
         "partial": target == "partially_succeeded",
         "slides": [
             {

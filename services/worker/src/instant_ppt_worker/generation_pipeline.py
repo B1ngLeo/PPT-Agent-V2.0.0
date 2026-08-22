@@ -83,6 +83,52 @@ def _write_canonical(path: Path, value: Any) -> None:
     path.write_bytes(_canonical_bytes(value))
 
 
+def _safe_presentation_filename(title: str, authoring_mode: str) -> str:
+    safe = "".join(
+        "_" if character in '<>:"/\\|?*' or ord(character) < 32 else character
+        for character in title.strip()
+    ).strip(" .")
+    safe = safe[:120] or "AI 演示文稿"
+    suffix = "-模板化受限初稿" if authoring_mode == "deterministic-template" else ""
+    return f"{safe}{suffix}.pptx"
+
+
+def _template_authoring_summary(
+    snapshot: GenerationSnapshot,
+    *,
+    page_count: int,
+    image_generation: dict[str, Any],
+) -> dict[str, Any]:
+    policy = dict(snapshot.payload.get("authoringPolicy") or {})
+    visual_review = dict(policy.get("visualReview") or {})
+    fallback_reason = policy.get("fallbackReason") or "engineering-generation-pipeline"
+    return {
+        "policyVersion": policy.get("policyVersion", "presentation-authoring@v1"),
+        "mode": "deterministic-template",
+        "profile": snapshot.payload.get("engineProfile") or "deterministic-template",
+        "disclosure": "template-limited-editable-draft",
+        "fallbackReason": fallback_reason,
+        "agentAuthoredPageCount": 0,
+        "templateAuthoredPageCount": page_count,
+        "turnCount": 0,
+        "toolCallCount": 0,
+        "toolFailureCount": 0,
+        "repairCount": 0,
+        "visualReviewPolicyVersion": visual_review.get(
+            "policyVersion", "visual-review-disabled-for-template@v1"
+        ),
+        "visualReviewRound": 0,
+        "visualReviewPassed": None,
+        "usage": {
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "imageCount": int(image_generation.get("imageCount") or 0),
+            "renderSeconds": 0,
+            "costMicrounits": int(image_generation.get("costMicrounits") or 0),
+        },
+    }
+
+
 def _stable_id(seed: str) -> str:
     return deterministic_ulid(hashlib.sha256(seed.encode("utf-8")).hexdigest())
 
@@ -834,6 +880,16 @@ def process_generation_job(
             f"{job_id}:v{publication_version}:generation_manifest:deck"
         )
         manifest_object_key = tenant_object_key(organization_id, "published", manifest_artifact_id)
+        authoring = _template_authoring_summary(
+            snapshot,
+            page_count=len(slides),
+            image_generation=image_generation,
+        )
+        content_mode = (
+            "source-grounded"
+            if snapshot.payload.get("sourceHashes")
+            else "limited-general-draft"
+        )
         manifest_payload = {
             "schemaVersion": 1,
             "artifactId": manifest_artifact_id,
@@ -847,6 +903,20 @@ def process_generation_job(
             "presentationId": presentation_id,
             "presentationRevisionId": presentation_revision_id,
             "modeId": snapshot.mode_id,
+            "route": "generate_pptx",
+            "contentMode": content_mode,
+            "sourceGroundingStatus": (
+                "verified"
+                if content_mode == "source-grounded"
+                else "not-applicable-limited-draft"
+            ),
+            "engineProfile": snapshot.payload.get("engineProfile")
+            or "deterministic-template",
+            "authoring": authoring,
+            "suggestedFilename": _safe_presentation_filename(
+                str(snapshot.payload.get("intent", {}).get("title") or "AI 演示文稿"),
+                "deterministic-template",
+            ),
             "versions": {
                 "prompt": snapshot.prompt_version,
                 "engine": snapshot.engine_version,
