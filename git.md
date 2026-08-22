@@ -18,12 +18,12 @@
 | 项目 | 状态 |
 | --- | --- |
 | 当前分支 | `codex/issue-003-presentation-agent` |
-| 当前提交 | `7de8499` (`feat(agent): add explicit authoring fallback and canary controls`) |
-| 提交总数 | 25 |
+| 已验证并部署的代码提交 | `bdd1751` (`fix(runtime): complete fallback disclosure closure`) |
+| 截至该代码提交的提交总数 | 29 |
 | 历史结构 | 单一直线历史，无合并提交 |
 | Git 远端 | 未配置 |
 | Git 标签 | 无 |
-| 工作区 | ISSUE-003 阶段 0–F 已分类提交；最终语义质量、同输入 after 证据与恢复回归待提交，保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
+| 工作区 | ISSUE-003 阶段 0–F、最终质量、生产用户旅程、fallback 修复和发布收口均已分类提交；仅保留用户的无关 Markdown 空行修改和未跟踪工作目录 |
 | GitHub 状态 | 尚未关联或上传 |
 
 注意：首次提交包含 13,213 个文件和约 40 万行新增内容。上传 GitHub 前应检查仓库体积、敏感信息、依赖目录和生成文件，避免把不适合公开或版本管理的内容推送出去。
@@ -57,6 +57,10 @@
 | 2026-08-23 01:06 | `9230485` | `feat` | ISSUE-003：同一 Main Agent 顺序创作并绑定逐页证据 |
 | 2026-08-23 01:24 | `f45b8ce` | `feat` | ISSUE-003：新增有界多模态视觉审阅与反修闭环 |
 | 2026-08-23 02:41 | `7de8499` | `feat` | ISSUE-003：新增显式 Agent/fallback 冻结、披露、灰度与回滚控制 |
+| 2026-08-23 | `9003085` | `fix` | ISSUE-003：提升语义证据布局、可编辑性和最终同输入候选质量 |
+| 2026-08-23 | `157dc2d` | `fix` | ISSUE-003：在确定性生产者和发布边界保留真实模板 fallback 披露 |
+| 2026-08-23 | `4a5754c` | `test` | ISSUE-003：归档 Agent、fallback 与 rollback canary 生产用户旅程 |
+| 2026-08-23 | `bdd1751` | `fix` | ISSUE-003：补齐 quick renderer 披露、根回归证据并关闭 Issue |
 
 ## 远端与 GitHub
 
@@ -105,6 +109,56 @@
 ## 操作日志
 
 最新记录放在最上方。
+
+### 2026-08-23 — 从最终代码提交重建并核验五服务运行时
+
+- 操作者：Codex
+- 目的：确保最终发布候选不只通过测试，也由同一已提交代码构建并以生产形态运行。
+- 操作前状态：`codex/issue-003-presentation-agent@bdd1751`；运行时代码干净，工作区仅有用户无关改动和待生成的部署证据。
+- 执行命令：以本地确定性 Provider、`agent-authoring` 和空线上 Provider 凭据运行 `python scripts/issue002/deploy_runtime.py --output docs/evidence/issue003/runtime-deployment-release.json`。
+- 验证结果：`dirtyRuntimeInputs=[]`；API/Provider health 为 `ok`；API、Worker、Agent Worker、outbox、Provider Gateway 均报告 `bdd175114255…` 与 `instant-ppt-runtime@v2`；Worker 家族共享镜像 `sha256:20a06e59…`；`instant_ppt.v2.process_export` 已注册。
+- 相关提交：`bdd1751142554c8c424d62dabceb10109bf31ecd`
+- 证据：`docs/evidence/issue003/runtime-deployment-release.json`。
+- 状态：成功；没有执行线上 Kimi 调用，也不作相应能力或费用声明。
+
+### 2026-08-23 — 提交 ISSUE-003 fallback 披露与最终根回归收口
+
+- 操作者：Codex
+- 目的：让 engineering quick renderer 也满足阶段 F 的不可冒充合同，并据完整根验证关闭 ISSUE-003。
+- 操作前状态：`codex/issue-003-presentation-agent@4a5754c`；生产用户旅程已归档，根回归暴露两个测试/工程 manifest 同步缺口。
+- 执行命令：精确暂存 quick renderer、G07 fixture、测试、根验证证据、Issue/release/progress 文档后执行 `git commit -m "fix(runtime): complete fallback disclosure closure"`。
+- 变更范围：quick renderer 写入 `deterministic-template`、limited disclosure、engineering fallback reason 和强制文件名；G07 fixture 使用不可变 revision 建议文件名；更新全量证据和关闭清单。
+- 验证结果：根 `pnpm verify` exit 0；Contracts 26/38/166、API/Domain 40/40、Worker 127/127、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 12/12、G07 5/5、G08 4/4、Golden 20/20 + 40 Schema artifacts，以及 Web、安全、恢复、E2E、Gate、链接全部通过。
+- 相关提交：`bdd1751142554c8c424d62dabceb10109bf31ecd`
+- 远端结果：未涉及；仓库仍无远端。
+- 状态：成功；未纳入用户的无关 Markdown 空行和未跟踪工作目录。
+
+### 2026-08-23 — 归档 ISSUE-003 生产用户旅程
+
+- 操作者：Codex
+- 目的：用用户视角验证 Agent 编辑/精确导出、修复后模板披露和开关回滚不改写旧 revision。
+- 执行命令：精确暂存浏览器 E2E 与运行时部署证据后执行 `git commit -m "test(issue003): record production authoring journeys"`。
+- 验证结果：Agent 8/8、32 turns/22 tools、revision 2 精确下载；fallback 8/8、0 turns/tools、monitor/editor/文件名均披露；回滚 canary 恢复 Agent 且旧 fallback 身份不漂移；浏览器 warning/error 0。
+- 相关提交：`4a5754caa80eaf1ed42827523ddefcf36beb1751`
+- 状态：成功。
+
+### 2026-08-23 — 修复模板 fallback 不可变发布披露
+
+- 操作者：Codex
+- 目的：修复生产 E2E 发现的“监控页正确、编辑器误标 Agent”问题。
+- 执行命令：在 legacy/template manifest 补齐真实 0-turn/0-tool 作者信息，并在领域发布边界从批准 snapshot 防御性回填，随后执行 `git commit -m "fix(agent): preserve template fallback disclosure"`。
+- 验证结果：G06 12/12；新模板 revision 在 monitor/editor/export 一致披露，强制 `-模板化受限初稿.pptx`，切回 Agent 后旧 revision 仍不可变。
+- 相关提交：`157dc2d22bf46fcf08fcacb51ffe22c7c55a21e0`
+- 状态：成功。
+
+### 2026-08-23 — 提交最终同输入语义与视觉质量候选
+
+- 操作者：Codex
+- 目的：在冻结十页输入上完成可比较的真实 Agent runtime 候选和人工质量结论。
+- 执行命令：提交语义证据/布局/兼容性修复和 after 证据，提交说明为 `fix(agent): improve semantic evidence layouts`。
+- 验证结果：38 turns/26 tools、视觉首轮 0 blocking；PowerPoint/WPS 各 10/10；23/23 可编辑文本、32 个原生形状、0 整页图片；人工结论 After 明显优于 Before。
+- 相关提交：`900308568ba2524ac91c1d07d7e00c5a40272f9d`
+- 状态：成功；本地使用 `fake-agent@v1`，不虚报线上 Kimi。
 
 ### 2026-08-23 02:41 — 提交 ISSUE-003 阶段 F 灰度与显式回退
 

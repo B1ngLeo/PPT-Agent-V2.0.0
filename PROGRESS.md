@@ -6,9 +6,9 @@
 
 - Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
 - 状态：completed（2026-08-22 启动，2026-08-23 完成）
-- 当前阶段：ISSUE-003 已关闭；最终 Git/运行时证据归档
+- 当前阶段：ISSUE-003 已关闭并归档
 - 已完成：阶段 0–F；冻结同一 10 页 snapshot 的最终 Agent after；PowerPoint/WPS 双应用 10/10 无修复；before/after 人工偏好与机器证据归档；Agent 完整用户旅程及修复后 fallback/canary/rollback 用户旅程
-- 进行中：无功能模块；仅归档最终代码提交对应的干净运行时部署报告和 Git 操作日志
+- 进行中：无
 - 后续模块：无；ISSUE-003 验收、E2E、发布清单和 Issue 状态均已收口
 - 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
 - 当前验证：根级 `pnpm verify` exit 0；Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 127/127；G02 73/73；G03 8/8；G04 14/14；G05 4/4；G06 12/12；G07 5/5；G08 4/4；Golden source 10/10、render 10/10、40/40 Schema 工件；Web lint/typecheck/生产构建、Ruff、安全/恢复/E2E/Gate/Markdown links 全部通过。最终候选 Agent 38 turns/26 tools/视觉首轮 0 blocking、package QA、PowerPoint/WPS 各 10/10；生产浏览器 Agent 编辑/rev2 精确导出、fallback 编辑器/强制命名导出、rollback canary 和 0 console warning/error 全部通过
@@ -31,6 +31,7 @@
 
 ## 已完成事项
 
+- ISSUE-003 最终提交部署：从提交 `bdd1751…` 重建五服务生产形态运行时；API 镜像 `sha256:53d8a8fa…`、Worker 家族镜像 `sha256:20a06e59…`，API/Provider 健康、五服务 revision/contract 一致、v2 exact-export 任务已注册，`dirtyRuntimeInputs=[]`。运行时使用本地 `fake-agent@v1`、Agent authoring 且不携带线上 Provider 密钥；证据见 `docs/evidence/issue003/runtime-deployment-release.json`。
 - ISSUE-003 根级最终回归与关闭：根 `pnpm verify` 在同一不中断命令中 exit 0，覆盖 Contracts 26/38/166、Web lint/typecheck/生产构建、API/Domain 40/40、Worker 127/127、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 12/12、G07 5/5、G08 4/4、Golden 20/20 + 40 Schema artifacts、E2E、安全、恢复、告警、链接与 G00–G08 Gate；Issue 全部验收项和 release addendum 已据实关闭，无 waiver、无未解决阻塞。
 - ISSUE-003 生产浏览器用户旅程：从固定提交 `157dc2d…` 构建五服务一致运行时。Agent 路径完成草稿→批准→真实 8/8 生成→编辑 slide 2→revision 2→精确导出→签名下载，文件 27,070 bytes / SHA-256 `8d17ac37…`；修复后的 fallback 路径完成全新 8/8 生成，monitor/editor 均披露模板化受限初稿，0 workflow/turn/tool、8 template pages，精确导出强制命名且下载/数据库同为 25,499 bytes / `f21c5686…`。切回 Agent 模式后旧 fallback revision 仍保持模板身份，新 canary 以 32 turns/22 tools、8 Agent pages 发布并在编辑器显示 Agent 身份；浏览器 console warning/error 0。证据见 `docs/evidence/issue003/browser-e2e.json` 和两份最终部署报告。
 - ISSUE-003 fallback 编辑器披露修复：生产用户旅程发现旧确定性模板管线发布的 generation manifest 缺少 `engineProfile/contentMode/authoring/suggestedFilename`，导致 monitor 依据 snapshot 正确披露、editor 依据 immutable revision 却误标为 Agent。旧管线现发布 `deterministic-template`、`template-limited-editable-draft`、fallback reason、0 Agent turns/tools、模板页数和强制 `-模板化受限初稿.pptx` 文件名；Domain 发布层还会从批准 snapshot 防御性回填旧生产者缺失字段。新增从 feature flag 到真实生成、发布和 presentation API 的集成回归；停掉同库常驻消费者消除测试租约争用后 G06 12/12 通过。
