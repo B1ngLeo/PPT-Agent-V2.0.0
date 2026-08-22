@@ -1,0 +1,32 @@
+﻿{
+    "schemaVersion":  1,
+    "application":  {
+                        "name":  "Microsoft PowerPoint",
+                        "version":  "16.0",
+                        "build":  "20228",
+                        "path":  "C:\\Program Files\\Microsoft Office\\Root\\Office16"
+                    },
+    "decks":  [
+                  {
+                      "name":  "reference-ppt-master",
+                      "slideCount":  12,
+                      "pngCount":  12,
+                      "repairsCollectionSupported":  false,
+                      "repairCount":  null
+                  },
+                  {
+                      "name":  "before-deterministic-template",
+                      "slideCount":  10,
+                      "pngCount":  10,
+                      "repairsCollectionSupported":  false,
+                      "repairCount":  null
+                  },
+                  {
+                      "name":  "before-user-download",
+                      "slideCount":  10,
+                      "pngCount":  10,
+                      "repairsCollectionSupported":  false,
+                      "repairCount":  null
+                  }
+              ]
+}

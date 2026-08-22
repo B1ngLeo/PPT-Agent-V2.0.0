@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "name": "issue003-real-main-presentation-agent-minimum-evidence",
+  "authoringModes": [
+    "agent-authoring",
+    "deterministic-template"
+  ],
+  "agentSuccessRequires": {
+    "modelTurns": {
+      "minimum": 1,
+      "eachBinds": [
+        "workflowRunId",
+        "stage",
+        "attempt",
+        "turnNumber",
+        "inputSha256",
+        "outputSha256",
+        "modelVersion",
+        "promptVersion",
+        "referenceVersion",
+        "usage"
+      ]
+    },
+    "toolCalls": {
+      "minimum": 1,
+      "eachBinds": [
+        "toolCallId",
+        "turnId",
+        "toolName",
+        "inputSha256",
+        "outputSha256",
+        "subjectSha256",
+        "status"
+      ],
+      "mustIncludeObservation": true
+    },
+    "revisions": {
+      "minimum": 1,
+      "bindsPreviousAndNewSubjectHash": true
+    },
+    "termination": {
+      "required": true,
+      "allowedReasons": [
+        "completed",
+        "paused",
+        "budget_exhausted",
+        "timeout",
+        "policy_violation",
+        "provider_unavailable",
+        "needs_manual",
+        "cancelled"
+      ]
+    },
+    "authorReceipt": {
+      "requiredPerSlide": true,
+      "mustReferenceActualTurnAndToolCall": true,
+      "cannotBeCreatedBeforeModelTurn": true
+    }
+  },
+  "fallbackRules": {
+    "authoringMode": "deterministic-template",
+    "agentAuthorReceiptAllowed": false,
+    "publicationLabel": "模板化受限初稿",
+    "countsTowardAgentCoverage": false,
+    "mayBeReportedAsAgentSuccess": false
+  },
+  "reviewerRules": {
+    "mayModifyArtifacts": false,
+    "mustBindRenderedSubjectSha256": true,
+    "maximumRepairRounds": 2,
+    "blockingFindingsRequireNonSuccessWhenUnresolved": true
+  }
+}

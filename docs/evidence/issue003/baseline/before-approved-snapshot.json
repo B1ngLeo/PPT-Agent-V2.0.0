@@ -1,0 +1,286 @@
+﻿{
+    "jobId": "01M0KZ2JRRW8PJKER5KVVXFTMF",
+    "payload": {
+        "route": "generate_pptx",
+        "intent": {
+            "goal": "基于官方公告材料，系统梳理 GPT 5.6 的核心能力、关键更新点与发布时间线，帮助团队快速理解新特性并评估其对现有业务的潜在影响",
+            "notes": "所有内容（功能描述、性能数据、定价、发布时间等）必须严格来源于所提供的官方公告材料，不得推测或编造材料中未提及的信息；若材料包含基准测试或对比数据，优先以图表形式呈现；如材料缺少数据，则相应减少图表页并转为要点式排版。",
+            "title": "GPT 5.6 官方公告解读",
+            "audience": "关注大模型最新动态的产品、研发与业务决策团队",
+            "language": "zh-CN",
+            "sourceRefs": [
+                "01M0KT5WF515DVFW7MJ7HW7533",
+                "01M0KT5WF515DVFW7MJ7HW7532"
+            ],
+            "contentDepth": "balanced",
+            "schemaVersion": 1,
+            "intentRevisionId": "01M0KT6MKT28TE1R6ZB56P0Q5Z",
+            "targetSlideCount": 10,
+            "visualPreference": "data_first"
+        },
+        "modeId": "native",
+        "draftId": "01M0KT5XW256SBGD9BHMAN0BH0",
+        "outline": {
+            "slides": [
+                {
+                    "type": "cover",
+                    "title": "GPT 5.6 官方公告解读",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDC4",
+                    "position": 1,
+                    "keyPoints": [
+                        "基于官方公告材料的系统梳理",
+                        "面向产品、研发与业务决策团队"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWCZ",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533",
+                        "01M0KT5WF515DVFW7MJ7HW7532"
+                    ]
+                },
+                {
+                    "type": "content",
+                    "title": "公告概览与解读框架",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDC5",
+                    "position": 2,
+                    "keyPoints": [
+                        "官方公告的核心信息一览",
+                        "本次解读的结构与评估维度"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD0",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533"
+                    ]
+                },
+                {
+                    "type": "timeline",
+                    "title": "发布时间线与版本节奏",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDC6",
+                    "position": 3,
+                    "keyPoints": [
+                        "官方公布的发布节点与时间线",
+                        "各阶段可用范围与里程碑安排"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD1",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533",
+                        "01M0KT5WF515DVFW7MJ7HW7532"
+                    ]
+                },
+                {
+                    "type": "content",
+                    "title": "核心能力解析",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDC7",
+                    "position": 4,
+                    "keyPoints": [
+                        "官方披露的核心能力与新特性",
+                        "能力边界的官方表述"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD2",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533"
+                    ]
+                },
+                {
+                    "type": "data",
+                    "title": "基准测试与性能表现",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDC8",
+                    "position": 5,
+                    "keyPoints": [
+                        "以图表呈现官方基准测试数据",
+                        "官方口径下的性能指标解读"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD3",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7532"
+                    ]
+                },
+                {
+                    "type": "comparison",
+                    "title": "与前代及同类模型对比",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDC9",
+                    "position": 6,
+                    "keyPoints": [
+                        "官方材料中的版本间对比",
+                        "关键差异点的结构化呈现"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD4",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533",
+                        "01M0KT5WF515DVFW7MJ7HW7532"
+                    ]
+                },
+                {
+                    "type": "content",
+                    "title": "定价、可用性与接入方式",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDCA",
+                    "position": 7,
+                    "keyPoints": [
+                        "官方公布的定价与计费信息",
+                        "开放范围与接入方式说明"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD5",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7532"
+                    ]
+                },
+                {
+                    "type": "risk_action",
+                    "title": "对现有业务的潜在影响",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDCB",
+                    "position": 8,
+                    "keyPoints": [
+                        "基于公告内容识别机会与风险",
+                        "对现有产品与研发的潜在影响点"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD6",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533",
+                        "01M0KT5WF515DVFW7MJ7HW7532"
+                    ]
+                },
+                {
+                    "type": "risk_action",
+                    "title": "评估建议与后续行动",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDCC",
+                    "position": 9,
+                    "keyPoints": [
+                        "建议开展的验证与评估动作",
+                        "需要持续跟踪的官方后续信息"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD7",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533"
+                    ]
+                },
+                {
+                    "type": "closing",
+                    "title": "总结与讨论",
+                    "slideId": "01M0KZ2JRMZHFH5CG2RQTBRDCD",
+                    "position": 10,
+                    "keyPoints": [
+                        "核心结论回顾",
+                        "开放讨论与下一步安排"
+                    ],
+                    "outlineSlideId": "01M0KY8878VW7DAX4Q5ZPVTWD8",
+                    "sourceCitations": [
+                        "01M0KT5WF515DVFW7MJ7HW7533",
+                        "01M0KT5WF515DVFW7MJ7HW7532"
+                    ]
+                }
+            ],
+            "storySummary": "基于官方公告材料，从发布背景与时间线切入，系统解读 GPT 5.6 的核心能力与关键更新点，以图表优先呈现官方基准测试与定价信息，最终落脚于对现有业务的潜在影响评估与行动建议，帮助产品、研发与业务决策团队快速形成判断。",
+            "targetSlideCount": 10
+        },
+        "approval": {
+            "approvedAt": "2026-08-22T05:14:34.382111Z",
+            "approvedBy": "01M0D9MESPXSBAGAAN1JEGB0YB"
+        },
+        "template": {
+            "kind": "deck",
+            "installed": false,
+            "provenance": "library",
+            "templateId": "01ARZ3NDEKTSV4RRFFQ69G5FB4",
+            "candidateId": "01ARZ3NDEKTSV4RRFFQ69G5FB5",
+            "workspaceRoot": "templates/catalog/01ARZ3NDEKTSV4RRFFQ69G5FB5",
+            "contentAccessed": false,
+            "descriptorSha256": "c12d9f6fd091e565de5e85cd96d9aa01855451db0960438e65fe9ae516b6bc9e",
+            "engineCompatibility": "ppt-master-v4.7.0"
+        },
+        "createdAt": "2026-08-22T05:28:39.956696Z",
+        "approvalId": "01M0KY8S0EKN8WGF5911Q0N4M4",
+        "snapshotId": "01M0KZ2JRMZHFH5CG2RQTBRDC3",
+        "imagePolicy": {
+            "notes": {
+            },
+            "scope": "none",
+            "usage": [
+                "none"
+            ]
+        },
+        "sourceHashes": [
+            "4818925561b4732a3f0ed7bca05791b789c59a6b27d8dc4a98c8ab31ed0fb857",
+            "6c19f59ae1ed7153d8d07585bea8b30af7a88a19e9f21120fb64e7c05b6a5e6a",
+            "811333418f1cf5b69330c0812781a82fa89467a403049c51e211653656ee04cf"
+        ],
+        "engineProfile": "default-agentic",
+        "engineVersion": "ppt-master@v4.7.0+e8323bfa",
+        "promptVersion": "approved-outline-to-deck-plan@1",
+        "schemaVersion": 2,
+        "sourceSummary": {
+            "sha256": "6c19f59ae1ed7153d8d07585bea8b30af7a88a19e9f21120fb64e7c05b6a5e6a",
+            "status": "parsed",
+            "sourceId": "01M0KT5TPPWEDM47ENGFN0DNXR",
+            "artifacts": 2,
+            "parserVersion": "source-parser@1+ppt-master-v4.7.0",
+            "artifactDescriptors": [
+                {
+                    "kind": "markdown",
+                    "sha256": "811333418f1cf5b69330c0812781a82fa89467a403049c51e211653656ee04cf",
+                    "mediaType": "text/markdown",
+                    "sizeBytes": 23481,
+                    "artifactId": "01M0KT5WF515DVFW7MJ7HW7532",
+                    "parserVersion": "source-parser@1+ppt-master-v4.7.0",
+                    "sourceArtifactId": "01M0KT5WFWQT6Z89JVS6XMXT13",
+                    "retentionExpiresAt": "2026-09-21T04:03:05.337362Z"
+                },
+                {
+                    "kind": "conversion_profile",
+                    "sha256": "4818925561b4732a3f0ed7bca05791b789c59a6b27d8dc4a98c8ab31ed0fb857",
+                    "mediaType": "application/json",
+                    "sizeBytes": 603,
+                    "artifactId": "01M0KT5WF515DVFW7MJ7HW7533",
+                    "parserVersion": "source-parser@1+ppt-master-v4.7.0",
+                    "sourceArtifactId": "01M0KT5WFWQT6Z89JVS6XMXT14",
+                    "retentionExpiresAt": "2026-09-21T04:03:05.337362Z"
+                }
+            ]
+        },
+        "organizationId": "01M0D9MESSTSY6C63QA9AGM8T1",
+        "snapshotSha256": "fdb0cd6f714baf0e5af838617de3519f1295e8565e764c6f61a678544f4d4ffe",
+        "sourceDecision": "approved-artifacts",
+        "fontPackVersion": "system-safe-fonts@1",
+        "containerVersion": "instant-ppt-runtime@dev-uncommitted",
+        "intentRevisionId": "01M0KT6MKT28TE1R6ZB56P0Q5Z",
+        "approvalInputHash": "90d2cd0eb239675119baf52f1903f0e878cd6670456c22f511ea06017d4a2202",
+        "outlineRevisionId": "01M0KY887R8R7EZW4CD06JNHK6",
+        "templateCandidate": {
+            "kind": "deck",
+            "installed": false,
+            "provenance": "library",
+            "templateId": "01ARZ3NDEKTSV4RRFFQ69G5FB4",
+            "candidateId": "01ARZ3NDEKTSV4RRFFQ69G5FB5",
+            "workspaceRoot": "templates/catalog/01ARZ3NDEKTSV4RRFFQ69G5FB5",
+            "contentAccessed": false,
+            "descriptorSha256": "c12d9f6fd091e565de5e85cd96d9aa01855451db0960438e65fe9ae516b6bc9e",
+            "engineCompatibility": "ppt-master-v4.7.0"
+        },
+        "templateVersionId": "01ARZ3NDEKTSV4RRFFQ69G5FB5",
+        "providerConfigVersion": "kimi-k3+image-disabled@2",
+        "providerConfiguration": {
+            "image": {
+                "size": "1536x1024",
+                "model": "gpt-image-2",
+                "backend": "openai",
+                "baseUrl": "https://cf.api.fan/v1",
+                "enabled": false,
+                "quality": "low",
+                "outputFormat": "png",
+                "maxImagesPerDeck": 0,
+                "costMicrounitsPerImage": 100000
+            },
+            "planning": {
+                "model": "kimi-k3",
+                "backend": "kimi"
+            },
+            "schemaVersion": 1
+        },
+        "runtimeContractVersion": "instant-ppt-runtime@v2",
+        "workflowContractVersion": "instant-ppt-default@v2.0.0"
+    },
+    "jobStatus": "succeeded",
+    "approvalId": "01M0KY8S0EKN8WGF5911Q0N4M4",
+    "snapshotId": "01M0KZ2JRMZHFH5CG2RQTBRDC3",
+    "snapshotSha256": "fdb0cd6f714baf0e5af838617de3519f1295e8565e764c6f61a678544f4d4ffe",
+    "intentRevisionId": "01M0KT6MKT28TE1R6ZB56P0Q5Z",
+    "outlineRevisionId": "01M0KY887R8R7EZW4CD06JNHK6"
+}

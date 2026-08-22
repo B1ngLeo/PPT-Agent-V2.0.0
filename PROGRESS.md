@@ -1,20 +1,37 @@
 # 即刻AI-PPT development progress
 
-> Updated: 2026-08-19. This file is updated after every completed module. A single repeated defect may be attempted at most five times; on a sixth failure it is recorded here and deferred while independent work continues.
+> Updated: 2026-08-22. This file is updated after every completed module. A single repeated defect may be attempted at most five times; on a sixth failure it is recorded here and deferred while independent work continues.
 
 ## 当前 Goal
 
-- Goal：ISSUE-002 / Default Agentic 可用初稿生成链路
-- 状态：complete（2026-08-19 同日运行时复测重新关闭）
-- 当前检查点：R1/R1B/R2/R3、内容质量、crash-replay 确定性、完整回归、最终干净部署、生产浏览器 E2E、exact export 与逐页视觉验证全部完成
-- 已验证：干净提交 `ebed9ebb884b2196842ddc4d0a5ca6a2077c55c8` 已部署；生产任务 `01M0DA1AM1MGYVF41XRWQ6K85Q` 一次完成 12/12，三张数据页分别绑定 Terminal-Bench 2.1、BrowseComp、SEC-Bench Pro；revision `011M8VGBKSA0K4H5CVWQV8MVG6` 的 exact export 复用 canonical artifact `01EFM3NAY8GJ1XVT2Z66T6V6XJ`，SHA-256 `c617bd0c…`、61 条可见文本、禁用文案 0 命中，12 页渲染与越界检查通过
-- 剩余工作：无
-- 决策/偏离：网站成品固定 `route=generate_pptx`、`profile=default-agentic`；第一条纵向切片固定 free-design、`image_usage=["none"]`、closed-corpus、notes/动画/旁白/visual review 关闭；Quick 仅保留工程用途并受同一内容守卫
+- Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
+- 状态：in progress（2026-08-22 启动）
+- 当前阶段：阶段 A — 版本化 Page Blueprint 与语义 claim-evidence 规划
+- 已完成：阶段 0 停止条件达成；两套主基线及用户下载谱系、10 页批准 snapshot/来源/版本/hash、PowerPoint 逐页 PNG、contact sheet、逐页/整套统计和最小 Agent 证据合同均已冻结
+- 进行中：新增 PageBlueprint/SlideCommunicationPlan 合同，以语义 claim-evidence 选择替代页序取模，并建立 Blueprint→Design Spec→SVG/PPTX hash-bound 一致性验证
+- 后续模块：A Page Blueprint；B 受约束设计工具层；C 单主 Agent 模型—工具循环与持久化；D 顺序 SVG authoring；E 两轮视觉反馈闭环；F feature flag/fallback/UI/发布文档；完整 E2E
+- 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
+- 当前验证：阶段 0 封存脚本 hash fail-closed 通过；三份 PPTX 均由 PowerPoint 打开并导出精确页数 PNG，Repairs=0；分析脚本 Ruff 通过，3 份 contact sheet 各含 10/10/12 页且人工盘点完成
+- 问题与解决方案：初始未从仓库路径定位网站旧 10 页样本，随后从 PostgreSQL 精确关联 job `01M0KZ2JRRW8PJKER5KVVXFTMF`、snapshot `01M0KZ2JRMZHFH5CG2RQTBRDC3` 和 canonical artifact，并从私有 MinIO 按预期 hash 恢复 PPTX/来源；PowerShell 5.1 中文字面路径解码失败 1 次，改为 ASCII 后缀发现；contact sheet 在大小写不敏感文件系统重复收集 PNG 1 次，改为 resolved path 去重
 - 阻塞：当前无
 - 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
 
+## ISSUE-003 模块状态
+
+| 模块 | 状态 | 验证/停止条件 |
+| --- | --- | --- |
+| 0 基线与 Agent 证据合同 | completed | 两套基线、渲染、统计、输入/version/hash 已归档；Agent/模板最小证据合同已冻结 |
+| A Page Blueprint | in progress | 每页 assertion/audienceMove/evidenceRefs/contentBlocks/visualForm/layoutIntent/literalConstraints；100% claim support |
+| B 受约束设计工具 | pending | allowlist、路径隔离、Scene Graph/直接 SVG、hash/tool call/attempt/stale |
+| C Main Presentation Agent Runtime | pending | 实际模型 turn→工具→观察→修订→终止；预算/超时/恢复/持久化 |
+| D Agent 顺序创作 | pending | P01 gate 后 P02–Pn；每页 SVG 追溯到 Agent turn/tool call；模板仅显式 fallback |
+| E 有界视觉闭环 | pending | contact sheet、结构化 reviewer、最多两轮、blocking 清零或非成功 |
+| F 灰度、回退与发布 | pending | feature flag、manifest/UI/文件名披露、监控、文档与 rollback |
+| E2E 与最终回归 | pending | 同输入用户旅程、PPTX/WPS/PowerPoint、恢复/取消/安全/发布不变量 |
+
 ## 已完成事项
 
+- ISSUE-003 阶段 0 / 基线与 Agent 证据合同：从 PostgreSQL/私有 MinIO 恢复网站 canonical 10 页 before（SHA-256 `4fa9901f…`）、批准 snapshot `fdb0cd6f…`、Markdown `81133341…` 与转换配置 `48189255…`；归档 `ppt-master` 12 页 reference（`5e22b233…`）及用户下载谱系副本。PowerPoint 逐页导出 10/10/12 PNG 且 Repairs=0；统计确认 before 递归 Shape 81、可见字符 1,168、备注 0，reference 递归 Shape 450、可见字符 2,903、备注 12；contact sheet 人工盘点记录 before 的单一正文面板退化和 reference 的语义构图差距。新增可重放封存、渲染、分析脚本及真实 Agent 最小证据合同，明确 reference 非严格 A/B，后续以冻结 10 页 snapshot 做严格 before/after。
 - ISSUE-002 最终干净部署与生产用户 E2E：从 Git 提交 `ebed9eb…` 重建并校验 API/Worker/Agent Worker/outbox/Provider Gateway，Worker 家族共享镜像 `sha256:2d98d9ad…` 且 `instant-ppt.v2.process_export` 注册通过；浏览器从已批准事实来源启动任务 `01M0DA1AM1MGYVF41XRWQ6K85Q`，首次尝试 12/12 发布。编辑器显示完整 `GPT-5.6`、`91.9`、`92.2`、`74.3`、`2.8` 与三组不同图表；Web 导出及独立真实队列导出均复用 canonical artifact，下载文件 54,086 bytes / SHA-256 `c617bd0c…`，61 条可见文本无 legacy 命中；12 页逐页渲染、montage 人工检查与 `slides_test.py` 无越界通过。
 - ISSUE-002 最终受影响回归：Contracts 26 schemas/38 endpoints/166 fixtures、Web lint/typecheck/生产构建、API/Domain 38/38、Worker 71/71、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 11/11、G07 5/5、G08 4/4、G01 10/10 source + 10/10 render + 40 schema artifacts、E2E 证据、安全、链接与 G00–G08 Gate 全部通过；无 waiver。
 - ISSUE-002 crash-replay 确定性模块：定位到 Default workflow 的二级 Python 工具未继承固定 `PYTHONHASHSEED`，导致 vendored SVG flatten pass 通过 `set` 复制 XML 属性时顺序随机；视觉相同但 `svg_final`/bundle 字节哈希不同，幂等对象存储因此正确拒绝覆盖并将重放收敛为 `ENGINE_RENDER_FAILED`。顶层监督器与嵌套工具环境现均强制 `PYTHONHASHSEED=0`；监督器/Agentic 单测 14/14 及真实 PostgreSQL+MinIO 的“上传后崩溃→第二次重放→单一不可变 revision”聚焦集成通过。

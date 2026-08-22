@@ -1,0 +1,28 @@
+{
+  "schema": "ppt-master.source_to_md.profile.v1",
+  "converter": "doc_to_md.py",
+  "conversion_type": "docx",
+  "source": {
+    "path": "/tmp/instant-ppt-source-prqbfl4v/source.docx",
+    "name": "source.docx",
+    "suffix": ".docx",
+    "kind": "file",
+    "exists": true,
+    "size_bytes": 52112
+  },
+  "outputs": {
+    "markdown": "source.md",
+    "asset_dir": "",
+    "image_manifest": "",
+    "image_count": 0
+  },
+  "markdown": {
+    "line_count": 233,
+    "char_count": 11715,
+    "heading_count": 11,
+    "table_count": 2,
+    "image_ref_count": 0,
+    "link_count": 2
+  },
+  "warnings": []
+}
