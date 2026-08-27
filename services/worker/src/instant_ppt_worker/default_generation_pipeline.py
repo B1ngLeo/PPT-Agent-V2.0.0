@@ -37,6 +37,7 @@ from instant_ppt_domain.service import (
     canonical_sha256,
     complete_slide,
     heartbeat_job,
+    report_slide_authored,
     set_job_stage,
     start_next_slide,
 )
@@ -47,6 +48,7 @@ from instant_ppt_worker.approved_sources import resolve_approved_sources
 from instant_ppt_worker.artifacts import sha256_file
 from instant_ppt_worker.default_workflow_request import build_default_workflow_request
 from instant_ppt_worker.errors import RENDER_FAILED, AdapterError
+from instant_ppt_worker.settings import SUPPORTED_QWEN_MODELS
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.source_pipeline import SourceObjectError
 from instant_ppt_worker.workflow_models import (
@@ -123,9 +125,7 @@ def _restore_uploaded_workflow(
     snapshot: GenerationSnapshot,
     request_sha256: str,
 ) -> Path | None:
-    manifest_artifact_id = _stable_id(
-        f"{job_id}:v{publication_version}:generation_manifest:deck"
-    )
+    manifest_artifact_id = _stable_id(f"{job_id}:v{publication_version}:generation_manifest:deck")
     manifest_key = tenant_object_key(
         organization_id,
         "published",
@@ -184,15 +184,12 @@ def _restore_uploaded_workflow(
         ),
     }
     artifacts_by_type = {
-        str(value.get("artifactType")): value
-        for value in list(manifest.get("artifacts") or [])
+        str(value.get("artifactType")): value for value in list(manifest.get("artifacts") or [])
     }
     for artifact_type, (target, max_bytes) in required_artifacts.items():
         artifact = artifacts_by_type.get(artifact_type)
         if artifact is None:
-            raise RuntimeError(
-                f"uploaded generation manifest has no {artifact_type} artifact"
-            )
+            raise RuntimeError(f"uploaded generation manifest has no {artifact_type} artifact")
         target.parent.mkdir(parents=True, exist_ok=True)
         digest = store.download(
             str(artifact["objectKey"]),
@@ -221,20 +218,14 @@ def _scoped_image_environment(
             "true" if bool(configuration.get("enabled", False)) else "false"
         ),
         "IMAGE_BACKEND": str(configuration.get("backend") or "openai"),
-        "OPENAI_BASE_URL": str(
-            configuration.get("baseUrl") or "https://api.openai.com/v1"
-        ),
+        "OPENAI_BASE_URL": str(configuration.get("baseUrl") or "https://api.openai.com/v1"),
         "OPENAI_MODEL": str(configuration.get("model") or "gpt-image-2"),
         "OPENAI_OUTPUT_FORMAT": str(configuration.get("outputFormat") or "png"),
         "OPENAI_IMAGE_SIZE": str(configuration.get("size") or "1536x1024"),
         "OPENAI_IMAGE_QUALITY": str(configuration.get("quality") or "low"),
         "IMAGE_MAX_PER_DECK": str(int(configuration.get("maxImagesPerDeck") or 0)),
-        "IMAGE_COST_MICROUNITS": str(
-            int(configuration.get("costMicrounitsPerImage") or 0)
-        ),
-        "OPENAI_IMAGE_TIMEOUT_SECONDS": os.getenv(
-            "OPENAI_IMAGE_TIMEOUT_SECONDS", "300"
-        ).strip(),
+        "IMAGE_COST_MICROUNITS": str(int(configuration.get("costMicrounitsPerImage") or 0)),
+        "OPENAI_IMAGE_TIMEOUT_SECONDS": os.getenv("OPENAI_IMAGE_TIMEOUT_SECONDS", "300").strip(),
     }
 
 
@@ -244,27 +235,59 @@ def _scoped_text_environment(
 ) -> dict[str, str]:
     if "provider-text" not in request.runtime.allowed_tools:
         return {}
-    configuration = dict(
-        snapshot.payload.get("providerConfiguration", {}).get("planning") or {}
-    )
+    configuration = dict(snapshot.payload.get("providerConfiguration", {}).get("planning") or {})
+    provider = str(configuration.get("provider") or "").strip().lower()
+    if not provider:
+        provider = "qwen" if request.versions.model in SUPPORTED_QWEN_MODELS else "kimi"
+    common = {
+        "TEXT_PROVIDER": provider,
+    }
+    if provider == "qwen":
+        return {
+            **common,
+            "QWEN_API_KEY": os.getenv("QWEN_API_KEY", "").strip(),
+            "QWEN_BASE_URL": str(
+                configuration.get("baseUrl") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            ),
+            "QWEN_MODEL": str(configuration.get("model") or request.versions.model),
+            "QWEN_REASONING_EFFORT": str(configuration.get("reasoningEffort") or "medium"),
+            "QWEN_ENABLE_THINKING": (
+                "true" if bool(configuration.get("enableThinking", True)) else "false"
+            ),
+            "QWEN_PRESERVE_THINKING": (
+                "true" if bool(configuration.get("preserveThinking", True)) else "false"
+            ),
+            "QWEN_TIMEOUT_SECONDS": str(float(configuration.get("timeoutSeconds") or 600)),
+            "QWEN_TRANSPORT_MAX_RETRIES": str(
+                int(
+                    4
+                    if configuration.get("transportMaxRetries") is None
+                    else configuration["transportMaxRetries"]
+                )
+            ),
+            "QWEN_RETRY_BACKOFF_SECONDS": str(float(configuration.get("retryBackoffSeconds") or 2)),
+            "QWEN_STREAMING": ("true" if bool(configuration.get("streaming", True)) else "false"),
+        }
+    if provider != "kimi":
+        raise AdapterError(RENDER_FAILED, "unsupported frozen text provider")
     return {
+        **common,
         "MOONSHOT_API_KEY": os.getenv("MOONSHOT_API_KEY", "").strip(),
-        "KIMI_BASE_URL": str(
-            configuration.get("baseUrl") or "https://api.moonshot.cn/v1"
-        ),
+        "KIMI_BASE_URL": str(configuration.get("baseUrl") or "https://api.moonshot.cn/v1"),
         "KIMI_MODEL": str(configuration.get("model") or request.versions.model),
         "KIMI_PROTOCOL": str(configuration.get("protocol") or "openai"),
-        "KIMI_REASONING_EFFORT": str(
-            configuration.get("reasoningEffort") or "max"
-        ),
-        "KIMI_TIMEOUT_SECONDS": str(
-            float(configuration.get("timeoutSeconds") or 240)
-        ),
+        "KIMI_REASONING_EFFORT": str(configuration.get("reasoningEffort") or "max"),
+        "KIMI_TIMEOUT_SECONDS": str(float(configuration.get("timeoutSeconds") or 600)),
         "KIMI_TRANSPORT_MAX_RETRIES": str(
-            int(configuration.get("transportMaxRetries") or 1)
+            int(
+                4
+                if configuration.get("transportMaxRetries") is None
+                else configuration["transportMaxRetries"]
+            )
         ),
-        "KIMI_RETRY_BACKOFF_SECONDS": str(
-            float(configuration.get("retryBackoffSeconds") or 2)
+        "KIMI_RETRY_BACKOFF_SECONDS": str(float(configuration.get("retryBackoffSeconds") or 2)),
+        "KIMI_ANTHROPIC_STREAMING": (
+            "true" if bool(configuration.get("streaming", False)) else "false"
         ),
     }
 
@@ -281,9 +304,7 @@ def _persist_image_provider_calls(
         return None
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
     model = str(
-        snapshot.payload.get("providerConfiguration", {})
-        .get("image", {})
-        .get("model")
+        snapshot.payload.get("providerConfiguration", {}).get("image", {}).get("model")
         or "unavailable"
     )
     now = datetime.now(UTC)
@@ -295,18 +316,12 @@ def _persist_image_provider_calls(
             if len(prompt_sha256) != 64:
                 continue
             slide_id = str((resource.get("slideIds") or ["deck"])[0])
-            call_id = _stable_id(
-                f"{workflow_run_id}:image-provider:{slide_id}:{prompt_sha256}"
-            )
+            call_id = _stable_id(f"{workflow_run_id}:image-provider:{slide_id}:{prompt_sha256}")
             if session.get(ProviderCall, call_id) is not None:
                 continue
             attempts = list(resource.get("attempts") or [])
             failed_attempt = next(
-                (
-                    value
-                    for value in reversed(attempts)
-                    if value.get("status") == "failed"
-                ),
+                (value for value in reversed(attempts) if value.get("status") == "failed"),
                 {},
             )
             session.add(
@@ -323,9 +338,7 @@ def _persist_image_provider_calls(
                     model=str(resource.get("model") or model),
                     purpose="default_workflow_image_generate",
                     request_hash=prompt_sha256,
-                    status=(
-                        "succeeded" if resource.get("status") == "Generated" else "failed"
-                    ),
+                    status=("succeeded" if resource.get("status") == "Generated" else "failed"),
                     input_tokens=0,
                     output_tokens=0,
                     repair_count=0,
@@ -381,11 +394,7 @@ def _authoring_summary(
     ]
     page_count = len(request.outline)
     review_path = project / "validation" / "visual-review.json"
-    review = (
-        json.loads(review_path.read_text(encoding="utf-8"))
-        if review_path.is_file()
-        else None
-    )
+    review = json.loads(review_path.read_text(encoding="utf-8")) if review_path.is_file() else None
     return {
         "policyVersion": request.authoring.policy_version,
         "mode": request.authoring.mode,
@@ -493,7 +502,7 @@ def _fail_default_run(
                 run,
                 status="failed",
                 stage=run.stage,
-                error={"code": error_code, "message": message[-1000:]},
+                error={"code": error_code, "message": message[:1000]},
             )
         fail_generation_job(
             session,
@@ -568,6 +577,89 @@ def _process_default_generation_job(
                     lease_seconds=lease_seconds,
                 )
 
+        observed_workflow_events: set[str] = set()
+        slide_ids_by_pnn = {f"P{slide.position:02d}": slide.slide_id for slide in slides}
+
+        def report_progress(workspace: Path) -> None:
+            project_root = workspace / adapter_request.output_key
+            candidates = [project_root] if project_root.is_dir() else []
+            candidates.extend(
+                sorted(project_root.parent.glob(f"{project_root.name}_ppt169_????????"))
+            )
+            if not candidates:
+                return
+            project_in_progress = max(
+                candidates,
+                key=lambda candidate: candidate.stat().st_mtime_ns,
+            )
+            event_path = project_in_progress / "validation" / "workflow-events.jsonl"
+            if not event_path.is_file():
+                return
+            for line in event_path.read_text(encoding="utf-8").splitlines():
+                event_identity = hashlib.sha256(line.encode("utf-8")).hexdigest()
+                if event_identity in observed_workflow_events:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    # A concurrent append can expose an incomplete final line.
+                    # Leave it unseen so the next poll retries it.
+                    continue
+                stage = str(event.get("stage") or "")
+                action = str(event.get("action") or "")
+                details = event.get("details") or {}
+                if not isinstance(details, dict):
+                    details = {}
+                job_stage = (
+                    "deck_qa"
+                    if stage
+                    in {
+                        "final_svg_gate",
+                        "visual_review",
+                        "chart_gate",
+                        "final_svg_content_gate",
+                    }
+                    else "compiling"
+                    if stage in {"step7_finalize", "step7_export"}
+                    else "package_qa"
+                    if stage in {"postflight", "pptx_content_gate"}
+                    else None
+                )
+                pnn = str(details.get("pnn") or "")
+                slide_id = slide_ids_by_pnn.get(pnn)
+                subject_sha256 = str(details.get("subjectSha256") or "")
+                authored = (
+                    action
+                    in {
+                        "agent-authored",
+                        "template-authored-limited-draft",
+                        "agent-repaired",
+                    }
+                    and slide_id is not None
+                    and len(subject_sha256) == 64
+                    and set(subject_sha256) <= set("0123456789abcdef")
+                )
+                if job_stage is not None or authored:
+                    with session_factory.begin() as session:
+                        if job_stage is not None:
+                            current_job = session.get(GenerationJob, job_id)
+                            if current_job is not None and current_job.stage != job_stage:
+                                set_job_stage(session, job_id, worker_id, job_stage)
+                        if authored and slide_id is not None:
+                            report_slide_authored(
+                                session,
+                                job_id,
+                                slide_id,
+                                worker_id,
+                                render_sha256=subject_sha256,
+                                authoring_mode=str(
+                                    details.get("authoringMode")
+                                    or details.get("author")
+                                    or request.authoring.mode
+                                ),
+                            )
+                observed_workflow_events.add(event_identity)
+
         adapter_request = GeneratePptxDefaultRequest(
             schema_version=2,
             request_id=f"{job_id}-default-v2",
@@ -593,6 +685,7 @@ def _process_default_generation_job(
                     hard_timeout_seconds=request.runtime.hard_timeout_seconds,
                     cancellation_requested=cancellation_requested,
                     heartbeat=heartbeat,
+                    progress=report_progress,
                     text_environment=_scoped_text_environment(snapshot, request),
                     image_environment=_scoped_image_environment(snapshot, request),
                 )
@@ -665,9 +758,7 @@ def _process_default_generation_job(
                         organization_id=organization_id,
                         worker_id=worker_id,
                         error_code=(
-                            result.errors[0].code
-                            if result.errors
-                            else "workflow_needs_manual"
+                            result.errors[0].code if result.errors else "workflow_needs_manual"
                         ),
                         worker_seconds=worker_seconds,
                     )
@@ -696,8 +787,15 @@ def _process_default_generation_job(
             )
             checkpoint_id = checkpoint.id
 
-        deck = json.loads((project / "deck-plan.json").read_text(encoding="utf-8"))
-        authored_slides = list(deck["slides"])
+        deck_plan_path = project / "deck-plan.json"
+        if deck_plan_path.is_file():
+            deck = json.loads(deck_plan_path.read_text(encoding="utf-8"))
+            authored_slides = list(deck["slides"])
+        else:
+            release_trace = json.loads(
+                (project / "validation" / "release-trace.json").read_text(encoding="utf-8")
+            )
+            authored_slides = list(release_trace["pages"])
         final_svgs = sorted((project / "svg_final").glob("*.svg"))
         if len(authored_slides) != len(slides) or len(final_svgs) != len(slides):
             raise RuntimeError("Default workflow output roster does not match the approved roster")
@@ -765,14 +863,10 @@ def _process_default_generation_job(
             f"{job_id}:presentation-revision:{publication_version}"
         )
         design_content = json.loads(
-            (project / "validation" / "content-design-spec.json").read_text(
-                encoding="utf-8"
-            )
+            (project / "validation" / "content-design-spec.json").read_text(encoding="utf-8")
         )
         final_svg_content = json.loads(
-            (project / "validation" / "content-final-svg.json").read_text(
-                encoding="utf-8"
-            )
+            (project / "validation" / "content-final-svg.json").read_text(encoding="utf-8")
         )
         compiled_pptx_content = json.loads(
             (project / "validation" / "content-pptx.json").read_text(encoding="utf-8")
@@ -791,11 +885,7 @@ def _process_default_generation_job(
         evidence_map = json.loads(
             (project / "analysis" / "evidence-map.json").read_text(encoding="utf-8")
         )
-        content_mode = (
-            "source-grounded"
-            if source_manifest.artifacts
-            else "limited-general-draft"
-        )
+        content_mode = "source-grounded" if source_manifest.artifacts else "limited-general-draft"
         qa_payload = {
             "schemaVersion": 2,
             "workflowRunId": workflow_run_id,
@@ -929,9 +1019,7 @@ def _process_default_generation_job(
             if spec.kind == "generation_slide_svg" and spec.slide_id
         }
         effective_id = _stable_id(f"{presentation_revision_id}:effective-spec:1")
-        evidence_by_slide = {
-            str(value["slideId"]): value for value in evidence_map["slides"]
-        }
+        evidence_by_slide = {str(value["slideId"]): value for value in evidence_map["slides"]}
         roster = [
             {
                 "pnn": outline.pnn,
@@ -964,9 +1052,7 @@ def _process_default_generation_job(
             canonical_artifacts["imageAuditArtifactId"] = spec_by_kind[
                 "generation_image_audit"
             ].artifact_id
-            canonical_artifacts["imageAuditSha256"] = spec_by_kind[
-                "generation_image_audit"
-            ].sha256
+            canonical_artifacts["imageAuditSha256"] = spec_by_kind["generation_image_audit"].sha256
         manifest_artifact_id = _stable_id(
             f"{job_id}:v{publication_version}:generation_manifest:deck"
         )

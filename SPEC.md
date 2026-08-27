@@ -456,7 +456,8 @@ organization_id + snapshot_id + stage + stable_slide_id(optional)
 
 - `default-agentic` 必须由同一 Main Presentation Agent 完成 Strategist→Executor 顺序创作；每页 SVG 必须能追溯到真实模型 turn、工具调用、观察与终止原因。
 - Supervisor 强制 turn/token/cost/soft-hard timeout/tool allowlist/最多 5 次阶段尝试；恢复不得重复计费、双写或发布旧 hash。
-- 正式 Agent 成功结果必须通过最多两轮多模态视觉审阅；二轮仍有 blocking 则进入 `needs_manual` 且不发布完整结果。
+- 正式 Agent 页面只允许经安全与 Blueprint 约束校验的 Direct SVG，不保留 Scene Graph 作者路径。
+- 多模态视觉审阅采用自适应闭环：零 blocking 立即通过，连续两轮无改善或质量恶化时恢复最佳 SVG 并进入 `needs_manual`；硬上限为 5 次审核，第五次仍有 blocking 不发布完整结果。
 - `deterministic-template` 不得请求文本 Provider、不得写 Agent 作者 receipt，且必须在用户界面、清单、SSE/job snapshot、下载提示和文件名显式披露。
 - 安全、跨租户、来源支持、取消/恢复、PowerPoint/WPS 兼容或发布一致性失败会触发 canary 回退；单纯视觉偏好下降进入人工复核，不覆盖已批准 revision。
 

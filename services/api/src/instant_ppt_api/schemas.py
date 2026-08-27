@@ -62,6 +62,9 @@ class CreateGenerationJobData(BaseModel):
         default=None, ge=1, le=30, alias="crashOnceAtPosition"
     )
     continue_limited_draft: bool = Field(default=False, alias="continueLimitedDraft")
+    authorize_strategist_design_lock: bool = Field(
+        default=False, alias="authorizeStrategistDesignLock"
+    )
     image_policy: GenerationImagePolicyData = Field(
         default_factory=GenerationImagePolicyData, alias="imagePolicy"
     )

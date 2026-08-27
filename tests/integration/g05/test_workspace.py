@@ -5,6 +5,18 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from instant_ppt_api.planning import DeterministicPlanningGateway
+from instant_ppt_domain.models import PlanningJob
+from instant_ppt_domain.planning_jobs import (
+    finish_planning_success,
+    start_planning_attempt,
+)
+from instant_ppt_domain.workspace import (
+    get_intent_revision,
+    get_outline_revision,
+    serialize_intent_revision,
+    serialize_outline_revision,
+)
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
@@ -31,14 +43,70 @@ def _create(client: TestClient, *, topic: str = "2027 年产品增长策略") ->
     return response.json()["data"]
 
 
+def _complete_planning_job(client: TestClient, job_id: str) -> dict[str, Any]:
+    factory = client.app.state.session_factory
+    gateway = DeterministicPlanningGateway()
+    with factory.begin() as session:
+        queued = session.get(PlanningJob, job_id)
+        assert queued is not None
+        job = start_planning_attempt(session, job_id, queued.organization_id)
+        payload = dict(job.request_payload)
+        operation = job.operation
+        organization_id = job.organization_id
+        if operation == "outline_generate":
+            intent = serialize_intent_revision(
+                get_intent_revision(session, payload["intentRevisionId"], organization_id)
+            )
+            existing_id = payload.get("existingOutlineRevisionId")
+            existing = (
+                serialize_outline_revision(
+                    session,
+                    get_outline_revision(session, existing_id, organization_id),
+                )
+                if existing_id
+                else None
+            )
+    if operation == "intent_infer":
+        result = gateway.infer_intent(
+            topic=payload["topic"],
+            source_refs=payload["sourceRefs"],
+            language=payload["language"],
+        )
+    else:
+        result = gateway.generate_outline(
+            intent=intent,
+            existing=existing,
+            instruction=payload["instruction"],
+            action=payload["action"],
+            target_slide_id=payload["targetSlideId"],
+        )
+    with factory.begin() as session:
+        finish_planning_success(
+            session,
+            job_id,
+            organization_id,
+            result=result.data,
+            provider=result.provider,
+            model=result.model,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            repair_count=result.repair_count,
+        )
+    response = client.get(f"/v1/planning-jobs/{job_id}", headers=ALICE)
+    assert response.status_code == 200, response.text
+    return response.json()["data"]["result"]
+
+
 def _infer(client: TestClient, draft_id: str, base: str | None = None) -> dict[str, Any]:
     response = client.post(
         f"/v1/drafts/{draft_id}/intent:infer",
         headers={**ALICE, "Idempotency-Key": f"intent-{draft_id}-{base}"},
         json=_mutation({"language": "zh-CN"}, base),
     )
-    assert response.status_code == 201, response.text
-    return response.json()["data"]
+    assert response.status_code == 202, response.text
+    job = response.json()["data"]
+    assert response.headers["Location"] == f"/v1/planning-jobs/{job['planningJobId']}"
+    return _complete_planning_job(client, job["planningJobId"])
 
 
 def _generate(
@@ -57,8 +125,10 @@ def _generate(
         },
         json=_mutation({"action": action, "instruction": instruction}, base),
     )
-    assert response.status_code == 201, response.text
-    return response.json()["data"]
+    assert response.status_code == 202, response.text
+    job = response.json()["data"]
+    assert response.headers["Location"] == f"/v1/planning-jobs/{job['planningJobId']}"
+    return _complete_planning_job(client, job["planningJobId"])
 
 
 def _manual_outline(
@@ -170,6 +240,11 @@ def test_topic_intent_outline_refresh_approval_and_post_approval_revision(
     restored = client.get(f"/v1/drafts/{draft['draftId']}", headers=ALICE).json()["data"]
     assert restored["currentOutlineRevisionId"] != restored["approvedOutlineRevisionId"]
     assert restored["generationSummary"]["snapshotInputHash"] == summary["snapshotInputHash"]
+    assert restored["planningProvider"] == {
+        "provider": "fake",
+        "model": "deterministic-fake-v1",
+        "purpose": "outline_generate",
+    }
 
     with session_factory() as session:
         provider_rows = session.execute(

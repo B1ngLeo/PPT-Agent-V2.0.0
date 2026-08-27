@@ -49,23 +49,60 @@ from instant_ppt_domain.service import (
 from instant_ppt_domain.tenancy import TenantContext, append_audit
 from instant_ppt_domain.workspace import get_draft
 
-PROMPT_VERSION = "approved-outline-to-deck-plan@1"
+PROMPT_VERSION = "approved-outline-to-deck-plan@2"
 FONT_PACK_VERSION = "system-safe-fonts@1"
 PROVIDER_CONFIG_VERSION = os.getenv("PROVIDER_CONFIG_VERSION", "deterministic-fake-v1").strip()
 
 
 def _provider_configuration() -> dict[str, Any]:
+    planning_backend = os.getenv("PLANNING_BACKEND", "qwen").strip().lower()
+    text_provider = os.getenv("TEXT_PROVIDER", "qwen").strip().lower()
+    if not text_provider:
+        text_provider = planning_backend if planning_backend in {"kimi", "qwen"} else "qwen"
+    if text_provider == "qwen":
+        text_configuration = {
+            "provider": "qwen",
+            "baseUrl": os.getenv(
+                "QWEN_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ).strip(),
+            "model": os.getenv("QWEN_MODEL", "qwen3.7-plus").strip(),
+            "protocol": "openai",
+            "reasoningEffort": os.getenv("QWEN_REASONING_EFFORT", "medium").strip(),
+            "enableThinking": os.getenv("QWEN_ENABLE_THINKING", "true").strip().lower()
+            in {"1", "true", "yes", "on"},
+            "preserveThinking": os.getenv("QWEN_PRESERVE_THINKING", "true").strip().lower()
+            in {"1", "true", "yes", "on"},
+            "timeoutSeconds": float(os.getenv("QWEN_TIMEOUT_SECONDS", "600")),
+            "transportMaxRetries": int(os.getenv("QWEN_TRANSPORT_MAX_RETRIES", "4")),
+            "retryBackoffSeconds": float(os.getenv("QWEN_RETRY_BACKOFF_SECONDS", "2")),
+            "streaming": os.getenv("QWEN_STREAMING", "true").strip().lower()
+            in {"1", "true", "yes", "on"},
+            "inputCostMicrounitsPer1K": int(os.getenv("QWEN_INPUT_COST_MICROUNITS_PER_1K", "0")),
+            "outputCostMicrounitsPer1K": int(os.getenv("QWEN_OUTPUT_COST_MICROUNITS_PER_1K", "0")),
+        }
+    elif text_provider == "kimi":
+        text_configuration = {
+            "provider": "kimi",
+            "baseUrl": os.getenv("KIMI_BASE_URL", "https://api.moonshot.cn/v1").strip(),
+            "model": os.getenv("KIMI_MODEL", "kimi-k3").strip(),
+            "protocol": os.getenv("KIMI_PROTOCOL", "openai").strip().lower(),
+            "reasoningEffort": os.getenv("KIMI_REASONING_EFFORT", "max").strip(),
+            "timeoutSeconds": float(os.getenv("KIMI_TIMEOUT_SECONDS", "600")),
+            "transportMaxRetries": int(os.getenv("KIMI_TRANSPORT_MAX_RETRIES", "4")),
+            "retryBackoffSeconds": float(os.getenv("KIMI_RETRY_BACKOFF_SECONDS", "2")),
+            "streaming": os.getenv("KIMI_ANTHROPIC_STREAMING", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
+            "inputCostMicrounitsPer1K": int(os.getenv("KIMI_INPUT_COST_MICROUNITS_PER_1K", "0")),
+            "outputCostMicrounitsPer1K": int(os.getenv("KIMI_OUTPUT_COST_MICROUNITS_PER_1K", "0")),
+        }
+    else:
+        raise ValueError("TEXT_PROVIDER must be kimi or qwen")
     return {
         "schemaVersion": 1,
         "planning": {
-            "backend": os.getenv("PLANNING_BACKEND", "fake").strip().lower(),
-            "model": os.getenv("KIMI_MODEL", "kimi-k3").strip(),
-            "inputCostMicrounitsPer1K": int(
-                os.getenv("KIMI_INPUT_COST_MICROUNITS_PER_1K", "0")
-            ),
-            "outputCostMicrounitsPer1K": int(
-                os.getenv("KIMI_OUTPUT_COST_MICROUNITS_PER_1K", "0")
-            ),
+            "backend": planning_backend,
+            **text_configuration,
         },
         "image": {
             "enabled": os.getenv("IMAGE_GENERATION_ENABLED", "false").strip().lower()
@@ -77,9 +114,7 @@ def _provider_configuration() -> dict[str, Any]:
             "size": os.getenv("OPENAI_IMAGE_SIZE", "1536x1024").strip(),
             "quality": os.getenv("OPENAI_IMAGE_QUALITY", "low").strip().lower(),
             "maxImagesPerDeck": int(os.getenv("IMAGE_MAX_PER_DECK", "0")),
-            "costMicrounitsPerImage": int(
-                os.getenv("IMAGE_COST_MICROUNITS", "100000")
-            ),
+            "costMicrounitsPerImage": int(os.getenv("IMAGE_COST_MICROUNITS", "100000")),
         },
     }
 
@@ -102,15 +137,22 @@ def _authoring_policy() -> dict[str, Any]:
                 "maxRounds": 0,
             },
         }
+    visual_review_required = os.getenv(
+        "PRESENTATION_VISUAL_REVIEW_REQUIRED", "true"
+    ).strip().lower() in {"1", "true", "yes", "on"}
     return {
         "schemaVersion": 1,
         "mode": mode,
-        "policyVersion": "presentation-authoring@v1",
+        "policyVersion": "presentation-authoring@v2-direct-svg",
         "fallbackReason": None,
         "visualReview": {
-            "required": True,
-            "policyVersion": "visual-review-required@v1",
-            "maxRounds": 2,
+            "required": visual_review_required,
+            "policyVersion": (
+                "visual-review-adaptive@v2"
+                if visual_review_required
+                else "visual-review-operator-disabled@v2"
+            ),
+            "maxRounds": 5 if visual_review_required else 0,
         },
     }
 
@@ -156,8 +198,7 @@ def _publication_authoring_metadata(
         }
     title = str(snapshot.payload.get("intent", {}).get("title") or "AI 演示文稿")
     suggested_filename = str(
-        manifest_payload.get("suggestedFilename")
-        or _safe_presentation_filename(title, mode)
+        manifest_payload.get("suggestedFilename") or _safe_presentation_filename(title, mode)
     )
     return authoring, mode, disclosure, suggested_filename
 
@@ -193,6 +234,7 @@ class CreateApprovedJobCommand:
     step_delay_ms: int = 0
     crash_once_at_position: int | None = None
     continue_limited_draft: bool = False
+    authorize_strategist_design_lock: bool = False
     image_policy: dict[str, Any] = field(
         default_factory=lambda: {"scope": "none", "usage": ["none"], "notes": {}}
     )
@@ -295,9 +337,7 @@ def _check_quota(
         )
     )
     if (
-        int(settled_image_cost or 0)
-        + int(reserved_image_cost or 0)
-        + image_cost_microunits
+        int(settled_image_cost or 0) + int(reserved_image_cost or 0) + image_cost_microunits
         > entitlement.monthly_image_cost_limit_microunits
     ):
         raise GenerationQuotaExceeded("monthly image cost entitlement would be exceeded")
@@ -388,6 +428,10 @@ def create_approved_generation_job(
         )
 
     draft = get_draft(session, command.draft_id, context.organization_id, for_update=True)
+    if not command.authorize_strategist_design_lock:
+        raise GenerationApprovalRequired(
+            "Strategist design and spec-lock authorization is required"
+        )
     approval, intent, outline, outline_slides, template = _approved_inputs(session, draft)
     has_approved_source = bool(approval.source_summary.get("sourceId"))
     if not has_approved_source and not command.continue_limited_draft:
@@ -429,9 +473,7 @@ def create_approved_generation_job(
         }
     )
     engineering_quick = bool(
-        command.failure_modes
-        or command.step_delay_ms
-        or command.crash_once_at_position is not None
+        command.failure_modes or command.step_delay_ms or command.crash_once_at_position is not None
     )
     authoring_policy = (
         {
@@ -530,6 +572,12 @@ def create_approved_generation_job(
         "route": "generate_pptx",
         "engineProfile": engine_profile,
         "authoringPolicy": authoring_policy,
+        "designAuthorization": {
+            "authorized": True,
+            "scope": "strategist-design-and-lock",
+            "authorizedBy": context.user_id,
+            "authorizedAt": now.isoformat().replace("+00:00", "Z"),
+        },
         "sourceHashes": source_hashes,
         "sourceSummary": approval.source_summary,
         "sourceDecision": (
@@ -1106,11 +1154,7 @@ def publish_generation_result(
         "snapshotId": job.snapshot_id,
         "publicationVersion": publication_version,
         "contentMode": manifest_payload.get("contentMode")
-        or (
-            "source-grounded"
-            if snapshot.payload.get("sourceHashes")
-            else "limited-general-draft"
-        ),
+        or ("source-grounded" if snapshot.payload.get("sourceHashes") else "limited-general-draft"),
         "engineProfile": manifest_payload.get("engineProfile")
         or snapshot.payload.get("engineProfile"),
         "authoring": authoring,
@@ -1203,24 +1247,11 @@ def publish_generation_result(
             manifest_payload.get("imageGeneration", {}).get("costMicrounits") or 0
         ),
         model_tokens=(
-            int(
-                manifest_payload.get("authoring", {})
-                .get("usage", {})
-                .get("inputTokens")
-                or 0
-            )
-            + int(
-                manifest_payload.get("authoring", {})
-                .get("usage", {})
-                .get("outputTokens")
-                or 0
-            )
+            int(manifest_payload.get("authoring", {}).get("usage", {}).get("inputTokens") or 0)
+            + int(manifest_payload.get("authoring", {}).get("usage", {}).get("outputTokens") or 0)
         ),
         model_cost_microunits=int(
-            manifest_payload.get("authoring", {})
-            .get("usage", {})
-            .get("costMicrounits")
-            or 0
+            manifest_payload.get("authoring", {}).get("usage", {}).get("costMicrounits") or 0
         ),
     )
     _append_event(
@@ -1243,12 +1274,8 @@ def publish_generation_result(
             "presentationRevisionId": revision.id,
             "engineProfile": manifest_payload.get("engineProfile"),
             "authoringMode": (manifest_payload.get("authoring") or {}).get("mode"),
-            "authoringDisclosure": (manifest_payload.get("authoring") or {}).get(
-                "disclosure"
-            ),
-            "fallbackReason": (manifest_payload.get("authoring") or {}).get(
-                "fallbackReason"
-            ),
+            "authoringDisclosure": (manifest_payload.get("authoring") or {}).get("disclosure"),
+            "fallbackReason": (manifest_payload.get("authoring") or {}).get("fallbackReason"),
         },
     )
     return publication, presentation, revision

@@ -12,6 +12,7 @@ DEFAULT_WORKFLOW_VERSION = "instant-ppt-default@v2.0.0"
 ENGINE_VERSION = "ppt-master@v4.7.0+e8323bfa"
 
 PROCESS_GENERATION_TASK = "instant_ppt.v2.process_generation_job"
+PROCESS_PLANNING_TASK = "instant_ppt.v2.process_planning_job"
 PROCESS_EXPORT_TASK = "instant_ppt.v2.process_export"
 PROCESS_SLIDE_REGENERATION_TASK = "instant_ppt.v2.process_slide_regeneration"
 

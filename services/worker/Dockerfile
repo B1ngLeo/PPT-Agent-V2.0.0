@@ -7,6 +7,12 @@ ARG RUNTIME_CONTRACT_VERSION=instant-ppt-runtime@v2
 
 COPY --from=uv /uv /uvx /bin/
 
+# Chromium-based visual review needs an actual CJK font on Linux. Without it,
+# otherwise valid Chinese SVG text renders as tofu boxes and blocks publishing.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends fontconfig fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV PATH="/app/.venv/bin:$PATH" \
     APP_BUILD_REVISION="${APP_BUILD_REVISION}" \
     RUNTIME_CONTRACT_VERSION="${RUNTIME_CONTRACT_VERSION}" \

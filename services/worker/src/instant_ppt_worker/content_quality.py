@@ -6,6 +6,7 @@ import hashlib
 import html
 import json
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -32,7 +33,6 @@ CONTENT_REQUIRED_ROLES = frozenset(
 ENGINEERING_TEXT_PATTERNS = (
     re.compile(r"editable\s+native\s+presentation\s+baseline", re.IGNORECASE),
     re.compile(r"connect\s+the\s+approved\s+evidence", re.IGNORECASE),
-    re.compile(r"approved\s+evidence\s*[·|:\-]\s*blueprint", re.IGNORECASE),
     re.compile(r"AI\s*重生成指令[：:]", re.IGNORECASE),
     re.compile(r"本页已由\s*AI\s*重新生成并通过质量检查"),
     re.compile(r"(?:quality|package|svg)\s+(?:check|qa)\s+(?:passed|baseline)", re.IGNORECASE),
@@ -79,6 +79,24 @@ def _representation_normalized(value: str) -> str:
 
     unescaped = re.sub(r"\\([\\`*{}\[\]()#+.!_\-])", r"\1", html.unescape(value))
     return "".join(unescaped.split())
+
+
+def _representation_layout_key(value: str) -> str:
+    """Ignore punctuation used only to join independently editable text boxes.
+
+    Agent-authored slides commonly render copy such as ``结论：正文`` as a label
+    text box followed by a body text box.  The visible character sequence remains
+    intact even when the separator punctuation belongs to the layout rather than
+    either box.  Letters and numbers are retained exactly, so shortened or altered
+    content still fails the representation guard.
+    """
+
+    normalized = unicodedata.normalize("NFKC", _representation_normalized(value))
+    return "".join(
+        character
+        for character in normalized
+        if not unicodedata.category(character).startswith(("P", "Z"))
+    )
 
 
 def _matches(value: str, patterns: Iterable[re.Pattern[str]]) -> list[str]:
@@ -216,6 +234,7 @@ def evaluate_deck(
     source_manifest_sha256: str | None = None,
     represented_text: str | None = None,
     representation_verified: bool | None = None,
+    representation_requirements: list[tuple[str, str, str]] | None = None,
 ) -> dict[str, Any]:
     """Return a deterministic report whose subject hash binds every visible field."""
 
@@ -229,6 +248,7 @@ def evaluate_deck(
     findings = [item.as_dict() for item in lexical_findings]
     if represented_text is not None:
         visible_representation = _representation_normalized(represented_text)
+        visible_layout_key = _representation_layout_key(represented_text)
         represented_engineering = _matches(represented_text, ENGINEERING_TEXT_PATTERNS)
         if represented_engineering:
             findings.append(
@@ -241,22 +261,33 @@ def evaluate_deck(
                     "excerpt": represented_engineering[0][:180],
                 }
             )
-        for slide in deck.slides:
-            for field, value in [
-                ("title", slide.title),
-                *((f"body[{index}]", item) for index, item in enumerate(slide.body)),
-            ]:
-                if _representation_normalized(value) not in visible_representation:
-                    findings.append(
-                        {
-                            "code": "CONTENT_REPRESENTATION_MISSING",
-                            "severity": "blocking",
-                            "slideId": slide.slide_id,
-                            "field": field,
-                            "message": "approved visible content is missing from this artifact",
-                            "excerpt": value[:180],
-                        }
-                    )
+        required_visible_text = representation_requirements
+        if required_visible_text is None:
+            required_visible_text = [
+                (slide.slide_id, field, value)
+                for slide in deck.slides
+                for field, value in [
+                    ("title", slide.title),
+                    *((f"body[{index}]", item) for index, item in enumerate(slide.body)),
+                ]
+            ]
+        for slide_id, field, value in required_visible_text:
+            exact_value = _representation_normalized(value)
+            layout_value = _representation_layout_key(value)
+            if (
+                exact_value not in visible_representation
+                and layout_value not in visible_layout_key
+            ):
+                findings.append(
+                    {
+                        "code": "CONTENT_REPRESENTATION_MISSING",
+                        "severity": "blocking",
+                        "slideId": slide_id,
+                        "field": field,
+                        "message": "approved visible content is missing from this artifact",
+                        "excerpt": value[:180],
+                    }
+                )
     if representation_verified is False:
         findings.append(
             {

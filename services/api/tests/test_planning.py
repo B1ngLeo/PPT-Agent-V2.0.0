@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from urllib import error
 
 import pytest
 from instant_ppt_api.planning import (
     DeterministicPlanningGateway,
     PlanningGatewaySettings,
+    PlanningUnavailableError,
     RemotePlanningGateway,
     create_planning_gateway,
 )
@@ -73,6 +76,8 @@ def test_planning_factory_keeps_fake_default_and_requires_token(
 
     with pytest.raises(ValueError, match="PROVIDER_GATEWAY_TOKEN"):
         create_planning_gateway(PlanningGatewaySettings(backend="kimi"))
+    with pytest.raises(ValueError, match="PROVIDER_GATEWAY_TOKEN"):
+        create_planning_gateway(PlanningGatewaySettings(backend="qwen"))
 
     monkeypatch.setenv("APP_ENVIRONMENT", "production")
     with pytest.raises(ValueError, match="development Provider Gateway token"):
@@ -82,3 +87,35 @@ def test_planning_factory_keeps_fake_default_and_requires_token(
                 gateway_token="local-development-provider-gateway-only",
             )
         )
+
+
+def test_remote_planning_gateway_preserves_sanitized_upstream_failure() -> None:
+    def sender(url: str, body: bytes, headers: dict[str, str], timeout: float):
+        del body, headers, timeout
+        payload = json.dumps(
+            {
+                "error": "provider_request_failed",
+                "failureKind": "HTTPStatusError",
+                "provider": "kimi",
+                "retryable": True,
+                "upstreamCode": "packy_api_error",
+                "upstreamStatus": 403,
+            }
+        ).encode("utf-8")
+        raise error.HTTPError(url, 502, "Bad Gateway", {}, BytesIO(payload))
+
+    gateway = RemotePlanningGateway(
+        PlanningGatewaySettings(
+            backend="kimi",
+            gateway_url="http://provider-gateway:8090/internal/v1",
+            gateway_token="internal-test-token",
+        ),
+        sender=sender,
+    )
+
+    with pytest.raises(PlanningUnavailableError) as captured:
+        gateway.infer_intent(topic="代理探测", source_refs=[], language="zh-CN")
+
+    assert captured.value.upstream_status == 403
+    assert captured.value.upstream_code == "packy_api_error"
+    assert captured.value.failure_kind == "HTTPStatusError"

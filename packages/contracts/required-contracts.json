@@ -62,6 +62,7 @@
       "schemas": [
         "IntentSpec",
         "OutlineSpec",
+        "PlanningJob",
         "TemplateVersion",
         "ProviderCall",
         "ProblemDetails"
@@ -71,6 +72,7 @@
         "getDraft",
         "updateDraft",
         "inferIntent",
+        "getPlanningJob",
         "createIntentRevision",
         "generateOutline",
         "createOutlineRevision",
@@ -123,6 +125,7 @@
         "SourcePackage",
         "IntentSpec",
         "OutlineSpec",
+        "PlanningJob",
         "ThemeSpec",
         "TemplateBinding",
         "TemplateVersion",
@@ -158,6 +161,7 @@
         "getSource",
         "retrySourceParse",
         "inferIntent",
+        "getPlanningJob",
         "createIntentRevision",
         "listIntentRevisions",
         "getIntentRevision",

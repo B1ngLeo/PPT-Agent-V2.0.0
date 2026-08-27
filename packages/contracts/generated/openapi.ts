@@ -164,6 +164,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/planning-jobs/{planningJobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getPlanningJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/drafts/{draftId}/intent-revisions": {
         parameters: {
             query?: never;
@@ -618,6 +634,34 @@ export interface components {
                 sourceCitations: string[];
             }[];
         };
+        /** PlanningJob */
+        PlanningJob: {
+            /** @constant */
+            schemaVersion: 1;
+            planningJobId: string;
+            draftId: string;
+            /** @enum {unknown} */
+            operation: "intent_infer" | "outline_generate";
+            /** @enum {unknown} */
+            status: "queued" | "running" | "retrying" | "succeeded" | "failed";
+            attempt: number;
+            maxAttempts: number;
+            terminal: boolean;
+            retryable: boolean;
+            errorCode: string | null;
+            resultRevisionId: string | null;
+            provider: string | null;
+            model: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            startedAt: string | null;
+            finishedAt: string | null;
+            result?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** ThemeSpec */
         ThemeSpec: {
             /** @constant */
@@ -1038,6 +1082,11 @@ export interface components {
             crashOnceAtPosition?: number | null;
             /** @default false */
             continueLimitedDraft: boolean;
+            /**
+             * @description Explicitly authorizes the Strategist design proposal and spec lock before Executor authoring.
+             * @default false
+             */
+            authorizeStrategistDesignLock: boolean;
             imagePolicy?: components["schemas"]["GenerationImagePolicy"];
         };
         /** CreateGenerationJobRequest */
@@ -1477,6 +1526,37 @@ export interface operations {
             202: {
                 headers: {
                     Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceResponse"];
+                };
+            };
+            /** @description RFC 7807 problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    getPlanningJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planningJobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

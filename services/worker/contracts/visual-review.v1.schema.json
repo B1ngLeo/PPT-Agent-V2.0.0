@@ -8,6 +8,11 @@
           "title": "Issueid",
           "type": "string"
         },
+        "fingerprint": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Fingerprint",
+          "type": "string"
+        },
         "category": {
           "enum": [
             "hierarchy",
@@ -79,6 +84,7 @@
       },
       "required": [
         "issueId",
+        "fingerprint",
         "category",
         "severity",
         "scope",
@@ -105,7 +111,7 @@
       "type": "string"
     },
     "reviewRound": {
-      "maximum": 2,
+      "maximum": 5,
       "minimum": 1,
       "title": "Reviewround",
       "type": "integer"

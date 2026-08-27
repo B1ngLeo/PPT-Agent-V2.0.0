@@ -110,6 +110,32 @@
 
 最新记录放在最上方。
 
+### 2026-08-26 11:02 — 按当前实现重写项目 README
+
+- 操作者：Codex
+- 目的：根据项目当前进展更新面向用户与维护者的入口文档，补齐网站操作步骤、完整本地启动、当前技术栈、系统架构、Main Presentation Agent 设计、恢复/安全原则和验证入口。
+- 操作前状态：`codex/issue-003-presentation-agent@9d5ab39c208a`；`README.md` 无工作区差异，`git.md` 已包含同日 ISSUE-003 真实 Provider 复核记录，其他大量用户/项目未提交改动均保持原状。
+- 执行命令：读取 `SPEC.md`、`PROGRESS.md`、系统设计、ADR-012、开发/运行文档、Compose、环境样例和各 workspace 依赖清单；按项目约定使用 Context7 核对 Next.js、FastAPI 与 Celery 当前官方架构说明；通过 `apply_patch` 重写 README，并使用 Prettier 格式化。
+- 变更范围：更新 `README.md` 与本条 `git.md` 日志；将过时的 Kimi 默认说明纠正为当前 Qwen `qwen3.7-plus` + `agent-authoring`，新增主题/文档入口、意图与大纲批准、异步生成、失败恢复、版本编辑/导出、Provider/回退模式及 Agent/Supervisor/Reviewer 职责说明。
+- 验证结果：`pnpm exec prettier --check README.md`、`git diff --check -- README.md` 与 `docker compose --profile runtime config --quiet` 均通过；README 的 21 个相对链接均已逐一确认存在。文档变更未运行完整 `pnpm verify`。
+- 相关提交：无；本次未执行 `git commit`。
+- 远端结果：未涉及；未执行推送或部署。
+- 回退方式：恢复本条日志，并将 `README.md` 恢复为操作前版本；不触碰其他已有工作区改动。
+- 状态：成功。
+
+### 2026-08-26 10:48 — 记录 ISSUE-003 真实 Provider 六页产物复核
+
+- 操作者：Codex
+- 目的：将 `qwen3.8max` 与 `qwen3.7plus` 基于同一 GPT-5.6 官方公告生成的两份 6 页 PPT 人工复核结果写回 ISSUE-003，并明确 Issue 关闭与持续质量优化的边界。
+- 操作前状态：`codex/issue-003-presentation-agent@9d5ab39c208a`；工作区已有大量用户/项目未提交改动，但目标 Issue 文档和 `git.md` 在本次编辑前没有差异。
+- 执行命令：读取 ISSUE-003 完成定义和既有 after 证据；使用演示文稿工具逐页渲染两份 PPTX、生成联系表、运行 `slides_test.py`，并以只读 Open XML 统计页数、Shape、可见字符、图片、图表和备注。
+- 变更范围：仅更新 `docs/issues/ISSUE-003-default-agentic-profile-lacks-real-presentation-agent-runtime.md` 与 `git.md`；记录两份真实 Provider 产物的量化结构、人工优缺点和“保持 Resolved、质量增强另立 Issue”的决定。
+- 验证结果：两份文件均为 6 页，逐页渲染成功且自动检测无画布溢出；`qwen3.8max` 为 192 Shapes / 1,681 可见字符，`qwen3.7plus` 为 121 Shapes / 989 可见字符；两者均无整页图片。`git diff --check` 通过；`pnpm verify:links` 已尝试，但被既有且无访问权限的 `.codex-tmp/pytest-native-fallback-repro` 目录以 `EPERM` 阻断，未发现与本次两个 Markdown 变更相关的链接错误。
+- 相关提交：无；本次未执行 `git commit`。
+- 远端结果：未涉及；未执行推送。
+- 回退方式：仅恢复本条日志和 ISSUE-003 新增的“2026-08-26 真实 Provider 六页产物复核”小节。
+- 状态：成功；未覆盖或暂存其他既有工作区改动。
+
 ### 2026-08-23 — 从最终代码提交重建并核验五服务运行时
 
 - 操作者：Codex

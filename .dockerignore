@@ -1,13 +1,16 @@
 .git
 .github
+.codex-tmp
 .tmp
 .venv
 node_modules
 apps
 designs
 docs
+exports
 infra
 packages/contracts
+projects
 tests
 **/__pycache__
 **/.pytest_cache

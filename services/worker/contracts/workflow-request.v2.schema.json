@@ -52,10 +52,18 @@
           "type": "integer"
         },
         "maxTokens": {
-          "maximum": 2000000,
-          "minimum": 1,
-          "title": "Maxtokens",
-          "type": "integer"
+          "anyOf": [
+            {
+              "maximum": 2000000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional cumulative input-plus-output token stop. Null keeps token usage observable without terminating long presentation runs.",
+          "title": "Maxtokens"
         },
         "maxCostMicrounits": {
           "minimum": 0,
@@ -410,6 +418,20 @@
         "visualReviewRequired": {
           "title": "Visualreviewrequired",
           "type": "boolean"
+        },
+        "visualReviewMaxRounds": {
+          "anyOf": [
+            {
+              "maximum": 5,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visualreviewmaxrounds"
         }
       },
       "required": [
@@ -638,6 +660,11 @@
         },
         "refineSpec": {
           "title": "Refinespec",
+          "type": "boolean"
+        },
+        "nativeCharts": {
+          "default": false,
+          "title": "Nativecharts",
           "type": "boolean"
         }
       },

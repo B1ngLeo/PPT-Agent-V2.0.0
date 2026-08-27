@@ -79,8 +79,7 @@ def test_representation_guard_ignores_layout_line_breaks_without_losing_characte
         deck,
         stage="final-svg",
         represented_text=(
-            "性能与基准\n约 70 万个 NVIDIA A100\n"
-            "Tensor Core GPU 等效小时的黑盒自动化红队测试。"
+            "性能与基准\n约 70 万个 NVIDIA A100\nTensor Core GPU 等效小时的黑盒自动化红队测试。"
         ),
     )
     rejected = evaluate_deck(
@@ -91,9 +90,7 @@ def test_representation_guard_ignores_layout_line_breaks_without_losing_characte
 
     assert passing["passed"] is True
     assert rejected["passed"] is False
-    assert "CONTENT_REPRESENTATION_MISSING" in {
-        finding["code"] for finding in rejected["findings"]
-    }
+    assert "CONTENT_REPRESENTATION_MISSING" in {finding["code"] for finding in rejected["findings"]}
 
 
 def test_representation_guard_treats_markdown_escape_as_visible_punctuation() -> None:
@@ -106,22 +103,49 @@ def test_representation_guard_treats_markdown_escape_as_visible_punctuation() ->
     assert report["passed"] is True, report
 
 
+def test_representation_guard_allows_label_and_body_text_box_split() -> None:
+    report = evaluate_deck(
+        _deck(["结论：围绕高价值场景形成可编辑决策初稿。"]),
+        stage="final-svg",
+        represented_text="性能与基准\n结论\n围绕高价值场景形成可编辑决策初稿。",
+    )
+
+    assert report["passed"] is True, report
+
+
+def test_agent_representation_guard_can_require_structural_framing_only() -> None:
+    deck = _deck(["Blueprint 中用于策划的完整长段落，不要求执行器逐字排版。"])
+    slide_id = deck.slides[0].slide_id
+
+    passing = evaluate_deck(
+        deck,
+        stage="final-svg",
+        represented_text="性能与基准\n执行器浓缩后的可见正文",
+        representation_requirements=[(slide_id, "title", "性能与基准")],
+    )
+    rejected = evaluate_deck(
+        deck,
+        stage="final-svg",
+        represented_text="执行器浓缩后的可见正文",
+        representation_requirements=[(slide_id, "title", "性能与基准")],
+    )
+
+    assert passing["passed"] is True, passing
+    assert rejected["passed"] is False
+    assert rejected["findings"][0]["field"] == "title"
+
+
 def test_representation_guard_rejects_extra_visible_agent_instruction() -> None:
     deck = _deck(["已批准的可见结论"])
 
     report = evaluate_deck(
         deck,
         stage="final-svg",
-        represented_text=(
-            "性能与基准\n已批准的可见结论\n"
-            "Approved evidence · blueprint 49f27762fc87"
-        ),
+        represented_text=("性能与基准\n已批准的可见结论\nSVG QA passed baseline"),
     )
 
     assert report["passed"] is False
-    assert "CONTENT_ENGINEERING_TEXT_LEAK" in {
-        finding["code"] for finding in report["findings"]
-    }
+    assert "CONTENT_ENGINEERING_TEXT_LEAK" in {finding["code"] for finding in report["findings"]}
 
 
 def test_hash_bound_risk_receipt_prevents_dictionary_false_positive() -> None:
@@ -140,9 +164,7 @@ def test_hash_bound_risk_receipt_prevents_dictionary_false_positive() -> None:
         deck,
         stage="test",
         approved_exceptions={
-            deck.slides[0].slide_id: [
-                {"text": text, "reason": reason, "receiptHash": receipt_hash}
-            ]
+            deck.slides[0].slide_id: [{"text": text, "reason": reason, "receiptHash": receipt_hash}]
         },
     )
     assert report["passed"] is True
@@ -203,9 +225,7 @@ def test_allowed_fragment_id_cannot_support_an_unrelated_claim() -> None:
     claim = evidence_map["slides"][0]["claims"][1]
     claim["text"] = "Luna 实测吞吐为 999 req/s"
     claim["claimSha256"] = hashlib.sha256(claim["text"].encode("utf-8")).hexdigest()
-    unhashed = {
-        key: value for key, value in evidence_map.items() if key != "evidenceMapSha256"
-    }
+    unhashed = {key: value for key, value in evidence_map.items() if key != "evidenceMapSha256"}
     evidence_map["evidenceMapSha256"] = hashlib.sha256(
         json.dumps(
             unhashed,
@@ -260,6 +280,45 @@ def test_approved_outline_title_is_structural_framing_not_a_source_claim() -> No
     )
 
     assert report["passed"] is True
-    assert evidence_map["slides"][0]["claims"][0]["claimType"] == (
-        "approved-outline-framing"
+    assert evidence_map["slides"][0]["claims"][0]["claimType"] == ("approved-outline-framing")
+
+
+def test_editorial_outlook_prefix_does_not_break_an_exact_source_citation() -> None:
+    deck = _deck(
+        [
+            "结论：Sol 已提升长任务执行能力",
+            "展望：Sol 将继续强化长任务执行能力",
+            "行动：选择高价值场景开展受控验证",
+        ]
     )
+    source_text = "Sol 已提升长任务执行能力。Sol 将继续强化长任务执行能力。"
+    fragment = {
+        "sourceArtifactId": "01ARZ3NDEKTSV4RRFFQ69G5FAE",
+        "fragmentId": "fragment-1",
+        "text": source_text,
+        "textSha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+    }
+    evidence_map = build_evidence_map(
+        deck,
+        [
+            {
+                "pnn": "P01",
+                "role": "ending",
+                "approvedOutlineTitle": "性能与基准",
+                "factIds": ["fragment-1"],
+                "chart": None,
+            }
+        ],
+        [fragment],
+        source_manifest_sha256="a" * 64,
+    )
+
+    report = evaluate_deck(
+        deck,
+        stage="test-grounding",
+        evidence_map=evidence_map,
+        source_fragments=[fragment],
+        source_manifest_sha256="a" * 64,
+    )
+
+    assert report["passed"] is True, report["findings"]

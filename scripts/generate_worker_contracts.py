@@ -5,13 +5,8 @@ import json
 from instant_ppt_worker.models import AdapterRequest, AdapterResponse, SecurityDecision
 from instant_ppt_worker.paths import REPOSITORY_ROOT
 from instant_ppt_worker.presentation_agent_runtime import AgentDecision
-from instant_ppt_worker.presentation_agent_tools import SlideSceneGraph
 from instant_ppt_worker.visual_review_runtime import VisualReviewReport
-from instant_ppt_worker.workflow_models import (
-    PageBlueprintArtifact,
-    WorkflowRequestV2,
-    WorkflowResultV2,
-)
+from instant_ppt_worker.workflow_models import WorkflowRequestV2, WorkflowResultV2
 from pydantic import TypeAdapter
 
 
@@ -22,8 +17,6 @@ def main() -> None:
         "engine-adapter.request.schema.json": TypeAdapter(AdapterRequest).json_schema(),
         "engine-adapter.response.schema.json": AdapterResponse.model_json_schema(),
         "security-decision.schema.json": SecurityDecision.model_json_schema(),
-        "page-blueprint.v1.schema.json": PageBlueprintArtifact.model_json_schema(),
-        "slide-scene-graph.v1.schema.json": SlideSceneGraph.model_json_schema(),
         "agent-decision.v1.schema.json": AgentDecision.model_json_schema(),
         "visual-review.v1.schema.json": VisualReviewReport.model_json_schema(),
         "workflow-request.v2.schema.json": WorkflowRequestV2.model_json_schema(),
@@ -32,9 +25,7 @@ def main() -> None:
     for name, schema in contracts.items():
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
         contract_version = "v2" if ".v2." in name else "v1"
-        schema["$id"] = (
-            f"https://contracts.instant-ppt.example/worker/{contract_version}/{name}"
-        )
+        schema["$id"] = f"https://contracts.instant-ppt.example/worker/{contract_version}/{name}"
         (target / name).write_text(
             json.dumps(schema, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

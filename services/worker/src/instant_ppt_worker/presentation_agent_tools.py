@@ -7,9 +7,7 @@ the current run and page and emits hash-bound evidence plus stale propagation.
 
 from __future__ import annotations
 
-import html
 import json
-import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,10 +16,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from defusedxml import ElementTree as DefusedET
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import ValidationError
 
-from instant_ppt_worker.presentation_blueprint import canonical_sha256
-from instant_ppt_worker.workflow_models import PageBlueprintArtifact, WorkflowRequestV2
+from instant_ppt_worker.canonical import canonical_sha256
+from instant_ppt_worker.workflow_models import ApprovedOutlineSlide, WorkflowRequestV2
 
 AGENT_TOOL_NAMES = (
     "read_approved_context",
@@ -50,8 +48,17 @@ WRITE_STALE_TARGETS = (
 _TOOL_ID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 _PNN = re.compile(r"^P\d{2,3}$")
 _NODE_ID = re.compile(r"^[a-z][a-z0-9-]{1,79}$")
-_PLANNING_NAME = re.compile(r"^[a-z][a-z0-9-]{1,63}\.json$")
-_HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+_DESIGN_SPEC_MARKER = "<!-- ppt-master-schema: design-spec/v1 -->"
+_DESIGN_SPEC_REQUIRED_SECTIONS = (
+    "I. Project Information",
+    "II. Canvas Specification",
+    "III. Visual Theme",
+    "IV. Typography System",
+    "V. Layout Principles",
+    "VI. Icon Usage Specification",
+    "VIII. Image Resource List",
+    "IX. Content Outline",
+)
 _SVG_ALLOWED_TAGS = frozenset(
     {
         "svg",
@@ -84,124 +91,6 @@ class ToolPolicyError(ValueError):
     """Raised when an Agent asks for a capability outside its scoped policy."""
 
 
-class SceneContract(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=lambda value: (
-            value.split("_")[0]
-            + "".join(part.title() for part in value.split("_")[1:])
-        ),
-        populate_by_name=True,
-        extra="forbid",
-    )
-
-
-class SceneChartPoint(SceneContract):
-    label: str = Field(min_length=1, max_length=160)
-    value: float
-
-
-class SceneChart(SceneContract):
-    object_key: str = Field(pattern=r"^[a-z][a-z0-9-]{1,79}$")
-    chart_type: Literal["bar", "column", "line", "area", "scatter"]
-    values: list[SceneChartPoint] = Field(min_length=2, max_length=16)
-    unit: str = Field(min_length=1, max_length=40)
-    source_text: str = Field(min_length=1, max_length=500)
-
-    @model_validator(mode="after")
-    def validate_values(self) -> SceneChart:
-        labels = [point.label.casefold() for point in self.values]
-        if len(labels) != len(set(labels)):
-            raise ValueError("chart labels must be unique")
-        return self
-
-
-class SceneTable(SceneContract):
-    object_key: str = Field(pattern=r"^[a-z][a-z0-9-]{1,79}$")
-    columns: list[str] = Field(min_length=1, max_length=12)
-    rows: list[list[str]] = Field(min_length=1, max_length=40)
-
-    @model_validator(mode="after")
-    def validate_grid(self) -> SceneTable:
-        if any(len(row) != len(self.columns) for row in self.rows):
-            raise ValueError("table rows must match the exact column grid")
-        return self
-
-
-class SceneNode(SceneContract):
-    node_id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,79}$")
-    kind: Literal["text", "shape", "group", "image", "chart", "table"]
-    x: float = Field(ge=0, le=1280)
-    y: float = Field(ge=0, le=720)
-    width: float = Field(gt=0, le=1280)
-    height: float = Field(gt=0, le=720)
-    text: str | None = Field(default=None, max_length=8000)
-    shape: Literal["rect", "round-rect", "ellipse", "line"] | None = None
-    fill: str = "#FFFFFF"
-    stroke: str = "#CBD5E1"
-    stroke_width: float = Field(default=1, ge=0, le=20)
-    font_family: str = Field(default="Microsoft YaHei, Arial, sans-serif", max_length=160)
-    font_size: float = Field(default=22, ge=8, le=96)
-    font_weight: Literal[400, 500, 600, 700] = 400
-    text_color: str = "#1E293B"
-    text_anchor: Literal["start", "middle", "end"] = "start"
-    href: str | None = Field(default=None, max_length=260)
-    crop: Literal["contain", "cover"] = "cover"
-    children: list[SceneNode] = Field(default_factory=list, max_length=80)
-    chart: SceneChart | None = None
-    table: SceneTable | None = None
-
-    @model_validator(mode="after")
-    def validate_kind(self) -> SceneNode:
-        if self.x + self.width > 1280.001 or self.y + self.height > 720.001:
-            raise ValueError("scene node must remain inside the 1280x720 canvas")
-        for color in (self.fill, self.stroke, self.text_color):
-            if color != "none" and _HEX_COLOR.fullmatch(color) is None:
-                raise ValueError("scene colors must be six-digit hex or none")
-        if self.kind == "text" and not self.text:
-            raise ValueError("text nodes require text")
-        if self.kind == "shape" and self.shape is None:
-            raise ValueError("shape nodes require a supported shape")
-        if self.kind == "group" and not self.children:
-            raise ValueError("group nodes require children")
-        if self.kind != "group" and self.children:
-            raise ValueError("only group nodes may contain children")
-        if self.kind == "image" and self.href is None:
-            raise ValueError("image nodes require a project-local href")
-        if self.kind == "chart" and self.chart is None:
-            raise ValueError("chart nodes require a native-ready chart contract")
-        if self.kind == "table" and self.table is None:
-            raise ValueError("table nodes require a native-ready table contract")
-        return self
-
-
-class SlideSceneGraph(SceneContract):
-    schema_version: Literal[1] = 1
-    workflow_run_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
-    slide_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
-    pnn: str = Field(pattern=r"^P\d{2,3}$")
-    page_blueprint_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    author_attempt: int = Field(ge=1, le=5)
-    background: str = "#F8FAFC"
-    nodes: list[SceneNode] = Field(min_length=1, max_length=120)
-
-    @model_validator(mode="after")
-    def validate_graph(self) -> SlideSceneGraph:
-        if _HEX_COLOR.fullmatch(self.background) is None:
-            raise ValueError("scene background must be a six-digit hex color")
-        node_ids: list[str] = []
-
-        def collect(node: SceneNode) -> None:
-            node_ids.append(node.node_id)
-            for child in node.children:
-                collect(child)
-
-        for node in self.nodes:
-            collect(node)
-        if len(node_ids) != len(set(node_ids)):
-            raise ValueError("scene node IDs must be unique across the page")
-        return self
-
-
 @dataclass(frozen=True)
 class ToolCallbacks:
     svg_gate: Callable[[str, Path, str], dict[str, Any]] | None = None
@@ -214,17 +103,17 @@ class ToolCallbacks:
 class PresentationToolContext:
     project: Path
     request: WorkflowRequestV2
-    blueprint: PageBlueprintArtifact
-    blueprint_sha256: str
     fragments: tuple[dict[str, Any], ...]
     allowed_tools: frozenset[str]
     current_pnn: str
     stage: str
     author_attempt: int
+    prepared_images: tuple[dict[str, Any], ...] = ()
     callbacks: ToolCallbacks = ToolCallbacks()
+    required_authoring_mode: Literal["direct-svg"] | None = None
 
 
-def design_catalog() -> dict[str, Any]:
+def design_catalog(*, native_charts_enabled: bool = True) -> dict[str, Any]:
     """Return closed tokens and semantic primitives, not executable components."""
 
     return {
@@ -242,7 +131,8 @@ def design_catalog() -> dict[str, Any]:
         },
         "typography": {
             "family": "Microsoft YaHei, Arial, sans-serif",
-            "title": 38,
+            "title": 48,
+            "coverTitle": 64,
             "subtitle": 24,
             "body": 22,
             "annotation": 15,
@@ -256,7 +146,7 @@ def design_catalog() -> dict[str, Any]:
             "line",
             "group",
             "image",
-            "native-chart",
+            *(["native-chart"] if native_charts_enabled else []),
             "native-table",
         ],
         "relationshipPatterns": [
@@ -292,227 +182,6 @@ def _sha_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _escape(value: Any) -> str:
-    return html.escape(str(value), quote=True)
-
-
-def _node_svg(node: SceneNode, project: Path, indent: str = "  ") -> list[str]:
-    node_id = _escape(node.node_id)
-    if node.kind == "group":
-        lines = [
-            f'{indent}<g id="{node_id}" data-pptx-bounds="{node.x:g} {node.y:g} '
-            f'{node.width:g} {node.height:g}">'
-        ]
-        for child in node.children:
-            lines.extend(_node_svg(child, project, indent + "  "))
-        lines.append(f"{indent}</g>")
-        return lines
-    if node.kind == "text":
-        lines = str(node.text).splitlines() or [""]
-        rendered = (
-            f'{indent}<text id="{node_id}" x="{node.x:g}" y="{node.y + node.font_size:g}" '
-            f'font-family="{_escape(node.font_family)}" font-size="{node.font_size:g}" '
-            f'font-weight="{node.font_weight}" fill="{node.text_color}" '
-            f'text-anchor="{node.text_anchor}">'
-        )
-        for index, line in enumerate(lines):
-            dy = 0 if index == 0 else node.font_size * 1.25
-            rendered += (
-                f'<tspan x="{node.x:g}" dy="{dy:g}">{_escape(line)}</tspan>'
-            )
-        return [rendered + "</text>"]
-    if node.kind == "shape":
-        if node.shape in {"rect", "round-rect"}:
-            radius = min(20, node.height / 4) if node.shape == "round-rect" else 0
-            return [
-                f'{indent}<rect id="{node_id}" x="{node.x:g}" y="{node.y:g}" '
-                f'width="{node.width:g}" height="{node.height:g}" rx="{radius:g}" '
-                f'fill="{node.fill}" stroke="{node.stroke}" '
-                f'stroke-width="{node.stroke_width:g}"/>'
-            ]
-        if node.shape == "ellipse":
-            return [
-                f'{indent}<ellipse id="{node_id}" cx="{node.x + node.width / 2:g}" '
-                f'cy="{node.y + node.height / 2:g}" rx="{node.width / 2:g}" '
-                f'ry="{node.height / 2:g}" fill="{node.fill}" stroke="{node.stroke}" '
-                f'stroke-width="{node.stroke_width:g}"/>'
-            ]
-        return [
-            f'{indent}<line id="{node_id}" x1="{node.x:g}" y1="{node.y:g}" '
-            f'x2="{node.x + node.width:g}" y2="{node.y + node.height:g}" '
-            f'stroke="{node.stroke}" stroke-width="{node.stroke_width:g}"/>'
-        ]
-    if node.kind == "image":
-        href = str(node.href)
-        _validate_image_href(project, href)
-        aspect = "xMidYMid meet" if node.crop == "contain" else "xMidYMid slice"
-        return [
-            f'{indent}<image id="{node_id}" x="{node.x:g}" y="{node.y:g}" '
-            f'width="{node.width:g}" height="{node.height:g}" href="{_escape(href)}" '
-            f'preserveAspectRatio="{aspect}"/>'
-        ]
-    if node.kind == "chart":
-        return _chart_svg(node, indent)
-    if node.kind == "table":
-        return _table_svg(node, indent)
-    raise ValueError(f"unsupported scene node kind: {node.kind}")
-
-
-def _chart_svg(node: SceneNode, indent: str) -> list[str]:
-    chart = node.chart
-    if chart is None:
-        raise ValueError("chart contract is required")
-    values = [point.value for point in chart.values]
-    axis_min = min(0.0, min(values))
-    axis_max = max(1.0, max(values))
-    if math.isclose(axis_min, axis_max):
-        axis_max = axis_min + 1
-    plot_x = node.x + 56
-    plot_y = node.y + 40
-    plot_width = max(40.0, node.width - 96)
-    plot_height = max(40.0, node.height - 96)
-    metadata = {
-        "x": node.x,
-        "y": node.y,
-        "width": node.width,
-        "height": node.height,
-        "plot_area": {
-            "x": plot_x,
-            "y": plot_y,
-            "width": plot_width,
-            "height": plot_height,
-        },
-        "name": chart.object_key,
-        "type": chart.chart_type,
-        "categories": [point.label for point in chart.values],
-        "series": [{"name": chart.unit, "values": values}],
-        "show_legend": False,
-        "source": {"text": chart.source_text},
-    }
-    lines = [
-        f'{indent}<g id="{chart.object_key}" data-pptx-bounds="{node.x:g} {node.y:g} '
-        f'{node.width:g} {node.height:g}" data-pptx-replace-with="chart">',
-        f'{indent}  <metadata type="application/json">'
-        + html.escape(json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))),
-        f'{indent}  </metadata>',
-        f'{indent}  <rect id="{chart.object_key}-panel" x="{node.x:g}" y="{node.y:g}" '
-        f'width="{node.width:g}" height="{node.height:g}" rx="12" fill="{node.fill}" '
-        f'stroke="{node.stroke}"/>',
-        f'{indent}  <g id="{chart.object_key}-chart-area">',
-    ]
-    gap = plot_width / len(values)
-    bar_width = min(100.0, gap * 0.58)
-    scale = plot_height / (axis_max - axis_min)
-    baseline_y = plot_y + axis_max * scale
-    lines.append(
-        f'{indent}    <!-- chart-plot-area: object={chart.object_key} | '
-        f'{plot_x:g},{plot_y:g},{plot_x + plot_width:g},{plot_y + plot_height:g} -->'
-    )
-    for index, point in enumerate(chart.values):
-        center = plot_x + gap * (index + 0.5)
-        height = abs(point.value) * scale
-        y = baseline_y - height if point.value >= 0 else baseline_y
-        color = "#2563EB" if index == 0 else "#0F766E"
-        lines.extend(
-            [
-                f'{indent}    <rect id="{chart.object_key}-bar-{index}" '
-                f'x="{center - bar_width / 2:g}" y="{y:g}" width="{bar_width:g}" '
-                f'height="{height:g}" rx="5" fill="{color}"/>',
-                f'{indent}    <text id="{chart.object_key}-value-{index}" x="{center:g}" '
-                f'y="{max(node.y + 18, y - 8):g}" text-anchor="middle" '
-                'font-family="Arial, sans-serif" font-size="16" font-weight="700" '
-                f'fill="#0F172A">{point.value:g} {_escape(chart.unit)}</text>',
-                f'{indent}    <text id="{chart.object_key}-label-{index}" x="{center:g}" '
-                f'y="{node.y + node.height - 18:g}" text-anchor="middle" '
-                'font-family="Arial, sans-serif" font-size="14" '
-                f'fill="#334155">{_escape(point.label)}</text>',
-            ]
-        )
-    lines.extend(
-        [
-            f"{indent}  </g>",
-            f'{indent}  <text id="{chart.object_key}-source" x="{node.x + 12:g}" '
-            f'y="{node.y + node.height - 2:g}" '
-            'font-family="Microsoft YaHei, Arial, sans-serif" font-size="11" '
-            f'fill="#64748B">{_escape(chart.source_text)}</text>',
-            f"{indent}</g>",
-        ]
-    )
-    return lines
-
-
-def _table_svg(node: SceneNode, indent: str) -> list[str]:
-    table = node.table
-    if table is None:
-        raise ValueError("table contract is required")
-    all_rows = [table.columns, *table.rows]
-    column_width = node.width / len(table.columns)
-    row_height = node.height / len(all_rows)
-    metadata = {
-        "name": table.object_key,
-        "x": node.x,
-        "y": node.y,
-        "width": node.width,
-        "height": node.height,
-        "strict_grid": True,
-        "columns": [{"text": value, "bold": True} for value in table.columns],
-        "rows": [[{"text": value} for value in row] for row in table.rows],
-        "style": {
-            "font_family": "Microsoft YaHei",
-            "font_size": 15,
-            "header_fill": "#E2E8F0",
-            "header_text": "#0F172A",
-            "body_fill": "#FFFFFF",
-            "body_text": "#1E293B",
-            "band_row": True,
-            "border_color": "#CBD5E1",
-            "border_width": 1,
-        },
-    }
-    lines = [
-        f'{indent}<g id="{table.object_key}" data-pptx-bounds="{node.x:g} {node.y:g} '
-        f'{node.width:g} {node.height:g}" data-pptx-replace-with="table">',
-        f'{indent}  <metadata type="application/json">'
-        + html.escape(json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))),
-        f'{indent}  </metadata>',
-    ]
-    for row_index, row in enumerate(all_rows):
-        for column_index, value in enumerate(row):
-            x = node.x + column_index * column_width
-            y = node.y + row_index * row_height
-            fill = "#E2E8F0" if row_index == 0 else (
-                "#F8FAFC" if row_index % 2 == 0 else "#FFFFFF"
-            )
-            weight = 700 if row_index == 0 else 400
-            lines.extend(
-                [
-                    f'{indent}  <rect id="{table.object_key}-cell-{row_index}-{column_index}" '
-                    f'x="{x:g}" y="{y:g}" width="{column_width:g}" '
-                    f'height="{row_height:g}" fill="{fill}" stroke="#CBD5E1"/>',
-                    f'{indent}  <text id="{table.object_key}-text-{row_index}-{column_index}" '
-                    f'x="{x + 10:g}" y="{y + row_height / 2 + 6:g}" '
-                    'font-family="Microsoft YaHei, Arial, sans-serif" font-size="15" '
-                    f'font-weight="{weight}" fill="#1E293B">{_escape(value)}</text>',
-                ]
-            )
-    lines.append(f"{indent}</g>")
-    return lines
-
-
-def render_scene_graph(graph: SlideSceneGraph, project: Path) -> str:
-    lines = [
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
-        'viewBox="0 0 1280 720" data-pptx-page-role="content">',
-        f'  <rect id="page-background" x="0" y="0" width="1280" height="720" '
-        f'fill="{graph.background}" data-pptx-role="background"/>',
-        '  <g id="page-content" data-pptx-bounds="0 0 1280 720">',
-    ]
-    for node in graph.nodes:
-        lines.extend(_node_svg(node, project, "    "))
-    lines.extend(["  </g>", "</svg>"])
-    return "\n".join(lines) + "\n"
 
 
 def _validate_image_href(project: Path, href: str) -> None:
@@ -568,12 +237,8 @@ class PresentationAgentToolRegistry:
     """Execute closed semantic tools and persist immutable observations."""
 
     def __init__(self, context: PresentationToolContext) -> None:
-        if context.blueprint_sha256 != canonical_sha256(
-            context.blueprint.model_dump(by_alias=True, mode="json")
-        ):
-            raise ToolPolicyError("tool context Page Blueprint hash is stale")
-        if context.current_pnn not in {page.pnn for page in context.blueprint.pages}:
-            raise ToolPolicyError("current page is not in the approved Blueprint roster")
+        if context.current_pnn not in {page.pnn for page in context.request.outline}:
+            raise ToolPolicyError("current page is not in the approved Outline roster")
         self.context = context
         self.project = context.project.resolve()
         self.project.mkdir(parents=True, exist_ok=True)
@@ -640,11 +305,9 @@ class PresentationAgentToolRegistry:
             self._record_stale(tool_call_id, subject_sha256, stale)
         return record
 
-    def _page(self) -> Any:
+    def _page(self) -> ApprovedOutlineSlide:
         return next(
-            page
-            for page in self.context.blueprint.pages
-            if page.pnn == self.context.current_pnn
+            page for page in self.context.request.outline if page.pnn == self.context.current_pnn
         )
 
     def _dispatch(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -653,7 +316,9 @@ class PresentationAgentToolRegistry:
         if name == "read_design_catalog":
             if arguments:
                 raise ToolPolicyError("read_design_catalog accepts no arguments")
-            return design_catalog()
+            return design_catalog(
+                native_charts_enabled=self.context.request.production.native_charts
+            )
         if name == "write_planning_artifact":
             return self._write_planning_artifact(arguments)
         if name == "write_or_patch_slide_svg":
@@ -675,7 +340,6 @@ class PresentationAgentToolRegistry:
         if requested_pnn != self.context.current_pnn:
             raise ToolPolicyError("Agent may only read the current page's full source context")
         page = self._page()
-        approved_refs = set(page.evidence_refs)
         fragments = [
             {
                 "fragmentId": str(fragment["fragmentId"]),
@@ -685,15 +349,23 @@ class PresentationAgentToolRegistry:
                 "sourceInstructionsIgnored": True,
             }
             for fragment in self.context.fragments
-            if str(fragment.get("fragmentId")) in approved_refs
         ]
         design_spec = self.project / "design_spec.md"
         spec_lock = self.project / "spec_lock.md"
+        current_authoring_asset: dict[str, Any] | None = None
+        if self.context.required_authoring_mode == "direct-svg":
+            svg_path = self.project / "svg_output" / f"slide_{page.order:02d}.svg"
+            if not svg_path.is_file():
+                raise ToolPolicyError("direct SVG repair requires the current owned page SVG")
+            current_authoring_asset = {
+                "mode": "direct-svg",
+                "subjectSha256": _sha_file(svg_path),
+                "svg": svg_path.read_text(encoding="utf-8"),
+            }
         return {
             "schema": "instant-ppt.approved-agent-context.v1",
             "workflowRunId": self.context.request.workflow_run_id,
             "approvedSnapshotSha256": self.context.request.approval.snapshot_sha256,
-            "pageBlueprintSha256": self.context.blueprint_sha256,
             "page": page.model_dump(by_alias=True, mode="json"),
             "roster": [
                 {
@@ -701,32 +373,74 @@ class PresentationAgentToolRegistry:
                     "slideId": item.slide_id,
                     "order": item.order,
                     "role": item.role,
-                    "visualForm": item.visual_form,
+                    "title": item.title,
+                    "audienceQuestion": item.audience_question,
                 }
-                for item in self.context.blueprint.pages
+                for item in self.context.request.outline
             ],
             "fragments": fragments,
+            "intent": self.context.request.intent.model_dump(by_alias=True, mode="json"),
+            "template": self.context.request.template.model_dump(by_alias=True, mode="json"),
+            "imagePolicy": self.context.request.image.model_dump(by_alias=True, mode="json"),
+            "preparedImages": list(self.context.prepared_images),
+            "visualReviewPolicy": {
+                "required": self.context.request.authoring.visual_review_required,
+                "policyVersion": self.context.request.authoring.visual_review_policy_version,
+                "maxRounds": self.context.request.authoring.resolved_visual_review_max_rounds(),
+            },
             "designSpec": (
                 design_spec.read_text(encoding="utf-8") if design_spec.is_file() else None
             ),
             "specLock": spec_lock.read_text(encoding="utf-8") if spec_lock.is_file() else None,
+            "currentAuthoringAsset": current_authoring_asset,
         }
 
     def _write_planning_artifact(self, arguments: dict[str, Any]) -> dict[str, Any]:
         filename = str(arguments.get("filename") or "")
-        if _PLANNING_NAME.fullmatch(filename) is None:
-            raise ToolPolicyError("planning artifact filename is outside the owned JSON namespace")
-        payload = arguments.get("payload")
-        if not isinstance(payload, dict):
-            raise ToolPolicyError("planning artifact payload must be an object")
-        forbidden = {"outline", "approval", "userReceipt", "approvedBy"}
-        if forbidden & set(payload):
-            raise ToolPolicyError("planning tools cannot modify approval or Outline authority")
-        path = self.project / "analysis" / "agent-planning" / filename
+        if filename != "design_spec.md":
+            raise ToolPolicyError("Strategist may write only the canonical design_spec.md")
+        content = str(arguments.get("content") or "").strip()
+        if not content.startswith(_DESIGN_SPEC_MARKER):
+            raise ToolPolicyError("design_spec.md requires the canonical schema marker")
+        if len(content.encode("utf-8")) > 500_000:
+            raise ToolPolicyError("design_spec.md exceeds the bounded planning payload")
+        section_positions: list[int] = []
+        for section in _DESIGN_SPEC_REQUIRED_SECTIONS:
+            match = re.search(rf"(?m)^## {re.escape(section)}\s*$", content)
+            if match is None:
+                raise ToolPolicyError(f"design_spec.md is missing required section: {section}")
+            section_positions.append(match.start())
+        speaker_notes = re.search(
+            r"(?m)^## X\. Speaker Notes (?:Requirements|Plan|Strategy)\s*$", content
+        )
+        if speaker_notes is None:
+            raise ToolPolicyError("design_spec.md is missing the speaker-notes section")
+        section_positions.append(speaker_notes.start())
+        if section_positions != sorted(section_positions):
+            raise ToolPolicyError("design_spec.md sections must follow the canonical order")
+        for page in self.context.request.outline:
+            if page.pnn not in content or page.title not in content:
+                raise ToolPolicyError(
+                    f"design_spec.md must include approved page identity and title for {page.pnn}"
+                )
+            block = re.search(
+                rf"(?ms)^#### Slide\s+\d+\b[^\n]*\b{re.escape(page.pnn)}\b[^\n]*"
+                rf"\n(?P<body>.*?)(?=^#### Slide\s+\d+\b|^## X\.|\Z)",
+                content,
+            )
+            if (
+                block is None
+                or re.search(r"(?mi)^- (?:\*\*)?Audience move(?:\*\*)?:\s*\S", block.group("body"))
+                is None
+            ):
+                raise ToolPolicyError(
+                    f"design_spec.md requires an Audience move in the slide block for {page.pnn}"
+                )
+        path = self.project / filename
         before = _sha_file(path) if path.is_file() else None
-        _write_json(path, payload)
+        path.write_text(content.rstrip() + "\n", encoding="utf-8")
         return {
-            "kind": "planning-artifact",
+            "kind": "design-spec",
             "key": path.relative_to(self.project).as_posix(),
             "beforeSha256": before,
             "subjectSha256": _sha_file(path),
@@ -738,36 +452,24 @@ class PresentationAgentToolRegistry:
         if requested_pnn != self.context.current_pnn or _PNN.fullmatch(requested_pnn) is None:
             raise ToolPolicyError("slide write must target the current approved PNN")
         page = self._page()
-        mode = str(arguments.get("mode") or "scene-graph")
+        raw_mode = str(arguments.get("mode") or "direct-svg").strip().casefold()
+        if re.sub(r"[^a-z]", "", raw_mode) != "directsvg":
+            raise ToolPolicyError("slide write mode must be direct-svg")
+        mode = "direct-svg"
+        if (
+            self.context.required_authoring_mode is not None
+            and mode != self.context.required_authoring_mode
+        ):
+            raise ToolPolicyError(
+                f"{self.context.stage} must preserve the current page authoring mode: "
+                f"{self.context.required_authoring_mode}"
+            )
         svg_path = self.project / "svg_output" / f"slide_{page.order:02d}.svg"
         svg_path.parent.mkdir(parents=True, exist_ok=True)
         before = _sha_file(svg_path) if svg_path.is_file() else None
-        if mode == "scene-graph":
-            raw_graph = arguments.get("sceneGraph")
-            if not isinstance(raw_graph, dict):
-                raise ToolPolicyError("scene-graph mode requires a structured sceneGraph")
-            graph = SlideSceneGraph.model_validate(raw_graph)
-            if (
-                graph.workflow_run_id != self.context.request.workflow_run_id
-                or graph.slide_id != page.slide_id
-                or graph.pnn != page.pnn
-                or graph.page_blueprint_sha256 != self.context.blueprint_sha256
-                or graph.author_attempt != self.context.author_attempt
-            ):
-                raise ToolPolicyError("Scene Graph ownership/hash/attempt is stale or cross-page")
-            self._validate_graph_against_page(graph, page)
-            scene_path = self.project / "agent" / "scene-graphs" / f"{page.pnn}.json"
-            _write_json(scene_path, graph.model_dump(by_alias=True, mode="json"))
-            svg = render_scene_graph(graph, self.project)
-            authoring_mode = "scene-graph"
-        elif mode == "direct-svg":
-            svg = str(arguments.get("svg") or "")
-            validate_direct_svg(svg, self.project)
-            self._validate_direct_svg_against_page(svg, page)
-            scene_path = None
-            authoring_mode = "validated-direct-svg"
-        else:
-            raise ToolPolicyError("slide write mode must be scene-graph or direct-svg")
+        svg = str(arguments.get("svg") or "")
+        validate_direct_svg(svg, self.project)
+        self._validate_direct_svg_against_page(svg, page)
         svg_path.write_text(svg.rstrip() + "\n", encoding="utf-8")
         validate_direct_svg(svg_path.read_text(encoding="utf-8"), self.project)
         return {
@@ -775,60 +477,81 @@ class PresentationAgentToolRegistry:
             "pnn": page.pnn,
             "slideId": page.slide_id,
             "key": svg_path.relative_to(self.project).as_posix(),
-            "sceneGraphKey": (
-                scene_path.relative_to(self.project).as_posix() if scene_path is not None else None
-            ),
-            "authoringMode": authoring_mode,
+            "authoringMode": "validated-direct-svg",
             "beforeSha256": before,
             "subjectSha256": _sha_file(svg_path),
             "sizeBytes": svg_path.stat().st_size,
         }
 
-    def _validate_graph_against_page(self, graph: SlideSceneGraph, page: Any) -> None:
-        chart_nodes: list[SceneNode] = []
-        table_nodes: list[SceneNode] = []
-
-        def collect(node: SceneNode) -> None:
-            if node.kind == "chart":
-                chart_nodes.append(node)
-            if node.kind == "table":
-                table_nodes.append(node)
-            for child in node.children:
-                collect(child)
-
-        for node in graph.nodes:
-            collect(node)
-        if chart_nodes:
-            if page.chart_spec is None or len(chart_nodes) != 1:
-                raise ToolPolicyError("native chart nodes must match the page Blueprint one-to-one")
-            chart = chart_nodes[0].chart
-            if chart is None or (
-                chart.object_key != page.chart_spec.object_key
-                or chart.unit != page.chart_spec.unit
-                or [(point.label, point.value) for point in chart.values]
-                != [(point.label, point.value) for point in page.chart_spec.values]
-            ):
-                raise ToolPolicyError("native chart data differs from approved Blueprint evidence")
-        if page.chart_spec is not None and not chart_nodes:
-            raise ToolPolicyError("chart Blueprint requires its native-ready Scene Graph object")
-        if table_nodes and page.visual_form not in {"table", "mixed"}:
-            raise ToolPolicyError("native table is not justified by the page visualForm")
-        allowed_text = "\n".join(
-            [page.assertion, *page.literal_constraints]
-            + [block.text for block in page.content_blocks]
-        ).casefold()
-        for node in table_nodes:
-            table = node.table
-            if table is None:
-                continue
-            for value in [*table.columns, *(cell for row in table.rows for cell in row)]:
-                if value.casefold() not in allowed_text:
-                    raise ToolPolicyError(
-                        "native table cell is absent from approved Blueprint content/literals"
-                    )
-
     def _validate_direct_svg_against_page(self, svg: str, page: Any) -> None:
         root = DefusedET.fromstring(svg)
+        page_role = root.attrib.get("data-pptx-page-role")
+        if not page_role:
+            raise ToolPolicyError("direct SVG root requires data-pptx-page-role")
+        expected_page_role = str(page.role).replace("_", "-")
+        if page_role != expected_page_role:
+            raise ToolPolicyError(
+                "direct SVG page role must equal the kebab-case approved Outline role "
+                f"{expected_page_role}"
+            )
+        text_elements = [
+            element for element in root.iter() if element.tag.rsplit("}", 1)[-1] == "text"
+        ]
+        outline = next(item for item in self.context.request.outline if item.pnn == page.pnn)
+        normalized_outline_title = "".join(outline.title.split()).casefold()
+        title_elements = [
+            element
+            for element in text_elements
+            if (
+                (title_id := str(element.attrib.get("id") or "")) == "title"
+                or title_id.startswith("title-")
+                or title_id.endswith("-title")
+                or element.attrib.get("data-pptx-role") == "title"
+            )
+        ]
+        if not title_elements:
+            title_elements = [
+                element
+                for element in text_elements
+                if normalized_outline_title
+                in "".join("".join(element.itertext()).split()).casefold()
+            ]
+        if len(title_elements) != 1:
+            raise ToolPolicyError("direct SVG requires exactly one stable title text element")
+        title_text = "".join(title_elements[0].itertext()).strip()
+        if normalized_outline_title not in "".join(title_text.split()).casefold():
+            raise ToolPolicyError("direct SVG title must preserve the approved outline title")
+        raw_title_size = str(title_elements[0].attrib.get("font-size") or "").removesuffix("px")
+        try:
+            title_size = float(raw_title_size)
+        except ValueError as error:
+            raise ToolPolicyError("direct SVG title requires a numeric font-size") from error
+        minimum_title_size = 64.0 if page.role == "cover" else 48.0
+        if title_size < minimum_title_size:
+            raise ToolPolicyError(
+                f"direct SVG title font-size must be at least {minimum_title_size:g}px"
+            )
+        page_number_elements = [
+            element for element in text_elements if "".join(element.itertext()).strip() == page.pnn
+        ]
+        if len(page_number_elements) != 1:
+            raise ToolPolicyError(
+                f"direct SVG requires exactly one page number equal to {page.pnn}"
+            )
+        page_number = page_number_elements[0]
+        try:
+            page_number_x = float(str(page_number.attrib.get("x") or "0"))
+            page_number_y = float(str(page_number.attrib.get("y") or "0"))
+        except ValueError as error:
+            raise ToolPolicyError("direct SVG page number requires numeric x/y") from error
+        if (
+            page_number_x < 1100
+            or page_number_y < 640
+            or page_number.attrib.get("text-anchor") != "end"
+        ):
+            raise ToolPolicyError(
+                "direct SVG page number must use the consistent bottom-right footer position"
+            )
         chart_payloads: list[dict[str, Any]] = []
         table_payloads: list[dict[str, Any]] = []
         for element in root.iter():
@@ -853,30 +576,38 @@ class PresentationAgentToolRegistry:
             if not isinstance(payload, dict):
                 raise ToolPolicyError("native replacement metadata must be an object")
             (chart_payloads if replacement == "chart" else table_payloads).append(payload)
-        if page.chart_spec is not None:
-            if len(chart_payloads) != 1:
-                raise ToolPolicyError("chart Blueprint requires one direct SVG chart marker")
-            payload = chart_payloads[0]
-            series = payload.get("series")
-            if not isinstance(series, list) or len(series) != 1:
-                raise ToolPolicyError("direct SVG chart must preserve one approved series")
-            expected_values = [point.value for point in page.chart_spec.values]
-            expected_labels = [point.label for point in page.chart_spec.values]
-            if (
-                payload.get("name") != page.chart_spec.object_key
-                or payload.get("categories") != expected_labels
-                or series[0].get("values") != expected_values
-                or series[0].get("name") != page.chart_spec.unit
-            ):
-                raise ToolPolicyError("direct SVG chart differs from approved Blueprint evidence")
-        elif chart_payloads:
-            raise ToolPolicyError("direct SVG cannot add a chart absent from the Blueprint")
-        if table_payloads and page.visual_form not in {"table", "mixed"}:
-            raise ToolPolicyError("direct SVG table is not justified by the page visualForm")
-        allowed_text = "\n".join(
-            [page.assertion, *page.literal_constraints]
-            + [block.text for block in page.content_blocks]
+        approved_source = "\n".join(str(item.get("text") or "") for item in self.context.fragments)
+        approved_outline = "\n".join(
+            f"{item.title}\n{item.audience_question}" for item in self.context.request.outline
+        )
+        design_spec = self.project / "design_spec.md"
+        approved_text = (
+            approved_source
+            + "\n"
+            + approved_outline
+            + "\n"
+            + (design_spec.read_text(encoding="utf-8") if design_spec.is_file() else "")
         ).casefold()
+        for payload in chart_payloads:
+            categories = payload.get("categories")
+            series = payload.get("series")
+            if not isinstance(categories, list) or not categories:
+                raise ToolPolicyError("direct SVG chart requires non-empty categories")
+            if not isinstance(series, list) or not series:
+                raise ToolPolicyError("direct SVG chart requires at least one series")
+            if any(str(value).casefold() not in approved_text for value in categories):
+                raise ToolPolicyError("direct SVG chart categories lack approved source support")
+            for item in series:
+                if not isinstance(item, dict) or not isinstance(item.get("values"), list):
+                    raise ToolPolicyError("direct SVG chart series is malformed")
+                if len(item["values"]) != len(categories):
+                    raise ToolPolicyError("direct SVG chart values must match category count")
+                for value in item["values"]:
+                    rendered = f"{float(value):g}"
+                    if rendered not in approved_source:
+                        raise ToolPolicyError(
+                            "direct SVG chart numeric values lack approved source support"
+                        )
         for payload in table_payloads:
             values: list[str] = []
             for column in payload.get("columns") or []:
@@ -884,8 +615,8 @@ class PresentationAgentToolRegistry:
             for row in payload.get("rows") or []:
                 for cell in row:
                     values.append(str(cell.get("text") if isinstance(cell, dict) else cell))
-            if any(value.casefold() not in allowed_text for value in values):
-                raise ToolPolicyError("direct SVG table contains unapproved Blueprint content")
+            if any(value.casefold() not in approved_text for value in values):
+                raise ToolPolicyError("direct SVG table contains unsupported source content")
 
     def _run_page_callback(self, callback_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         requested_pnn = str(arguments.get("pnn") or self.context.current_pnn)
@@ -932,7 +663,11 @@ class PresentationAgentToolRegistry:
         if not reason:
             raise ToolPolicyError("stage termination requires an explicit reason")
         return {
-            "subjectSha256": self.context.blueprint_sha256,
+            "subjectSha256": (
+                _sha_file(self.project / "design_spec.md")
+                if (self.project / "design_spec.md").is_file()
+                else self.context.request.approval.snapshot_sha256
+            ),
             "status": status,
             "reason": reason[:1000],
         }

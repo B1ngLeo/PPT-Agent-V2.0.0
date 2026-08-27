@@ -247,6 +247,7 @@ class ProductionPolicy(WorkflowContractModel):
     effective_narration_audio: Literal["enabled", "disabled"]
     visual_review: bool
     refine_spec: bool
+    native_charts: bool = False
 
     @model_validator(mode="after")
     def validate_dependencies(self) -> ProductionPolicy:
@@ -268,149 +269,6 @@ class ResearchPolicy(WorkflowContractModel):
             raise ValueError("closed_corpus cannot allow research domains")
         if self.mode == "approved_web_research" and not self.allowed_domains:
             raise ValueError("approved_web_research requires an explicit domain allowlist")
-        return self
-
-
-class BlueprintContentBlock(WorkflowContractModel):
-    block_id: str = Field(pattern=r"^P\d{2,3}-[a-z][a-z0-9-]{1,48}$")
-    kind: Literal[
-        "assertion",
-        "evidence",
-        "comparison",
-        "sequence",
-        "action",
-        "chart",
-        "table",
-        "annotation",
-    ]
-    hierarchy: int = Field(ge=1, le=4)
-    text: str = Field(min_length=1, max_length=4000)
-    relationship: Literal[
-        "supports",
-        "contrasts",
-        "precedes",
-        "follows",
-        "qualifies",
-        "acts-on",
-        "summarizes",
-    ]
-    evidence_refs: list[str] = Field(default_factory=list, max_length=16)
-
-    @field_validator("evidence_refs")
-    @classmethod
-    def validate_evidence_refs(cls, value: list[str]) -> list[str]:
-        if len(value) != len(set(value)) or any(not item.strip() for item in value):
-            raise ValueError("content block evidenceRefs must be non-empty and unique")
-        return value
-
-
-class BlueprintDataPoint(WorkflowContractModel):
-    label: str = Field(min_length=1, max_length=160)
-    value: float
-
-
-class BlueprintChartSpec(WorkflowContractModel):
-    object_key: str = Field(min_length=1, max_length=160)
-    context: str = Field(min_length=1, max_length=500)
-    chart_type: Literal["bar", "column", "line", "area", "scatter"]
-    values: list[BlueprintDataPoint] = Field(min_length=2, max_length=16)
-    unit: str = Field(min_length=1, max_length=40)
-    comparison_baseline: float = 0
-    evidence_refs: list[str] = Field(min_length=1, max_length=16)
-
-    @model_validator(mode="after")
-    def validate_chart(self) -> BlueprintChartSpec:
-        labels = [item.label.casefold() for item in self.values]
-        if len(labels) != len(set(labels)):
-            raise ValueError("chart value labels must be unique")
-        if len(self.evidence_refs) != len(set(self.evidence_refs)):
-            raise ValueError("chart evidenceRefs must be unique")
-        return self
-
-
-class PageBlueprint(WorkflowContractModel):
-    schema_version: Literal[1] = 1
-    outline_slide_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
-    slide_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
-    pnn: str = Field(pattern=r"^P\d{2,3}$")
-    order: int = Field(ge=1, le=30)
-    role: SlideRole
-    assertion: str = Field(min_length=1, max_length=1000)
-    audience_move: str = Field(min_length=1, max_length=1500)
-    evidence_refs: list[str] = Field(max_length=32)
-    content_blocks: list[BlueprintContentBlock] = Field(min_length=1, max_length=16)
-    visual_form: Literal[
-        "text",
-        "comparison",
-        "timeline",
-        "process",
-        "architecture",
-        "chart",
-        "table",
-        "diagram",
-        "mixed",
-    ]
-    layout_intent: str = Field(min_length=1, max_length=2000)
-    literal_constraints: list[str] = Field(min_length=1, max_length=64)
-    source_mode: Literal["approved-artifacts", "no-source-limited"]
-    chart_spec: BlueprintChartSpec | None = None
-
-    @model_validator(mode="after")
-    def validate_page_blueprint(self) -> PageBlueprint:
-        if len(self.evidence_refs) != len(set(self.evidence_refs)):
-            raise ValueError("page evidenceRefs must be unique")
-        if len(self.literal_constraints) != len(set(self.literal_constraints)):
-            raise ValueError("literalConstraints must be unique")
-        if self.source_mode == "approved-artifacts" and not self.evidence_refs:
-            raise ValueError("approved source pages require exact evidenceRefs")
-        if self.source_mode == "no-source-limited" and self.evidence_refs:
-            raise ValueError("no-source-limited pages cannot claim source evidence")
-        block_refs = {
-            reference for block in self.content_blocks for reference in block.evidence_refs
-        }
-        if not block_refs.issubset(set(self.evidence_refs)):
-            raise ValueError("content block evidenceRefs must be declared by the page")
-        if self.visual_form == "chart" and self.chart_spec is None:
-            raise ValueError("chart visualForm requires chartSpec")
-        if self.chart_spec is not None:
-            if self.visual_form not in {"chart", "mixed"}:
-                raise ValueError("chartSpec requires chart or mixed visualForm")
-            if not set(self.chart_spec.evidence_refs).issubset(set(self.evidence_refs)):
-                raise ValueError("chart evidenceRefs must be declared by the page")
-        return self
-
-
-class PageBlueprintArtifact(WorkflowContractModel):
-    schema_version: Literal[1] = 1
-    workflow_run_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
-    approved_snapshot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    input_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    authoring_mode: Literal["agent-strategist", "deterministic-planner"]
-    strategist_turn_id: str | None = Field(
-        default=None, pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$"
-    )
-    model_version: str = Field(min_length=1, max_length=160)
-    prompt_version: str = Field(min_length=1, max_length=160)
-    reference_version: str = Field(min_length=1, max_length=160)
-    pages: list[PageBlueprint] = Field(min_length=1, max_length=30)
-
-    @model_validator(mode="after")
-    def validate_artifact(self) -> PageBlueprintArtifact:
-        if self.authoring_mode == "agent-strategist" and self.strategist_turn_id is None:
-            raise ValueError("agent strategist artifacts require a real strategistTurnId")
-        if self.authoring_mode == "deterministic-planner" and self.strategist_turn_id is not None:
-            raise ValueError("deterministic planner artifacts cannot claim a strategist turn")
-        orders = [page.order for page in self.pages]
-        if orders != list(range(1, len(self.pages) + 1)):
-            raise ValueError("Page Blueprint order must be contiguous")
-        if [page.pnn for page in self.pages] != [
-            f"P{index:02d}" for index in range(1, len(self.pages) + 1)
-        ]:
-            raise ValueError("Page Blueprint PNN values must match the exact roster")
-        for attribute in ("slide_id", "outline_slide_id"):
-            values = [getattr(page, attribute) for page in self.pages]
-            if len(values) != len(set(values)):
-                raise ValueError(f"Page Blueprint {attribute} values must be unique")
         return self
 
 
@@ -439,7 +297,14 @@ class AgentRuntimePolicy(WorkflowContractModel):
     allow_subagent_review: bool = False
     allow_subagent_svg_authoring: Literal[False] = False
     max_turns: int = Field(ge=1, le=200)
-    max_tokens: int = Field(ge=1, le=2_000_000)
+    max_tokens: int | None = Field(
+        ge=1,
+        le=2_000_000,
+        description=(
+            "Optional cumulative input-plus-output token stop. Null keeps token usage "
+            "observable without terminating long presentation runs."
+        ),
+    )
     max_cost_microunits: int = Field(ge=0)
     max_completion_tokens_per_turn: int = Field(default=8000, ge=128, le=100_000)
     max_context_characters: int = Field(default=600_000, ge=10_000, le=4_000_000)
@@ -488,6 +353,9 @@ class AuthoringPolicy(WorkflowContractModel):
     ]
     visual_review_policy_version: str = Field(min_length=1, max_length=80)
     visual_review_required: bool
+    # Optional only for backward compatibility with already-frozen v1 requests.
+    # Newly-created requests always persist an explicit value.
+    visual_review_max_rounds: int | None = Field(default=None, ge=0, le=5)
 
     @model_validator(mode="after")
     def validate_mode(self) -> AuthoringPolicy:
@@ -496,6 +364,10 @@ class AuthoringPolicy(WorkflowContractModel):
                 raise ValueError("agent authoring cannot carry a fallback reason")
             if self.disclosure != "agent-authored-editable-draft":
                 raise ValueError("agent authoring requires the Agent draft disclosure")
+            if self.visual_review_required and self.visual_review_max_rounds == 0:
+                raise ValueError("required visual review needs at least one review round")
+            if not self.visual_review_required and self.visual_review_max_rounds not in {None, 0}:
+                raise ValueError("disabled visual review requires zero review rounds")
         else:
             if self.fallback_reason is None:
                 raise ValueError("deterministic template mode requires a fallback reason")
@@ -503,7 +375,16 @@ class AuthoringPolicy(WorkflowContractModel):
                 raise ValueError("deterministic template mode requires limited disclosure")
             if self.visual_review_required:
                 raise ValueError("template fallback cannot claim the Agent visual-review gate")
+            if self.visual_review_max_rounds not in {None, 0}:
+                raise ValueError("template fallback requires zero visual-review rounds")
         return self
+
+    def resolved_visual_review_max_rounds(self) -> int:
+        """Resolve legacy v1 requests without mutating their frozen payload."""
+
+        if self.visual_review_max_rounds is not None:
+            return self.visual_review_max_rounds
+        return 3 if self.visual_review_required else 0
 
 
 class WorkflowRequestV2(WorkflowContractModel):
@@ -568,30 +449,24 @@ class WorkflowRequestV2(WorkflowContractModel):
             raise ValueError("visual review requires the bounded review-agent capability")
         outline_slide_ids = {slide.slide_id for slide in self.outline}
         image_note_ids = {
-            self.outline[0].slide_id if key == "cover" else key
-            for key in self.image.notes
+            self.outline[0].slide_id if key == "cover" else key for key in self.image.notes
         }
         if not image_note_ids.issubset(outline_slide_ids):
             raise ValueError("imageNotes must reference the exact approved slide roster")
-        if self.image.scope == "cover_only" and image_note_ids != {
-            self.outline[0].slide_id
-        }:
+        if self.image.scope == "cover_only" and image_note_ids != {self.outline[0].slide_id}:
             raise ValueError("cover_only image scope must bind only P01")
         planned_slide_ids = {
-            slide_id
-            for asset in self.image.provided_assets
-            for slide_id in asset.slide_ids
+            slide_id for asset in self.image.provided_assets for slide_id in asset.slide_ids
         }
-        fallback_slide_ids = {
-            fallback.slide_id for fallback in self.image.office_native_fallbacks
-        }
+        fallback_slide_ids = {fallback.slide_id for fallback in self.image.office_native_fallbacks}
         if not planned_slide_ids.issubset(image_note_ids):
             raise ValueError("provided image targets must be confirmed in imageNotes")
         if not fallback_slide_ids.issubset(image_note_ids):
             raise ValueError("office-native fallback targets must be confirmed in imageNotes")
-        if any(
-            value in {"api", "host-native"} for value in self.image.ai_path_chain
-        ) and "provider-image" not in self.runtime.allowed_tools:
+        if (
+            any(value in {"api", "host-native"} for value in self.image.ai_path_chain)
+            and "provider-image" not in self.runtime.allowed_tools
+        ):
             raise ValueError("automated image acquisition requires provider-image capability")
         orders = [slide.order for slide in self.outline]
         if orders != list(range(1, len(self.outline) + 1)):
@@ -632,7 +507,7 @@ class WorkflowReceipt(WorkflowContractModel):
         "template-handoff",
         "stage2-confirmation",
         "image-resources",
-        "page-blueprint-gate",
+        "design-confirmation",
         "design-spec-gate1",
         "refine-spec-approval",
         "spec-lock-gate2",
@@ -704,6 +579,8 @@ class WorkflowResultV2(WorkflowContractModel):
         "awaiting_stage1_confirmation",
         "template_handoff_ready",
         "awaiting_stage2_confirmation",
+        "awaiting_design_confirmation",
+        "design_confirmed",
         "final_confirmed",
         "awaiting_refine_spec_approval",
         "running",

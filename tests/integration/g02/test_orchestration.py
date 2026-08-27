@@ -5,7 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from instant_ppt_domain.fake_worker import InjectedWorkerCrash, process_fake_job
-from instant_ppt_domain.models import GenerationJob, IdempotencyRecord, JobEvent
+from instant_ppt_domain.models import (
+    GenerationJob,
+    GenerationJobSlide,
+    IdempotencyRecord,
+    JobEvent,
+)
 from instant_ppt_domain.outbox import dispatch_outbox_batch
 from instant_ppt_domain.service import (
     SYNTHETIC_ACTOR_ID,
@@ -19,6 +24,7 @@ from instant_ppt_domain.service import (
     finalize_job,
     get_job,
     list_events_after,
+    report_slide_authored,
     request_cancel,
     start_next_slide,
 )
@@ -112,6 +118,58 @@ def test_partial_slide_completion(
         assert sum(event.event_type == "slide.failed" for event in events) == 1
         assert events[-1].event_type == "job.partially_completed"
         assert count_job_side_effects(session, job_id)["manifests"] == 1
+
+
+def test_live_authored_progress_is_idempotent_and_not_double_counted_on_ready(
+    session_factory: sessionmaker[Session],
+) -> None:
+    job_id = create_job(session_factory, key="live-authored-progress", slide_count=2)
+    worker_id = "live-progress-worker"
+    with session_factory.begin() as session:
+        claim_job(session, job_id, worker_id, lease_seconds=30)
+        job = get_job(session, job_id, SYNTHETIC_ORGANIZATION_ID)
+        slide_id = session.scalar(
+            select(GenerationJobSlide.slide_id)
+            .where(GenerationJobSlide.job_id == job_id)
+            .order_by(GenerationJobSlide.position)
+        )
+        assert slide_id is not None
+        report_slide_authored(
+            session,
+            job_id,
+            slide_id,
+            worker_id,
+            render_sha256="a" * 64,
+            authoring_mode="direct-svg",
+        )
+        assert job.progress_completed == 1
+
+    with session_factory.begin() as session:
+        report_slide_authored(
+            session,
+            job_id,
+            slide_id,
+            worker_id,
+            render_sha256="b" * 64,
+            authoring_mode="direct-svg",
+        )
+        job = get_job(session, job_id, SYNTHETIC_ORGANIZATION_ID)
+        assert job.progress_completed == 1
+        complete_slide(
+            session,
+            job_id,
+            slide_id,
+            worker_id,
+            succeeded=True,
+            render_sha256="c" * 64,
+        )
+        assert job.progress_completed == 1
+
+    with session_factory() as session:
+        events = list_events_after(session, job_id, SYNTHETIC_ORGANIZATION_ID, 0)
+        assert [event.event_type for event in events].count("slide.authored") == 1
+        assert [event.event_type for event in events].count("slide.revised") == 1
+        assert [event.event_type for event in events].count("slide.ready") == 1
 
 
 @pytest.mark.parametrize("iteration", range(10))

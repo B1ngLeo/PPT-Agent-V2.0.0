@@ -151,9 +151,21 @@ def _approved_draft(client: TestClient, *, slide_count: int = 2) -> dict[str, An
     assert draft_response.status_code == 201, draft_response.text
     draft = draft_response.json()["data"]
     intent_response = client.post(
-        f"/v1/drafts/{draft['draftId']}/intent:infer",
+        f"/v1/drafts/{draft['draftId']}/intent-revisions",
         headers={**ALICE, "Idempotency-Key": f"intent-{draft['draftId']}"},
-        json=_mutation({"language": "zh-CN"}),
+        json=_mutation(
+            {
+                "title": draft["title"],
+                "audience": "测试用户",
+                "goal": "验证生成链路",
+                "targetSlideCount": 4,
+                "language": "zh-CN",
+                "contentDepth": "conclusion_first",
+                "visualPreference": "data_first",
+                "notes": "稳定的集成测试输入",
+                "sourceRefs": [],
+            }
+        ),
     )
     assert intent_response.status_code == 201, intent_response.text
     slides = [
@@ -198,11 +210,36 @@ def _create_job(
     response = client.post(
         f"/v1/drafts/{draft_id}/generation-jobs",
         headers={**ALICE, "Idempotency-Key": f"generation-{draft_id}"},
-        json=_mutation({"failureModes": failure_modes or {}, "continueLimitedDraft": True}),
+        json=_mutation(
+            {
+                "failureModes": failure_modes or {},
+                "continueLimitedDraft": True,
+                "authorizeStrategistDesignLock": True,
+            }
+        ),
     )
     assert response.status_code == 202, response.text
     assert response.json()["data"]["processor"] == "real"
     return response.json()["data"]
+
+
+def test_generation_requires_explicit_strategist_design_lock_authorization(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    approved = _approved_draft(client)
+
+    response = client.post(
+        f"/v1/drafts/{approved['draft']['draftId']}/generation-jobs",
+        headers={**ALICE, "Idempotency-Key": "missing-design-authorization"},
+        json=_mutation({"continueLimitedDraft": True}),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "generation_input_not_ready"
+    assert "design and spec-lock authorization" in response.json()["detail"]
+    with session_factory() as session:
+        assert session.scalar(select(func.count(GenerationJob.id))) == 0
 
 
 def test_real_generation_crash_replay_publishes_one_immutable_revision(
@@ -251,6 +288,13 @@ def test_real_generation_crash_replay_publishes_one_immutable_revision(
         snapshot = session.get(GenerationSnapshot, created["snapshotId"])
         assert snapshot is not None
         assert snapshot.payload["outline"]["slides"][0]["title"] == "增长结论"
+        design_authorization = snapshot.payload["designAuthorization"]
+        assert design_authorization["authorized"] is True
+        assert design_authorization["scope"] == "strategist-design-and-lock"
+        assert design_authorization["authorizedBy"] == approved["approval"]["approvedBy"]
+        assert datetime.fromisoformat(
+            design_authorization["authorizedAt"].replace("Z", "+00:00")
+        ) >= datetime.fromisoformat(approved["approval"]["approvedAt"].replace("Z", "+00:00"))
 
     assert (
         process_generation_job(
@@ -490,7 +534,8 @@ def test_image_provider_environment_alone_cannot_enable_default_workflow_images(
             )
         )
         assert not any(
-            artifact.artifact_type in {
+            artifact.artifact_type
+            in {
                 "generation_ai_cover_image",
                 "generation_image_asset",
             }
@@ -533,12 +578,11 @@ def test_explicit_selective_image_policy_is_frozen_against_stable_slide_ids(
         json=_mutation(
             {
                 "continueLimitedDraft": True,
+                "authorizeStrategistDesignLock": True,
                 "imagePolicy": {
                     "scope": "selective",
                     "usage": ["ai"],
-                    "notes": {
-                        selected_outline_slide_id: "non-evidentiary editorial hero"
-                    },
+                    "notes": {selected_outline_slide_id: "non-evidentiary editorial hero"},
                     "aiPath": "manual",
                     "aiPathChain": ["manual"],
                 },
@@ -593,18 +637,24 @@ def test_explicit_selective_image_policy_is_frozen_against_stable_slide_ids(
                 WorkflowCheckpointSet.workflow_run_id == run.id
             )
         )
-        assert session.scalar(
-            text(
-                "SELECT count(*) FROM provider_calls WHERE draft_id = :draft_id "
-                "AND purpose = 'default_workflow_image_generate' AND status = 'failed'"
-            ),
-            {"draft_id": approved["draft"]["draftId"]},
-        ) == 1
-        assert session.scalar(
-            select(func.count(GenerationPublication.id)).where(
-                GenerationPublication.job_id == created["jobId"]
+        assert (
+            session.scalar(
+                text(
+                    "SELECT count(*) FROM provider_calls WHERE draft_id = :draft_id "
+                    "AND purpose = 'default_workflow_image_generate' AND status = 'failed'"
+                ),
+                {"draft_id": approved["draft"]["draftId"]},
             )
-        ) == 0
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count(GenerationPublication.id)).where(
+                    GenerationPublication.job_id == created["jobId"]
+                )
+            )
+            == 0
+        )
     assert store.objects == {}
     snapshot_response = client.get(f"/v1/jobs/{created['jobId']}", headers=ALICE)
     assert snapshot_response.status_code == 200
@@ -666,6 +716,7 @@ def test_explicit_api_image_is_published_audited_and_billed_once(
             json=_mutation(
                 {
                     "continueLimitedDraft": True,
+                    "authorizeStrategistDesignLock": True,
                     "imagePolicy": {
                         "scope": "cover_only",
                         "usage": ["ai"],
@@ -721,29 +772,31 @@ def test_explicit_api_image_is_published_audited_and_billed_once(
         assert manifest["imageGeneration"]["imageCount"] == 1
         assert manifest["imageGeneration"]["generatedCount"] == 1
         assert manifest["imageGeneration"]["costMicrounits"] == 123000
-        assert session.scalar(
-            select(func.sum(UsageLedger.quantity)).where(
-                UsageLedger.job_id == created["jobId"],
-                UsageLedger.metric == "images",
+        assert (
+            session.scalar(
+                select(func.sum(UsageLedger.quantity)).where(
+                    UsageLedger.job_id == created["jobId"],
+                    UsageLedger.metric == "images",
+                )
             )
-        ) == 1
-        assert session.scalar(
-            select(func.sum(UsageLedger.quantity)).where(
-                UsageLedger.job_id == created["jobId"],
-                UsageLedger.metric == "image_cost_microunits",
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.sum(UsageLedger.quantity)).where(
+                    UsageLedger.job_id == created["jobId"],
+                    UsageLedger.metric == "image_cost_microunits",
+                )
             )
-        ) == 123000
+            == 123000
+        )
         reservation = session.scalar(
             select(UsageReservation).where(UsageReservation.job_id == created["jobId"])
         )
         assert reservation is not None
         assert reservation.status == "settled"
         assert reservation.reserved_images == reservation.settled_images == 1
-        assert (
-            reservation.reserved_cost_microunits
-            == reservation.settled_cost_microunits
-            == 123000
-        )
+        assert reservation.reserved_cost_microunits == reservation.settled_cost_microunits == 123000
         provider_call = session.execute(
             text(
                 "SELECT provider, model, purpose, status, request_hash FROM provider_calls "
@@ -1043,7 +1096,12 @@ def test_quota_and_cross_tenant_rejection_create_no_job(
     quota = client.post(
         f"/v1/drafts/{draft_id}/generation-jobs",
         headers={**ALICE, "Idempotency-Key": "quota-rejected"},
-        json=_mutation({"continueLimitedDraft": True}),
+        json=_mutation(
+            {
+                "continueLimitedDraft": True,
+                "authorizeStrategistDesignLock": True,
+            }
+        ),
     )
     assert quota.status_code == 429
     assert quota.json()["code"] == "quota_exceeded"
@@ -1065,6 +1123,7 @@ def test_image_count_and_cost_quota_reject_before_job_or_provider_call(
     draft_id = approved["draft"]["draftId"]
     image_policy = {
         "continueLimitedDraft": True,
+        "authorizeStrategistDesignLock": True,
         "imagePolicy": {
             "scope": "cover_only",
             "usage": ["ai"],
@@ -1074,9 +1133,7 @@ def test_image_count_and_cost_quota_reject_before_job_or_provider_call(
         },
     }
     with session_factory.begin() as session:
-        organization_id = session.scalar(
-            select(Draft.organization_id).where(Draft.id == draft_id)
-        )
+        organization_id = session.scalar(select(Draft.organization_id).where(Draft.id == draft_id))
         assert organization_id is not None
         session.execute(
             text(
@@ -1125,10 +1182,13 @@ def test_image_count_and_cost_quota_reject_before_job_or_provider_call(
     with session_factory() as session:
         assert session.scalar(select(func.count(GenerationJob.id))) == 0
         assert session.scalar(select(func.count(UsageReservation.id))) == 0
-        assert session.scalar(
-            select(func.count(ProviderCall.id)).where(
-                ProviderCall.purpose.in_(
-                    ("cover_image_generate", "default_workflow_image_generate")
+        assert (
+            session.scalar(
+                select(func.count(ProviderCall.id)).where(
+                    ProviderCall.purpose.in_(
+                        ("cover_image_generate", "default_workflow_image_generate")
+                    )
                 )
             )
-        ) == 0
+            == 0
+        )

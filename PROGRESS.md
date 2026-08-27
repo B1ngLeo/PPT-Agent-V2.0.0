@@ -1,20 +1,28 @@
 # 即刻AI-PPT development progress
 
-> Updated: 2026-08-23. This file is updated after every completed module. A single repeated defect may be attempted at most five times; on a sixth failure it is recorded here and deferred while independent work continues.
+> Updated: 2026-08-27. This file is updated after every completed module. A single repeated defect may be attempted at most five times; on a sixth failure it is recorded here and deferred while independent work continues.
 
 ## 当前 Goal
 
-- Goal：ISSUE-003 / 为 `default-agentic` 建立真实 Main Presentation Agent Runtime
-- 状态：completed（2026-08-22 启动，2026-08-23 完成）
-- 当前阶段：ISSUE-003 已关闭并归档
-- 已完成：阶段 0–F；冻结同一 10 页 snapshot 的最终 Agent after；PowerPoint/WPS 双应用 10/10 无修复；before/after 人工偏好与机器证据归档；Agent 完整用户旅程及修复后 fallback/canary/rollback 用户旅程
+- Goal：ISSUE-004 / Direct SVG-only 与自适应视觉返修
+- 状态：complete（2026-08-27）
+- 当前阶段：Direct SVG-only、自适应视觉返修与无 Blueprint 工作流 v3 已实现并完成发布前验证
+- 已完成：移除 Scene Graph 与 Page Blueprint 活动合同/收据/Schema；Strategist 直接产出 `design_spec.md`；显式设计授权、`awaiting_design_confirmation`、hash-bound `design-confirmation` 和 `spec_lock.md` 门序已接入；Executor 只使用 Outline/来源/Spec/Lock；中文六页、Golden、PowerPoint/WPS 双应用回归均通过
 - 进行中：无
-- 后续模块：无；ISSUE-003 验收、E2E、发布清单和 Issue 状态均已收口
-- 既有改动隔离：切分支前工作区已有 18 个已跟踪文件修改及 `projects/`、ISSUE-003、`git.md` 等未跟踪内容；全部保留，不覆盖。与 ISSUE-003 重叠的文件会在理解并验证既有差异后继续编辑，提交时按模块精确暂存
-- 当前验证：根级 `pnpm verify` exit 0；Contracts 26 schemas/38 endpoints/166 fixtures；API/Domain 40/40；Worker 127/127；G02 73/73；G03 8/8；G04 14/14；G05 4/4；G06 12/12；G07 5/5；G08 4/4；Golden source 10/10、render 10/10、40/40 Schema 工件；Web lint/typecheck/生产构建、Ruff、安全/恢复/E2E/Gate/Markdown links 全部通过。最终候选 Agent 38 turns/26 tools/视觉首轮 0 blocking、package QA、PowerPoint/WPS 各 10/10；生产浏览器 Agent 编辑/rev2 精确导出、fallback 编辑器/强制命名导出、rollback canary 和 0 console warning/error 全部通过
-- 问题与解决方案：生产浏览器 E2E 首次发现模板回退监控页正确、编辑器却误标为 Agent 初稿；第 1 次定位为旧确定性管线的 generation manifest 未携带 authoring/disclosure/filename，已在生产者补齐真实 0-turn/0-tool 模板作者证据，并在领域发布边界从批准 snapshot 防御性回填不可变修订字段。新增端到端集成回归后 G06 12/12 通过。根回归随后让 G07 的 engineering-quick 部分失败 fixture 首次获得正确 fallback 身份，导出门按合同拒绝旧测试的无披露文件名请求；第 1 次将测试改为使用 immutable revision 建议文件名后 G07 5/5 通过。Golden 合同门又发现 quick renderer 的 ArtifactManifest 未同步阶段 F 四个必填披露字段；第 1 次补齐真实 deterministic-template/engineering fallback/强制文件名后 6/6 定向单测、10/10 source、10/10 render 与 40/40 Schema 工件通过。未有同一问题达到 5 次；失败/旧候选均可恢复移动至 `.codex-tmp/`，没有覆盖用户数据
-- 阻塞：当前无
-- 防循环：同一问题最多修复 5 次；第 6 次失败将记录问题、尝试与可恢复方案并跳过，继续其他独立模块
+- 阻塞：无；Windows 默认 pytest 临时目录不可访问，已改用工作区内唯一测试目录
+- 详细范围与验收：[ISSUE-004](docs/issues/ISSUE-004-direct-svg-only-and-adaptive-visual-review.md)
+
+## ISSUE-004 模块状态
+
+| 模块 | 状态 | 验证/停止条件 |
+| --- | --- | --- |
+| Direct SVG-only 合同 | completed | 写页工具、prompt、fixture、render、bundle、Schema 无活动 Scene Graph 路径 |
+| 冻结策略兼容 | completed | 新策略 v2/max 5；旧缺省请求按原 3 轮解释 |
+| 自适应视觉闭环 | completed | 指纹、质量指标、最佳快照、停滞/恶化/硬上限决策证据 |
+| 无 Blueprint 工作流 v3 | completed | Strategist → Design Spec → 设计确认 → Spec Lock → Executor；无等价页面合同 |
+| 设计授权与状态 | completed | 网站显式授权；未确认无 SVG/Executor；receipt 与 snapshot 绑定 |
+| 自动化回归 | completed | Worker 192/192、Domain/API 46/46、G06 14/14、G07 5/5、Web/Contracts/中文六页纵向回归 |
+| 发布验证 | completed | Golden 10/10 source + 10/10 render + 40/40 artifacts；PowerPoint/WPS 各 6/6 |
 
 ## ISSUE-003 模块状态
 
@@ -31,6 +39,7 @@
 
 ## 已完成事项
 
+- ISSUE-004 最终关闭：活动 Scene Graph 与 Page Blueprint 作者/合同/收据/Schema 已删除，新 `instant-ppt-default@v3.0.0` 由 Strategist 直接基于批准 Intent/Outline/Sources 生成 `design_spec.md`；网站显式记录 `strategist-design-and-lock` 授权，未授权保持 `awaiting_design_confirmation` 且不启动 Executor，授权后以 hash-bound `design-confirmation` 锁定 Spec。Executor 仅创作 Direct SVG，视觉审核使用 v2 自适应最多五轮、最佳版本与停滞/恶化回滚。Worker 192/192、Domain/API 46/46、G06 14/14、G07 5/5、Contracts 27/39/171、Web、Ruff、Golden 10+10/40 及真实六页中文 PowerPoint/WPS 各 6/6 验证通过；P02“模型家族概览”、P04“设计判断力”和原生可编辑图表均保留。
 - ISSUE-003 最终提交部署：从提交 `bdd1751…` 重建五服务生产形态运行时；API 镜像 `sha256:53d8a8fa…`、Worker 家族镜像 `sha256:20a06e59…`，API/Provider 健康、五服务 revision/contract 一致、v2 exact-export 任务已注册，`dirtyRuntimeInputs=[]`。运行时使用本地 `fake-agent@v1`、Agent authoring 且不携带线上 Provider 密钥；证据见 `docs/evidence/issue003/runtime-deployment-release.json`。
 - ISSUE-003 根级最终回归与关闭：根 `pnpm verify` 在同一不中断命令中 exit 0，覆盖 Contracts 26/38/166、Web lint/typecheck/生产构建、API/Domain 40/40、Worker 127/127、G02 73/73、G03 8/8、G04 14/14、G05 4/4、G06 12/12、G07 5/5、G08 4/4、Golden 20/20 + 40 Schema artifacts、E2E、安全、恢复、告警、链接与 G00–G08 Gate；Issue 全部验收项和 release addendum 已据实关闭，无 waiver、无未解决阻塞。
 - ISSUE-003 生产浏览器用户旅程：从固定提交 `157dc2d…` 构建五服务一致运行时。Agent 路径完成草稿→批准→真实 8/8 生成→编辑 slide 2→revision 2→精确导出→签名下载，文件 27,070 bytes / SHA-256 `8d17ac37…`；修复后的 fallback 路径完成全新 8/8 生成，monitor/editor 均披露模板化受限初稿，0 workflow/turn/tool、8 template pages，精确导出强制命名且下载/数据库同为 25,499 bytes / `f21c5686…`。切回 Agent 模式后旧 fallback revision 仍保持模板身份，新 canary 以 32 turns/22 tools、8 Agent pages 发布并在编辑器显示 Agent 身份；浏览器 console warning/error 0。证据见 `docs/evidence/issue003/browser-e2e.json` 和两份最终部署报告。

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "planningJobId": "01ARZ3NDEKTSV4RRFFQ69G5FB1",
+  "draftId": "01ARZ3NDEKTSV4RRFFQ69G5FAX",
+  "operation": "outline_generate",
+  "status": "retrying",
+  "attempt": 2,
+  "maxAttempts": 3,
+  "terminal": false,
+  "retryable": true,
+  "errorCode": "provider_timeout",
+  "resultRevisionId": null,
+  "provider": null,
+  "model": null,
+  "createdAt": "2026-08-16T08:00:00Z",
+  "updatedAt": "2026-08-16T08:00:00Z",
+  "startedAt": "2026-08-16T08:00:00Z",
+  "finishedAt": null,
+  "result": null
+}

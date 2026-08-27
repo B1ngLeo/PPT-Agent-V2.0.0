@@ -1,6 +1,7 @@
 import pytest
 from instant_ppt_worker.errors import AdapterError
 from instant_ppt_worker.workflow_supervisor import (
+    _report_progress_safely,
     minimal_subprocess_environment,
     run_default_workflow_supervised,
 )
@@ -53,3 +54,16 @@ def test_supervisor_rejects_non_text_scoped_environment_before_launch(tmp_path) 
             heartbeat=lambda: None,
             text_environment={"DATABASE_URL": "must-not-cross-boundary"},
         )
+
+
+def test_progress_observation_failure_does_not_interrupt_generation(tmp_path) -> None:
+    attempts = 0
+
+    def failing_progress(_workspace) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise OSError("concurrent event file write")
+
+    _report_progress_safely(failing_progress, tmp_path)
+
+    assert attempts == 1

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
-from instant_ppt_domain.ids import new_ulid
-from instant_ppt_domain.models import OutlineApproval, SourceArtifact
+from instant_ppt_domain.models import OutlineApproval, ProviderCall
+from instant_ppt_domain.planning_jobs import (
+    enqueue_intent_job,
+    enqueue_outline_job,
+    get_planning_job,
+    latest_planning_job,
+    planning_job_result,
+    serialize_planning_job,
+)
 from instant_ppt_domain.service import IdempotencyConflict
 from instant_ppt_domain.tenancy import find_user_idempotency, store_user_idempotency
 from instant_ppt_domain.workspace import (
@@ -28,7 +34,6 @@ from instant_ppt_domain.workspace import (
     list_intent_revisions,
     list_outline_revisions,
     list_templates,
-    record_provider_call,
     serialize_approval,
     serialize_draft,
     serialize_intent_revision,
@@ -116,12 +121,21 @@ def _problem(request: Request, error: Exception) -> JSONResponse:
             request_id=request.state.request_id,
         )
     if isinstance(error, PlanningUnavailableError):
+        if error.upstream_code:
+            detail = f"上游 AI 服务暂时不可用（{error.upstream_code}）"
+        elif error.upstream_status is not None:
+            detail = f"上游 AI 服务暂时不可用（HTTP {error.upstream_status}）"
+        elif error.failure_kind:
+            detail = f"上游 AI 连接失败（{error.failure_kind}）"
+        else:
+            detail = "请求未完成，请稍后重试"
         return problem_response(
             status=503,
             code="provider_unavailable",
             title="AI 服务暂时不可用",
-            detail="请求未完成，请稍后重试",
+            detail=detail,
             instance=str(request.url.path),
+            retryable=True,
             request_id=request.state.request_id,
         )
     return problem_response(
@@ -160,6 +174,27 @@ def _snapshot(session: Any, draft: Any) -> dict[str, Any]:
             )
         )
     data["generationSummary"] = serialize_approval(approval) if approval else None
+    planning_provider = session.scalar(
+        select(ProviderCall)
+        .where(
+            ProviderCall.draft_id == draft.id,
+            ProviderCall.organization_id == draft.organization_id,
+            ProviderCall.status == "succeeded",
+        )
+        .order_by(ProviderCall.started_at.desc(), ProviderCall.id.desc())
+        .limit(1)
+    )
+    data["planningProvider"] = (
+        {
+            "provider": planning_provider.provider,
+            "model": planning_provider.model,
+            "purpose": planning_provider.purpose,
+        }
+        if planning_provider
+        else None
+    )
+    planning_job = latest_planning_job(session, draft.id, draft.organization_id)
+    data["planningJob"] = serialize_planning_job(planning_job) if planning_job else None
     return data
 
 
@@ -275,7 +310,7 @@ def remove_workspace_draft(draft_id: str, request: Request, auth: AuthDependency
         return _problem(request, error)
 
 
-@router.post("/drafts/{draft_id}/intent:infer", status_code=201)
+@router.post("/drafts/{draft_id}/intent:infer", status_code=202)
 def infer_workspace_intent(
     draft_id: str,
     payload: MutationRequest,
@@ -294,59 +329,21 @@ def infer_workspace_intent(
                 return JSONResponse(
                     replay.response_body,
                     status_code=replay.response_status,
-                    headers={"Idempotency-Replayed": "true"},
+                    headers={
+                        "Idempotency-Replayed": "true",
+                        "Location": f"/v1/planning-jobs/{replay.resource_id}",
+                    },
                 )
-            draft = get_draft(session, draft_id, auth.organization_id)
-            source_refs = (
-                list(
-                    session.scalars(
-                        select(SourceArtifact.artifact_id).where(
-                            SourceArtifact.source_id == draft.source_id,
-                            SourceArtifact.organization_id == auth.organization_id,
-                        )
-                    )
-                )
-                if draft.source_id
-                else []
-            )
-            language = str(payload.data.get("language") or "zh-CN")
-            started_at = datetime.now(UTC)
-            result = request.app.state.planning_gateway.infer_intent(
-                topic=draft.topic, source_refs=source_refs, language=language
-            )
-            finished_at = datetime.now(UTC)
-            provider_call = record_provider_call(
+            job = enqueue_intent_job(
                 session,
                 auth,
-                draft.id,
-                provider=result.provider,
-                model=result.model,
-                purpose="intent_infer",
-                request_value={
-                    "draftId": draft.id,
-                    "topicHashInput": draft.topic,
-                    "sourceRefs": source_refs,
-                    "language": language,
-                },
-                status="succeeded",
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                repair_count=result.repair_count,
-                started_at=started_at,
-                finished_at=finished_at,
-            )
-            revision = create_intent_revision(
-                session,
-                auth,
-                draft.id,
-                data=result.data,
-                based_on_revision_id=payload.base_revision_id,
-                actor_kind="ai",
-                provider_call_id=provider_call.id,
+                draft_id,
+                language=str(payload.data.get("language") or "zh-CN"),
+                base_revision_id=payload.base_revision_id,
                 request_id=request.state.request_id,
             )
             response_body = _resource(
-                revision.id, "intentRevision", serialize_intent_revision(revision)
+                job.id, "planningJob", serialize_planning_job(job)
             )
             store_user_idempotency(
                 session,
@@ -354,23 +351,39 @@ def infer_workspace_intent(
                 route=route,
                 key=idempotency_key,
                 request_body=body,
-                resource_id=revision.id,
+                resource_id=job.id,
                 response_body=response_body,
-                response_status=201,
+                response_status=202,
             )
         return JSONResponse(
             response_body,
-            status_code=201,
-            headers={"Idempotency-Replayed": "false"},
+            status_code=202,
+            headers={
+                "Idempotency-Replayed": "false",
+                "Location": f"/v1/planning-jobs/{job.id}",
+            },
         )
     except (
         WorkspaceNotFound,
         WorkspaceConflict,
         WorkspaceValidationError,
         IdempotencyConflict,
-        PlanningSchemaError,
-        PlanningUnavailableError,
     ) as error:
+        return _problem(request, error)
+
+
+@router.get("/planning-jobs/{job_id}")
+def get_workspace_planning_job(
+    job_id: str, request: Request, auth: AuthDependency
+) -> JSONResponse:
+    try:
+        with request.app.state.session_factory() as session:
+            job = get_planning_job(session, job_id, auth.organization_id)
+            data = serialize_planning_job(job)
+            data["result"] = planning_job_result(session, job)
+            body = _resource(job.id, "planningJob", data)
+        return JSONResponse(body)
+    except WorkspaceNotFound as error:
         return _problem(request, error)
 
 
@@ -458,7 +471,7 @@ def get_workspace_intent_revision(
         return _problem(request, error)
 
 
-@router.post("/drafts/{draft_id}/outline:generate", status_code=201)
+@router.post("/drafts/{draft_id}/outline:generate", status_code=202)
 def generate_workspace_outline(
     draft_id: str,
     payload: GenerateOutlineRequest,
@@ -477,82 +490,25 @@ def generate_workspace_outline(
                 return JSONResponse(
                     replay.response_body,
                     status_code=replay.response_status,
-                    headers={"Idempotency-Replayed": "true"},
+                    headers={
+                        "Idempotency-Replayed": "true",
+                        "Location": f"/v1/planning-jobs/{replay.resource_id}",
+                    },
                 )
-            draft = get_draft(session, draft_id, auth.organization_id)
-            if not draft.current_intent_revision_id:
-                raise WorkspaceValidationError("an intent revision is required")
-            intent = serialize_intent_revision(
-                get_intent_revision(session, draft.current_intent_revision_id, auth.organization_id)
-            )
-            existing = (
-                serialize_outline_revision(
-                    session,
-                    get_outline_revision(
-                        session, draft.current_outline_revision_id, auth.organization_id
-                    ),
-                )
-                if draft.current_outline_revision_id
-                else None
-            )
-            started_at = datetime.now(UTC)
-            result = request.app.state.planning_gateway.generate_outline(
-                intent=intent,
-                existing=existing,
-                instruction=payload.data.instruction,
+            job = enqueue_outline_job(
+                session,
+                auth,
+                draft_id,
                 action=payload.data.action,
+                instruction=payload.data.instruction,
                 target_slide_id=payload.data.outline_slide_id,
-            )
-            slides = [
-                {
-                    **slide,
-                    "outlineSlideId": slide.get("outlineSlideId") or new_ulid(),
-                }
-                for slide in result.data["slides"]
-            ]
-            finished_at = datetime.now(UTC)
-            provider_call = record_provider_call(
-                session,
-                auth,
-                draft.id,
-                provider=result.provider,
-                model=result.model,
-                purpose=(
-                    "outline_generate"
-                    if payload.data.action == "generate"
-                    else f"outline_{payload.data.action}"
-                ),
-                request_value={
-                    "draftId": draft.id,
-                    "intentRevisionId": draft.current_intent_revision_id,
-                    "baseRevisionId": payload.base_revision_id,
-                    "action": payload.data.action,
-                    "instruction": payload.data.instruction,
-                },
-                status="succeeded",
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                repair_count=result.repair_count,
-                started_at=started_at,
-                finished_at=finished_at,
-            )
-            revision = create_outline_revision(
-                session,
-                auth,
-                draft.id,
-                story_summary=result.data["storySummary"],
-                target_slide_count=result.data["targetSlideCount"],
-                slides=slides,
-                based_on_revision_id=payload.base_revision_id,
-                actor_kind="ai",
-                operation=payload.data.action,
-                provider_call_id=provider_call.id,
+                base_revision_id=payload.base_revision_id,
                 request_id=request.state.request_id,
             )
             response_body = _resource(
-                revision.id,
-                "outlineRevision",
-                serialize_outline_revision(session, revision),
+                job.id,
+                "planningJob",
+                serialize_planning_job(job),
             )
             store_user_idempotency(
                 session,
@@ -560,22 +516,23 @@ def generate_workspace_outline(
                 route=route,
                 key=idempotency_key,
                 request_body=body,
-                resource_id=revision.id,
+                resource_id=job.id,
                 response_body=response_body,
-                response_status=201,
+                response_status=202,
             )
         return JSONResponse(
             response_body,
-            status_code=201,
-            headers={"Idempotency-Replayed": "false"},
+            status_code=202,
+            headers={
+                "Idempotency-Replayed": "false",
+                "Location": f"/v1/planning-jobs/{job.id}",
+            },
         )
     except (
         WorkspaceNotFound,
         WorkspaceConflict,
         WorkspaceValidationError,
         IdempotencyConflict,
-        PlanningSchemaError,
-        PlanningUnavailableError,
     ) as error:
         return _problem(request, error)
 

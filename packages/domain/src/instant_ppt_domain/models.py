@@ -91,6 +91,8 @@ DRAFT_STATUSES = (
     "cancelled",
     "deleted",
 )
+PLANNING_JOB_OPERATIONS = ("intent_infer", "outline_generate")
+PLANNING_JOB_STATUSES = ("queued", "running", "retrying", "succeeded", "failed")
 REVISION_ACTORS = ("user", "ai", "system")
 PROVIDER_CALL_STATUSES = ("succeeded", "failed", "rate_limited", "timed_out")
 WORKFLOW_RUN_STATUSES = (
@@ -99,6 +101,8 @@ WORKFLOW_RUN_STATUSES = (
     "awaiting_stage1_confirmation",
     "template_handoff_ready",
     "awaiting_stage2_confirmation",
+    "awaiting_design_confirmation",
+    "design_confirmed",
     "final_confirmed",
     "awaiting_refine_spec_approval",
     "needs_manual",
@@ -115,16 +119,22 @@ WORKFLOW_STAGES = (
     "stage1",
     "template_handoff",
     "stage2",
+    "strategizing",
+    "awaiting_design_confirmation",
+    "design_confirmed",
     "image_resources",
     "design_spec_gate1",
     "refine_spec",
     "spec_lock_gate2",
+    "spec_locked",
     "design_parameters",
     "live_preview",
     "executor_p01",
+    "executing",
     "first_page_gate",
     "executor_remaining",
     "final_svg_gate",
+    "deck_qa",
     "chart_gate",
     "final_svg_content_gate",
     "notes",
@@ -132,10 +142,12 @@ WORKFLOW_STAGES = (
     "visual_review",
     "step7_finalize",
     "step7_export",
+    "compiling",
     "postflight",
     "pptx_content_gate",
     "narration",
     "publish",
+    "published",
 )
 TERMINAL_JOB_STATUSES = frozenset({"cancelled", "succeeded", "partially_succeeded", "failed"})
 TERMINAL_WORKFLOW_STATUSES = frozenset({"cancelled", "succeeded", "partially_succeeded", "failed"})
@@ -522,9 +534,7 @@ class UsageReservation(Base):
         CheckConstraint(
             "reserved_cost_microunits >= 0", name="reserved_cost_microunits_nonnegative"
         ),
-        CheckConstraint(
-            "settled_cost_microunits >= 0", name="settled_cost_microunits_nonnegative"
-        ),
+        CheckConstraint("settled_cost_microunits >= 0", name="settled_cost_microunits_nonnegative"),
     )
 
     id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
@@ -535,12 +545,8 @@ class UsageReservation(Base):
     settled_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reserved_images: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     settled_images: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    reserved_cost_microunits: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0
-    )
-    settled_cost_microunits: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0
-    )
+    reserved_cost_microunits: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    settled_cost_microunits: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -912,6 +918,60 @@ class Draft(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PlanningJob(Base):
+    __tablename__ = "planning_jobs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["draft_id", "organization_id"],
+            ["drafts.id", "drafts.organization_id"],
+            ondelete="CASCADE",
+            name="fk_planning_jobs_draft_org",
+        ),
+        CheckConstraint(
+            f"operation IN ({_values(PLANNING_JOB_OPERATIONS)})",
+            name="valid_operation",
+        ),
+        CheckConstraint(
+            f"status IN ({_values(PLANNING_JOB_STATUSES)})",
+            name="valid_status",
+        ),
+        CheckConstraint("attempt BETWEEN 0 AND max_attempts", name="attempt_bounded"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 5", name="max_attempts_bounded"),
+        UniqueConstraint("id", "organization_id", name="uq_planning_jobs_id_organization"),
+        Index("ix_planning_jobs_draft_created", "draft_id", "created_at"),
+        Index("ix_planning_jobs_org_status", "organization_id", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(ULID_LENGTH), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    draft_id: Mapped[str] = mapped_column(String(ULID_LENGTH), nullable=False)
+    actor_id: Mapped[str] = mapped_column(
+        String(ULID_LENGTH), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued")
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    base_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    request_payload: Mapped[dict[str, Any]] = mapped_column(
+        MutableDict.as_mutable(JSONB), nullable=False, default=dict
+    )
+    result_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
+    provider: Mapped[str | None] = mapped_column(String(80))
+    model: Mapped[str | None] = mapped_column(String(120))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    request_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

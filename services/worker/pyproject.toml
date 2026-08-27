@@ -18,6 +18,7 @@ dependencies = [
   "pydantic==2.13.4",
   "pypdf==6.16.1",
   "python-pptx==1.0.2",
+  "resvg-py==0.5.0",
   "skia-pathops==0.9.2",
   "uharfbuzz==0.56.0",
   "xlsxwriter==3.2.9",

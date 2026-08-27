@@ -13,7 +13,7 @@ PostgreSQL is the business truth source. Redis carries queues, short-lived cache
 
 ## Versioned artifact flow
 
-`SourcePackage → IntentSpec → OutlineSpec → GenerationSnapshot(authoringPolicy) → PageBlueprint → Main Agent turn/tool evidence | deterministic-template fallback → canonical SVG/content/visual QA → generation manifest → PresentationRevision → ExportManifest`
+`SourcePackage → IntentSpec → OutlineSpec → GenerationSnapshot(authoringPolicy + designAuthorization) → Strategist design_spec → design confirmation → spec_lock → Main Agent Direct SVG turn/tool evidence | deterministic-template fallback → canonical SVG/content/visual QA → generation manifest → PresentationRevision → ExportManifest`
 
 Approved intent, outline, template version, generation snapshot, presentation revision and published artifacts are immutable. User edits create new revisions. Download URLs are short-lived authorization results, not stored artifact identity.
 
@@ -26,5 +26,6 @@ Approved intent, outline, template version, generation snapshot, presentation re
 - Stable slide identifiers survive reordering and retries.
 - Every organization-scoped query, event stream and object authorization repeats tenant checks.
 - `default-agentic` means a real, resumable Strategist/Executor model-tool loop. Each page author receipt binds the current SVG hash to persisted turn/tool evidence; reviewer observations are read-only inputs and repairs remain owned by the Main Agent.
+- New Agent runs have no Page Blueprint or equivalent page contract. The Strategist directly authors the canonical Design Spec from the approved Intent, Outline, complete source boundary, and production policy. A hash-bound design-confirmation receipt is required before the lock and Executor stages.
 - `deterministic-template` is an explicit rollback profile with no text-Provider or Agent-tool calls. Its state, manifest, metrics, UI, and filename disclose a template-limited draft and cannot be counted as Agent authorship.
 - The server freezes authoring mode and visual-review policy in the snapshot. Changing the feature flag affects only newly created snapshots; exact exports keep the immutable revision bytes.

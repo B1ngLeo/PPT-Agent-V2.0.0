@@ -85,9 +85,8 @@ def create_job(
                             else None
                         ),
                         continue_limited_draft=data.continue_limited_draft,
-                        image_policy=data.image_policy.model_dump(
-                            by_alias=True, mode="json"
-                        ),
+                        authorize_strategist_design_lock=(data.authorize_strategist_design_lock),
+                        image_policy=data.image_policy.model_dump(by_alias=True, mode="json"),
                     ),
                 )
             except WorkspaceNotFound:

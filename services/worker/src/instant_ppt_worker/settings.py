@@ -7,6 +7,18 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict
 
+DEFAULT_QWEN_MODEL = "qwen3.7-plus"
+SUPPORTED_QWEN_MODELS = frozenset({DEFAULT_QWEN_MODEL, "qwen3.8-max"})
+_TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def native_chart_generation_enabled() -> bool:
+    """Keep native chart authoring opt-in until the Agent chart contract is stable."""
+
+    return (
+        os.getenv("PRESENTATION_NATIVE_CHARTS_ENABLED", "false").strip().lower() in _TRUE_ENV_VALUES
+    )
+
 
 class WorkerContract(BaseModel):
     """Versioned boundary advertised by the sole engine adapter."""
@@ -28,9 +40,10 @@ class KimiProviderSettings:
     model: str = "kimi-k3"
     protocol: str = "openai"
     reasoning_effort: str = "max"
-    timeout_seconds: float = 240.0
-    transport_max_retries: int = 1
+    timeout_seconds: float = 600.0
+    transport_max_retries: int = 4
     retry_backoff_seconds: float = 2.0
+    anthropic_streaming: bool = False
 
     @classmethod
     def from_env(cls) -> KimiProviderSettings:
@@ -40,11 +53,52 @@ class KimiProviderSettings:
             model=os.getenv("KIMI_MODEL", "kimi-k3").strip(),
             protocol=os.getenv("KIMI_PROTOCOL", "openai").strip().lower(),
             reasoning_effort=os.getenv("KIMI_REASONING_EFFORT", "max").strip(),
-            timeout_seconds=float(os.getenv("KIMI_TIMEOUT_SECONDS", "240")),
-            transport_max_retries=int(os.getenv("KIMI_TRANSPORT_MAX_RETRIES", "1")),
-            retry_backoff_seconds=float(
-                os.getenv("KIMI_RETRY_BACKOFF_SECONDS", "2")
-            ),
+            timeout_seconds=float(os.getenv("KIMI_TIMEOUT_SECONDS", "600")),
+            transport_max_retries=int(os.getenv("KIMI_TRANSPORT_MAX_RETRIES", "4")),
+            retry_backoff_seconds=float(os.getenv("KIMI_RETRY_BACKOFF_SECONDS", "2")),
+            anthropic_streaming=os.getenv("KIMI_ANTHROPIC_STREAMING", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
+        )
+
+    @property
+    def available(self) -> bool:
+        return bool(self.api_key)
+
+
+@dataclass(frozen=True, slots=True)
+class QwenProviderSettings:
+    """Configuration for Qwen's OpenAI-compatible Chat Completions API."""
+
+    api_key: str = field(repr=False)
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    model: str = DEFAULT_QWEN_MODEL
+    reasoning_effort: str | None = "medium"
+    enable_thinking: bool = True
+    preserve_thinking: bool = True
+    timeout_seconds: float = 600.0
+    transport_max_retries: int = 4
+    retry_backoff_seconds: float = 2.0
+    streaming: bool = True
+
+    @classmethod
+    def from_env(cls) -> QwenProviderSettings:
+        return cls(
+            api_key=os.getenv("QWEN_API_KEY", "").strip(),
+            base_url=os.getenv(
+                "QWEN_BASE_URL",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            ).strip(),
+            model=os.getenv("QWEN_MODEL", DEFAULT_QWEN_MODEL).strip(),
+            reasoning_effort=os.getenv("QWEN_REASONING_EFFORT", "medium").strip(),
+            enable_thinking=os.getenv("QWEN_ENABLE_THINKING", "true").strip().lower()
+            in {"1", "true", "yes", "on"},
+            preserve_thinking=os.getenv("QWEN_PRESERVE_THINKING", "true").strip().lower()
+            in {"1", "true", "yes", "on"},
+            timeout_seconds=float(os.getenv("QWEN_TIMEOUT_SECONDS", "600")),
+            transport_max_retries=int(os.getenv("QWEN_TRANSPORT_MAX_RETRIES", "4")),
+            retry_backoff_seconds=float(os.getenv("QWEN_RETRY_BACKOFF_SECONDS", "2")),
+            streaming=os.getenv("QWEN_STREAMING", "true").strip().lower()
+            in {"1", "true", "yes", "on"},
         )
 
     @property
@@ -81,9 +135,7 @@ class OpenAIImageSettings:
             size=os.getenv("OPENAI_IMAGE_SIZE", "1536x1024").strip(),
             quality=os.getenv("OPENAI_IMAGE_QUALITY", "low").strip().lower(),
             max_images_per_deck=int(os.getenv("IMAGE_MAX_PER_DECK", "0")),
-            cost_microunits_per_image=int(
-                os.getenv("IMAGE_COST_MICROUNITS", "100000")
-            ),
+            cost_microunits_per_image=int(os.getenv("IMAGE_COST_MICROUNITS", "100000")),
             timeout_seconds=float(os.getenv("OPENAI_IMAGE_TIMEOUT_SECONDS", "300")),
         )
 

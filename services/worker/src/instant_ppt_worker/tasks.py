@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 
 from celery import Task
 from instant_ppt_domain.config import DomainSettings
@@ -12,6 +13,7 @@ from instant_ppt_domain.reconciliation import reconcile_organization_objects
 from instant_ppt_domain.runtime_contract import (
     PROCESS_EXPORT_TASK,
     PROCESS_GENERATION_TASK,
+    PROCESS_PLANNING_TASK,
     PROCESS_SLIDE_REGENERATION_TASK,
     assert_runtime_contract,
 )
@@ -25,6 +27,10 @@ from instant_ppt_worker.generation_pipeline import (
     process_generation_job,
 )
 from instant_ppt_worker.observability import ObservedTask
+from instant_ppt_worker.planning_pipeline import (
+    RetryablePlanningFailure,
+    process_planning_job,
+)
 from instant_ppt_worker.presentation_pipeline import (
     process_export,
     process_project_cleanup,
@@ -37,6 +43,21 @@ from instant_ppt_worker.source_pipeline import (
     WorkerObjectStore,
     process_source_pipeline,
 )
+
+GENERATION_TASK_SOFT_TIME_LIMIT_SECONDS = int(
+    os.getenv("GENERATION_TASK_SOFT_TIME_LIMIT_SECONDS", "7800")
+)
+GENERATION_TASK_TIME_LIMIT_SECONDS = int(
+    os.getenv("GENERATION_TASK_TIME_LIMIT_SECONDS", "8100")
+)
+if GENERATION_TASK_SOFT_TIME_LIMIT_SECONDS <= 7500:
+    raise RuntimeError(
+        "GENERATION_TASK_SOFT_TIME_LIMIT_SECONDS must exceed the workflow hard timeout"
+    )
+if GENERATION_TASK_TIME_LIMIT_SECONDS <= GENERATION_TASK_SOFT_TIME_LIMIT_SECONDS:
+    raise RuntimeError(
+        "GENERATION_TASK_TIME_LIMIT_SECONDS must exceed the task soft time limit"
+    )
 
 
 def _kill_process(_: SlideStart) -> None:
@@ -83,8 +104,8 @@ def process_fake_job_task(self: Task, job_id: str, organization_id: str) -> str:
     acks_late=True,
     reject_on_worker_lost=True,
     max_retries=4,
-    soft_time_limit=3900,
-    time_limit=4200,
+    soft_time_limit=GENERATION_TASK_SOFT_TIME_LIMIT_SECONDS,
+    time_limit=GENERATION_TASK_TIME_LIMIT_SECONDS,
 )
 def process_generation_job_task(
     self: Task,
@@ -141,6 +162,40 @@ def process_source_task(self: Task, source_id: str, organization_id: str) -> str
         countdown = min(2 ** (self.request.retries + 1), 8)
         retry_error = RuntimeError(str(error))
         raise self.retry(exc=retry_error, countdown=countdown, max_retries=2) from error
+    finally:
+        engine.dispose()
+
+
+@celery_app.task(
+    bind=True,
+    base=ObservedTask,
+    name=PROCESS_PLANNING_TASK,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    max_retries=2,
+    soft_time_limit=3900,
+    time_limit=4200,
+)
+def process_planning_job_task(
+    self: Task,
+    job_id: str,
+    organization_id: str,
+    runtime_contract_version: str,
+) -> str:
+    assert_runtime_contract(runtime_contract_version)
+    settings = DomainSettings.from_env()
+    engine = create_domain_engine(settings.database_url)
+    factory = create_session_factory(engine)
+    try:
+        return process_planning_job(factory, job_id, organization_id)
+    except RetryablePlanningFailure as error:
+        ceiling = min(2 ** (self.request.retries + 2), 60)
+        countdown = random.uniform(1, ceiling)
+        raise self.retry(exc=error, countdown=countdown, max_retries=2) from error
+    except OperationalError as error:
+        ceiling = min(2 ** (self.request.retries + 2), 30)
+        countdown = random.uniform(1, ceiling)
+        raise self.retry(exc=error, countdown=countdown, max_retries=2) from error
     finally:
         engine.dispose()
 

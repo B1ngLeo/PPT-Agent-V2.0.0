@@ -101,7 +101,12 @@ def _resolve_relationship_target(owner: str, target: str) -> str | None:
     return resolved
 
 
-def inspect_pptx(path: Path, deck: DeckPlan) -> dict[str, object]:
+def inspect_pptx(
+    path: Path,
+    deck: DeckPlan,
+    *,
+    expected_editable_text: dict[str, list[str]] | None = None,
+) -> dict[str, object]:
     findings: list[dict[str, str]] = []
     external_relationships: list[str] = []
     missing_relationship_targets: list[str] = []
@@ -172,11 +177,22 @@ def inspect_pptx(path: Path, deck: DeckPlan) -> dict[str, object]:
         editable_shapes += slide_text_count
         editable_native_shapes += native_count
         full_slide_pictures += full_slide_count
-        expected = Counter(_content_key(value) for value in [slide_plan.title, *slide_plan.body])
+        required_text = (
+            expected_editable_text.get(slide_plan.slide_id, [slide_plan.title])
+            if expected_editable_text is not None
+            else [slide_plan.title, *slide_plan.body]
+        )
+        expected = Counter(_content_key(value) for value in required_text)
         actual = Counter(_content_key(value) for value in slide_text)
+        combined_editable_text = _content_key("".join(slide_text))
         expected_text_count += sum(expected.values())
         for value, required_count in expected.items():
-            matched = min(required_count, actual[value])
+            exact_matches = min(required_count, actual[value])
+            split_matches = min(
+                required_count - exact_matches,
+                max(0, combined_editable_text.count(value) - actual[value]),
+            )
+            matched = exact_matches + split_matches
             matched_text_count += matched
             missing_text.extend(
                 f"slide {index + 1}: {value}" for _ in range(required_count - matched)

@@ -30,6 +30,8 @@ WORKFLOW_TRANSITIONS: dict[str, frozenset[str]] = {
             "awaiting_stage1_confirmation",
             "template_handoff_ready",
             "awaiting_stage2_confirmation",
+            "awaiting_design_confirmation",
+            "design_confirmed",
             "final_confirmed",
             "awaiting_refine_spec_approval",
             "needs_manual",
@@ -42,6 +44,10 @@ WORKFLOW_TRANSITIONS: dict[str, frozenset[str]] = {
     "awaiting_stage1_confirmation": frozenset({"running", "failed", "cancel_requested"}),
     "template_handoff_ready": frozenset({"running", "failed", "cancel_requested"}),
     "awaiting_stage2_confirmation": frozenset({"running", "failed", "cancel_requested"}),
+    "awaiting_design_confirmation": frozenset(
+        {"running", "design_confirmed", "failed", "cancel_requested"}
+    ),
+    "design_confirmed": frozenset({"running", "failed", "cancel_requested"}),
     "final_confirmed": frozenset(
         {"running", "awaiting_refine_spec_approval", "failed", "cancel_requested"}
     ),

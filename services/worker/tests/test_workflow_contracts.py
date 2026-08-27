@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from instant_ppt_worker.models import AdapterRequest
-from instant_ppt_worker.workflow_models import PageBlueprintArtifact, WorkflowRequestV2
+from instant_ppt_worker.workflow_models import WorkflowRequestV2
 from instant_ppt_worker.workflow_state import WorkflowTransitionError, validate_stage_entry
 from pydantic import TypeAdapter, ValidationError
 
@@ -48,10 +48,10 @@ def _payload() -> dict[str, object]:
             "visualReviewRequired": False,
         },
         "versions": {
-            "workflow": "instant-ppt-default@v2.0.0",
+            "workflow": "instant-ppt-default@v3.0.0",
             "engine": "ppt-master@v4.7.0",
             "model": "fake-agent@v1",
-            "prompt": "default-agentic@v1",
+            "prompt": "default-agentic@v4-strategist-direct-svg",
             "reference": "ppt-master-default@v4.7.0",
         },
         "approval": {
@@ -130,6 +130,7 @@ def _payload() -> dict[str, object]:
             "effectiveNarrationAudio": "disabled",
             "visualReview": False,
             "refineSpec": False,
+            "nativeCharts": False,
         },
         "runtime": {
             "allowedTools": [
@@ -152,7 +153,7 @@ def _payload() -> dict[str, object]:
             "allowSubagentReview": False,
             "allowSubagentSvgAuthoring": False,
             "maxTurns": 80,
-            "maxTokens": 200000,
+            "maxTokens": 260000,
             "maxCostMicrounits": 500000,
             "softTimeoutSeconds": 3600,
             "hardTimeoutSeconds": 3900,
@@ -161,7 +162,12 @@ def _payload() -> dict[str, object]:
         },
         "confirmation": {
             "mode": "delegated",
-            "delegationScope": ["stage1", "free_design", "stage2"],
+            "delegationScope": [
+                "stage1",
+                "free_design",
+                "stage2",
+                "strategist-design-and-lock",
+            ],
             "policyVersion": "product-autonomy@v1",
             "receiptTtlSeconds": 86400,
         },
@@ -332,17 +338,27 @@ def test_stage1_and_gate2_cannot_be_silently_skipped() -> None:
         "stage1-confirmation": {"status": "passed", "subjectSha256": HASH},
         "template-handoff": {"status": "passed", "subjectSha256": HASH},
         "stage2-confirmation": {"status": "passed", "subjectSha256": HASH},
-        "page-blueprint-gate": {"status": "passed", "subjectSha256": HASH},
         "design-spec-gate1": {"status": "passed", "subjectSha256": HASH},
+        "design-confirmation": {"status": "passed", "subjectSha256": HASH},
     }
     with pytest.raises(WorkflowTransitionError, match="refine-spec-approval"):
         validate_stage_entry(
             "spec_lock_gate2",
             receipts,
             request_sha256=HASH,
-            page_blueprint_sha256=HASH,
             design_spec_sha256=HASH,
             refine_spec=True,
+        )
+
+    without_design_confirmation = dict(receipts)
+    without_design_confirmation.pop("design-confirmation")
+    with pytest.raises(WorkflowTransitionError, match="design-confirmation"):
+        validate_stage_entry(
+            "spec_lock_gate2",
+            without_design_confirmation,
+            request_sha256=HASH,
+            design_spec_sha256=HASH,
+            refine_spec=False,
         )
 
 
@@ -359,6 +375,24 @@ def test_conditional_capabilities_reject_missing_dependencies() -> None:
         WorkflowRequestV2.model_validate(visual_review)
 
 
+def test_visual_review_round_limit_is_frozen_and_legacy_requests_resolve_to_three() -> None:
+    legacy = _payload()
+    legacy["authoring"]["visualReviewRequired"] = True
+    legacy["production"]["visualReview"] = True
+    legacy["runtime"]["allowSubagentReview"] = True
+    legacy_request = WorkflowRequestV2.model_validate(legacy)
+    assert legacy_request.authoring.visual_review_max_rounds is None
+    assert legacy_request.authoring.resolved_visual_review_max_rounds() == 3
+
+    invalid = _payload()
+    invalid["authoring"]["visualReviewRequired"] = True
+    invalid["authoring"]["visualReviewMaxRounds"] = 6
+    invalid["production"]["visualReview"] = True
+    invalid["runtime"]["allowSubagentReview"] = True
+    with pytest.raises(ValidationError, match="less than or equal to 5"):
+        WorkflowRequestV2.model_validate(invalid)
+
+
 def test_materialized_v2_schema_matches_pydantic_source() -> None:
     path = Path("services/worker/contracts/workflow-request.v2.schema.json")
     assert path.is_file()
@@ -368,10 +402,6 @@ def test_materialized_v2_schema_matches_pydantic_source() -> None:
         assert on_disk[key] == generated[key]
 
 
-def test_materialized_page_blueprint_schema_matches_pydantic_source() -> None:
+def test_page_blueprint_schema_is_not_an_active_contract() -> None:
     path = Path("services/worker/contracts/page-blueprint.v1.schema.json")
-    assert path.is_file()
-    on_disk = json.loads(path.read_text(encoding="utf-8"))
-    generated = PageBlueprintArtifact.model_json_schema()
-    for key in ("$defs", "properties", "required", "title", "type"):
-        assert on_disk[key] == generated[key]
+    assert not path.exists()

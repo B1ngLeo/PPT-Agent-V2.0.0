@@ -52,9 +52,21 @@ def _published_presentation(
     assert draft_response.status_code == 201, draft_response.text
     draft = draft_response.json()["data"]
     intent = client.post(
-        f"/v1/drafts/{draft['draftId']}/intent:infer",
+        f"/v1/drafts/{draft['draftId']}/intent-revisions",
         headers={**ALICE, "Idempotency-Key": f"intent-{new_ulid()}"},
-        json=_mutation({"language": "zh-CN"}),
+        json=_mutation(
+            {
+                "title": draft["title"],
+                "audience": "测试用户",
+                "goal": "验证编辑导出链路",
+                "targetSlideCount": 4,
+                "language": "zh-CN",
+                "contentDepth": "conclusion_first",
+                "visualPreference": "data_first",
+                "notes": "稳定的集成测试输入",
+                "sourceRefs": [],
+            }
+        ),
     )
     assert intent.status_code == 201, intent.text
     slides = [
@@ -91,7 +103,11 @@ def _published_presentation(
         f"/v1/drafts/{draft['draftId']}/generation-jobs",
         headers={**ALICE, "Idempotency-Key": f"generation-{new_ulid()}"},
         json=_mutation(
-            {"failureModes": failure_modes or {}, "continueLimitedDraft": True}
+            {
+                "failureModes": failure_modes or {},
+                "continueLimitedDraft": True,
+                "authorizeStrategistDesignLock": True,
+            }
         ),
     )
     assert generation.status_code == 202, generation.text
@@ -136,9 +152,7 @@ def _revision(
     response = client.post(
         f"/v1/presentations/{presentation['presentationId']}/revisions",
         headers={**ALICE, "Idempotency-Key": key},
-        json=_mutation(
-            {"operations": approved_operations}, presentation["currentRevisionId"]
-        ),
+        json=_mutation({"operations": approved_operations}, presentation["currentRevisionId"]),
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]
@@ -530,9 +544,7 @@ def test_default_effective_revision_drives_edit_regenerate_and_exact_export(
         == target["slideId"]
     )
     with session_factory() as session:
-        regenerated_row = session.get(
-            PresentationRevision, regenerated["presentationRevisionId"]
-        )
+        regenerated_row = session.get(PresentationRevision, regenerated["presentationRevisionId"])
         regenerated_manifest = session.get(Artifact, regenerated_row.manifest_artifact_id)
         manifest = json.loads(object_store.objects[regenerated_manifest.object_key])
         assert manifest["engineProfile"] == "default-agentic"

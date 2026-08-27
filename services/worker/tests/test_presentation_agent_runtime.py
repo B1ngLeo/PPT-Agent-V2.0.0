@@ -4,7 +4,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from instant_ppt_worker.presentation_agent_runtime import AgentDecision, MainPresentationAgent
+from instant_ppt_worker.presentation_agent_runtime import (
+    AgentDecision,
+    AgentRuntimeError,
+    MainPresentationAgent,
+)
 from instant_ppt_worker.presentation_agent_tools import (
     PresentationAgentToolRegistry,
     ToolCallbacks,
@@ -38,22 +42,24 @@ def _decision(
 
 
 def _svg(font_size: int, suffix: str) -> str:
+    del font_size
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
-        'viewBox="0 0 1280 720">'
+        'viewBox="0 0 1280 720" data-pptx-page-role="cover">'
         '<rect id="agent-background" x="0" y="0" width="1280" height="720" '
         'fill="#F8FAFC"/>'
-        f'<text id="agent-title-{suffix}" x="72" y="120" font-size="{font_size}" '
-        'fill="#0F172A">Agent-authored assertion</text>'
+        f'<text id="page-title" data-test-revision="{suffix}" x="72" y="120" '
+        f'font-size="64" '
+        'fill="#0F172A">私有模型公告解读</text>'
+        '<text id="page-number" x="1208" y="680" text-anchor="end">P01</text>'
         "</svg>"
     )
 
 
 def _locked(context: Any) -> dict[str, Any]:
-    page = next(page for page in context.blueprint.pages if page.pnn == context.current_pnn)
+    page = next(page for page in context.request.outline if page.pnn == context.current_pnn)
     return {
         "approvedSnapshotSha256": context.request.approval.snapshot_sha256,
-        "pageBlueprintSha256": context.blueprint_sha256,
         "page": page.model_dump(by_alias=True, mode="json"),
         "untrusted-source-data": [fragment for fragment in context.fragments],
         "specLock": (context.project / "spec_lock.md").read_text(encoding="utf-8"),
@@ -64,7 +70,7 @@ def test_model_observes_gate_failure_and_revises_the_authored_svg(tmp_path: Path
     gate_calls: list[bool] = []
 
     def svg_gate(_pnn: str, path: Path, _subject: str) -> dict[str, Any]:
-        passed = 'font-size="38"' in path.read_text(encoding="utf-8")
+        passed = 'data-test-revision="revised"' in path.read_text(encoding="utf-8")
         gate_calls.append(passed)
         return {
             "passed": passed,
@@ -110,7 +116,7 @@ def test_model_observes_gate_failure_and_revises_the_authored_svg(tmp_path: Path
     assert gate_calls == [False, True]
     assert len(provider.calls) == 6
     assert "TITLE_TOO_SMALL" in json.dumps(provider.calls[3]["messages"], ensure_ascii=False)
-    assert "agent-title-revised" in (
+    assert 'data-test-revision="revised"' in (
         context.project / "svg_output" / "slide_01.svg"
     ).read_text(encoding="utf-8")
     tool_records = [
@@ -123,8 +129,7 @@ def test_model_observes_gate_failure_and_revises_the_authored_svg(tmp_path: Path
         record["promptVersion"] == context.request.versions.prompt for record in tool_records
     )
     assert all(
-        record["referenceVersion"] == context.request.versions.reference
-        for record in tool_records
+        record["referenceVersion"] == context.request.versions.reference for record in tool_records
     )
 
 
@@ -159,6 +164,40 @@ def test_phase_cannot_complete_before_supervisor_required_tools(tmp_path: Path) 
     assert result.termination_reason == "required evidence observed"
     assert len(provider.calls) == 3
     assert "AGENT_PHASE_REQUIRED_TOOLS_MISSING" in json.dumps(
+        provider.calls[1]["messages"], ensure_ascii=False
+    )
+
+
+def test_phase_cannot_pause_before_supervisor_required_tools(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    provider = DeterministicFakeProvider(
+        [
+            _decision(action="pause", termination="awaiting-next-turn"),
+            _decision(
+                action="tool",
+                tool="read_approved_context",
+                arguments={"pnn": "P01"},
+            ),
+            _decision(action="complete", termination="required evidence observed"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="reject an early model-selected pause",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"read_approved_context"}),
+    )
+
+    assert result.status == "completed"
+    assert result.termination_reason == "required evidence observed"
+    assert "phase cannot pause before tools" in json.dumps(
         provider.calls[1]["messages"], ensure_ascii=False
     )
 
@@ -218,6 +257,206 @@ class _FixedUsageProvider:
             prompt_tokens=self.prompt_tokens,
             completion_tokens=self.completion_tokens,
         )
+
+
+class _PreservedThinkingProvider:
+    provider_name = "preserved-thinking"
+    preserve_thinking_history = True
+
+    def __init__(self) -> None:
+        self.calls: list[list[dict[str, Any]]] = []
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+    ) -> TextCompletion:
+        del response_format, max_completion_tokens
+        self.calls.append(messages)
+        if len(self.calls) == 1:
+            content = _decision(
+                action="tool",
+                tool="read_approved_context",
+                arguments={"pnn": "P01"},
+            )
+            reasoning = "private-reasoning-turn-1"
+        else:
+            content = _decision(
+                action="complete",
+                termination="preserved thinking observed",
+            )
+            reasoning = "private-reasoning-turn-2"
+        return TextCompletion(
+            content=content,
+            model="qwen3.8-max",
+            prompt_tokens=10,
+            completion_tokens=20,
+            reasoning_content=reasoning,
+            finish_reason="stop",
+        )
+
+
+def test_agent_forwards_preserved_thinking_on_the_next_model_turn(
+    tmp_path: Path,
+) -> None:
+    context = _context(
+        tmp_path,
+        allowed_tools=frozenset({"read_approved_context"}),
+    )
+    provider = _PreservedThinkingProvider()
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="preserve Qwen thinking across a tool observation",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"read_approved_context"}),
+    )
+
+    assert result.status == "completed"
+    assistant_history = [
+        message for message in provider.calls[1] if message.get("role") == "assistant"
+    ]
+    assert assistant_history[-1]["reasoning_content"] == "private-reasoning-turn-1"
+
+
+class _TerminalThinkingProvider:
+    provider_name = "terminal-thinking"
+    preserve_thinking_history = True
+
+    def __init__(self) -> None:
+        self.calls: list[list[dict[str, Any]]] = []
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+    ) -> TextCompletion:
+        del response_format, max_completion_tokens
+        self.calls.append(messages)
+        turn_number = len(self.calls)
+        return TextCompletion(
+            content=_decision(
+                action="complete",
+                termination=f"terminal-turn-{turn_number}",
+            ),
+            model="qwen3.8-max",
+            prompt_tokens=10,
+            completion_tokens=20,
+            reasoning_content=f"terminal-reasoning-{turn_number}",
+            finish_reason="stop",
+        )
+
+
+def test_terminal_assistant_reasoning_is_replayed_in_the_next_phase(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    provider = _TerminalThinkingProvider()
+    agent = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    )
+
+    first = agent.run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="complete the first phase",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+    )
+    next_context = replace(context, current_pnn="P02", stage="executor_remaining")
+    second = agent.run_phase(
+        phase_id="executor_remaining",
+        role="executor",
+        goal="continue with the next phase",
+        locked_context=_locked(next_context),
+        tools=PresentationAgentToolRegistry(next_context),
+    )
+
+    assert first.status == "completed"
+    assert second.status == "completed"
+    terminal_messages = [
+        message
+        for message in provider.calls[1]
+        if message.get("reasoning_content") == "terminal-reasoning-1"
+    ]
+    assert len(terminal_messages) == 1
+    assert json.loads(terminal_messages[0]["content"])["terminationReason"] == ("terminal-turn-1")
+
+
+def test_agent_does_not_compact_preserved_thinking_after_sixteen_messages(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    agent = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=_PreservedThinkingProvider(),
+    )
+    expected_reasoning: list[str] = []
+    for index in range(10):
+        reasoning = f"private-reasoning-{index}"
+        expected_reasoning.append(reasoning)
+        agent.state["messages"].extend(
+            [
+                {
+                    "role": "assistant",
+                    "content": f'{{"turn":{index}}}',
+                    "reasoningContent": reasoning,
+                    "locked": False,
+                    "phaseId": "executor_p01",
+                },
+                {
+                    "role": "user",
+                    "content": f"tool-observation-{index}",
+                    "locked": False,
+                    "phaseId": "executor_p01",
+                },
+            ]
+        )
+
+    messages = agent._provider_messages("executor_p01")
+
+    assert [
+        message["reasoning_content"] for message in messages if message.get("reasoning_content")
+    ] == expected_reasoning
+    assert not any(
+        "Earlier observations in this phase" in message["content"] for message in messages
+    )
+
+
+def test_preserved_thinking_counts_toward_the_context_limit(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    runtime = context.request.runtime.model_copy(update={"max_context_characters": 10_000})
+    request = context.request.model_copy(update={"runtime": runtime})
+    agent = MainPresentationAgent(
+        project=context.project,
+        request=request,
+        provider=_PreservedThinkingProvider(),
+    )
+    agent.state["messages"].append(
+        {
+            "role": "assistant",
+            "content": "{}",
+            "reasoningContent": "r" * 10_000,
+            "locked": False,
+            "phaseId": "executor_p01",
+        }
+    )
+
+    with pytest.raises(AgentRuntimeError, match="preserved thinking"):
+        agent._provider_messages("executor_p01")
 
 
 @pytest.mark.parametrize(
@@ -287,11 +526,37 @@ def test_token_cost_and_timeout_budgets_are_supervisor_enforced(
     assert provider.calls == 1
 
 
+def test_unlimited_token_policy_records_large_usage_without_pausing(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    runtime = context.request.runtime.model_copy(update={"max_tokens": None})
+    request = context.request.model_copy(update={"runtime": runtime})
+    context = replace(context, request=request)
+    provider = _FixedUsageProvider(prompt_tokens=800_000, completion_tokens=6_000)
+    ticks = iter((0.0, 0.1))
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=request,
+        provider=provider,
+        clock=lambda: next(ticks),
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="record cumulative tokens without stopping a long deck",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+    )
+
+    assert result.status == "completed"
+    assert result.termination_reason == "provider completed"
+    assert result.input_tokens == 800_000
+    assert result.output_tokens == 6_000
+    assert provider.calls == 1
+
+
 def test_cancellation_stops_before_any_provider_or_tool_side_effect(tmp_path: Path) -> None:
     context = _context(tmp_path)
-    provider = DeterministicFakeProvider(
-        [_decision(action="complete", termination="must not run")]
-    )
+    provider = DeterministicFakeProvider([_decision(action="complete", termination="must not run")])
 
     result = MainPresentationAgent(
         project=context.project,
@@ -345,11 +610,183 @@ def test_tool_allowlist_denial_is_observed_without_expanding_permission(
 
     assert result.status == "completed"
     assert not (context.project / "svg_output" / "slide_01.svg").exists()
-    assert "AGENT_TOOL_NOT_ALLOWED" in json.dumps(
-        provider.calls[1]["messages"], ensure_ascii=False
-    )
+    assert "AGENT_TOOL_NOT_ALLOWED" in json.dumps(provider.calls[1]["messages"], ensure_ascii=False)
     assert "API Key" in json.dumps(provider.calls[0]["messages"], ensure_ascii=False)
     assert "untrusted content" in provider.calls[0]["messages"][0]["content"]
+
+
+def test_tool_argument_denial_persists_evidence_and_allows_bounded_repair(
+    tmp_path: Path,
+) -> None:
+    context = _context(
+        tmp_path,
+        allowed_tools=frozenset({"read_approved_context"}),
+    )
+    provider = DeterministicFakeProvider(
+        [
+            _decision(
+                action="tool",
+                tool="read_approved_context",
+                arguments={"pnn": "P02"},
+                reason="attempt a cross-page read",
+            ),
+            _decision(
+                action="tool",
+                tool="read_approved_context",
+                arguments={"pnn": "P01"},
+                reason="repair the denied read with the owned page",
+            ),
+            _decision(action="complete", termination="approved context loaded"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="load only the approved current page",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"read_approved_context"}),
+    )
+
+    assert result.status == "completed"
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (context.project / "agent" / "tool-calls").glob("*.json")
+    ]
+    assert {record["status"] for record in records} == {"policy-denied", "succeeded"}
+    assert all(record["argumentsSha256"] for record in records)
+    assert "AGENT_TOOL_POLICY_DENIED" in json.dumps(
+        provider.calls[1]["messages"], ensure_ascii=False
+    )
+
+
+def test_repeated_identical_tool_policy_denials_stop_at_the_repair_limit(
+    tmp_path: Path,
+) -> None:
+    context = _context(
+        tmp_path,
+        allowed_tools=frozenset({"read_approved_context"}),
+    )
+    denied = _decision(
+        action="tool",
+        tool="read_approved_context",
+        arguments={"pnn": "P02"},
+        reason="repeat an invalid cross-page read",
+    )
+    provider = DeterministicFakeProvider([denied] * 5)
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="bound repeated tool policy denials",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"read_approved_context"}),
+    )
+
+    assert result.status == "failed"
+    assert result.termination_reason.startswith("tool-policy-repair-limit:")
+    assert len(provider.calls) == 5
+
+
+def test_visual_review_contract_exposes_direct_svg_as_the_only_authoring_mode(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path, visual_review_required=True)
+    provider = DeterministicFakeProvider(
+        [
+            _decision(
+                action="tool",
+                tool="write_or_patch_slide_svg",
+                arguments={"pnn": "P01", "mode": "direct-svg", "svg": _svg(38, "reviewed")},
+            ),
+            _decision(action="complete", termination="direct SVG authored"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="author P01 for visual review",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"write_or_patch_slide_svg"}),
+    )
+
+    assert result.status == "completed"
+    initial_contract = provider.calls[0]["messages"][1]["content"]
+    assert '"mode":"direct-svg"' in initial_contract
+    assert "alternativeMode" not in initial_contract
+    assert "direct-svg is the only authoring mode" in initial_contract
+    records = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (context.project / "agent" / "tool-calls").glob("*.json")
+    ]
+    assert {record["status"] for record in records} == {"succeeded"}
+
+
+def test_direct_svg_repair_contract_remains_direct_svg_only(tmp_path: Path) -> None:
+    context = replace(
+        _context(tmp_path, visual_review_required=True),
+        stage="visual-repair",
+        required_authoring_mode="direct-svg",
+    )
+    current_svg = _svg(34, "current")
+    svg_path = context.project / "svg_output" / "slide_01.svg"
+    svg_path.parent.mkdir(parents=True)
+    svg_path.write_text(current_svg, encoding="utf-8")
+    provider = DeterministicFakeProvider(
+        [
+            _decision(
+                action="tool",
+                tool="read_approved_context",
+                arguments={"pnn": "P01"},
+            ),
+            _decision(
+                action="tool",
+                tool="write_or_patch_slide_svg",
+                arguments={"pnn": "P01", "mode": "direct-svg", "svg": _svg(38, "repair")},
+            ),
+            _decision(action="complete", termination="direct SVG repaired"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="visual-repair-r1-p01",
+        role="executor",
+        goal="repair P01 without changing its authoring mode",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"read_approved_context", "write_or_patch_slide_svg"}),
+    )
+
+    assert result.status == "completed"
+    contract = provider.calls[0]["messages"][1]["content"]
+    assert "direct-svg is the only authoring mode" in contract
+    assert "data-pptx-bounds is exactly x y width height" in contract
+    assert "x+width<=1280 and y+height<=720" in contract
+    assert "alternativeMode" not in contract
+    repair_observation = json.dumps(provider.calls[1]["messages"], ensure_ascii=False)
+    assert "currentAuthoringAsset" in repair_observation
+    assert "data-test-revision" in repair_observation
+    assert "current" in repair_observation
 
 
 def test_invalid_structured_output_is_repaired_within_the_bounded_turn_loop(
@@ -377,12 +814,144 @@ def test_invalid_structured_output_is_repaired_within_the_bounded_turn_loop(
 
     assert result.status == "completed"
     assert len(provider.calls) == 2
+    assert '"action":"tool"' in provider.calls[0]["messages"][0]["content"]
+    assert "never callTool" in provider.calls[0]["messages"][0]["content"]
+    assert (
+        '"read_approved_context":{"argumentsExample":{"pnn":"P01"}'
+        in (provider.calls[0]["messages"][1]["content"])
+    )
     assert "violated AgentDecision v1" in provider.calls[1]["messages"][-1]["content"]
+    assert "never use callTool" in provider.calls[1]["messages"][-1]["content"]
     turns = [
         json.loads(path.read_text(encoding="utf-8"))
         for path in (context.project / "agent" / "turns").glob("*.json")
     ]
     assert any(turn["status"] == "invalid-structured-output" for turn in turns)
+
+
+@pytest.mark.parametrize(
+    "provider_output",
+    [
+        """```json
+        {"schemaVersion":1,"role":"EXECUTOR","action":"callTool",\
+        "toolName":"readApprovedContext","arguments":{"pnn":"P01"},\
+        "reason":"load context","terminationReason":"not applicable"}
+        ```""",
+        json.dumps(
+            {
+                "decision": {
+                    "schemaVersion": 1,
+                    "role": "executor",
+                    "action": "complete",
+                    "toolName": "read_approved_context",
+                    "arguments": {"ignored": True},
+                    "reason": "provider wrapped the decision",
+                }
+            }
+        ),
+    ],
+)
+def test_provider_json_presentation_variants_are_normalized_without_a_repair_turn(
+    tmp_path: Path,
+    provider_output: str,
+) -> None:
+    context = _context(tmp_path)
+    provider = DeterministicFakeProvider(
+        [
+            provider_output,
+            _decision(action="complete", termination="tool loop complete"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="accept provider JSON presentation variants",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+    )
+
+    assert result.status == "completed"
+    expected_calls = 2 if "callTool" in provider_output else 1
+    assert len(provider.calls) == expected_calls
+    turns = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (context.project / "agent" / "turns").glob("*.json")
+    ]
+    assert all(turn["status"] != "invalid-structured-output" for turn in turns)
+
+
+def test_repeated_invalid_structured_output_gets_four_bounded_repairs(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    provider = DeterministicFakeProvider(
+        [
+            "not-json-1",
+            "not-json-2",
+            "not-json-3",
+            "not-json-4",
+            _decision(action="complete", termination="four schema repairs recovered"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="recover from a flaky structured-output proxy",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+    )
+
+    assert result.status == "completed"
+    assert result.termination_reason == "four schema repairs recovered"
+    assert len(provider.calls) == 5
+
+
+def test_premature_fail_after_recoverable_tool_denial_is_bounded_and_retried(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    provider = DeterministicFakeProvider(
+        [
+            _decision(action="fail", termination="tool arguments can be corrected"),
+            _decision(
+                action="tool",
+                tool="read_approved_context",
+                arguments={"pnn": "P01"},
+            ),
+            _decision(action="complete", termination="required tool recovered"),
+        ]
+    )
+
+    result = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    ).run_phase(
+        phase_id="executor_p01",
+        role="executor",
+        goal="recover a correctable tool denial",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset({"read_approved_context"}),
+    )
+
+    assert result.status == "completed"
+    assert result.termination_reason == "required tool recovered"
+    assert len(provider.calls) == 3
+    state = json.loads(
+        (context.project / "agent" / "runtime-state.json").read_text(encoding="utf-8")
+    )
+    assert state["phases"]["executor_p01"]["prematureFailureCount"] == 1
 
 
 @pytest.mark.parametrize("crash_point", ["after-provider", "after-tool"])

@@ -77,6 +77,48 @@ def test_package_qa_proves_text_shapes_and_relationship_integrity(tmp_path: Path
     assert report["unreferencedMediaParts"] == []
 
 
+def test_package_qa_can_verify_agent_contract_text_instead_of_planning_copy(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "agent-authored.pptx"
+    _presentation(path)
+    deck = _deck(body="Blueprint planning copy may be condensed by the executor")
+
+    report = inspect_pptx(
+        path,
+        deck,
+        expected_editable_text={deck.slides[0].slide_id: [deck.slides[0].title]},
+    )
+
+    assert report["passed"] is True, report
+    assert report["expectedEditableTextCount"] == 1
+    assert report["matchedEditableTextCount"] == 1
+
+
+def test_package_qa_accepts_title_split_across_adjacent_editable_shapes(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "split-title.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    first = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(0.5))
+    first.text = "Relationship"
+    second = slide.shapes.add_textbox(Inches(5), Inches(1), Inches(4), Inches(0.5))
+    second.text = " integrity"
+    slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1), Inches(3), Inches(3), Inches(1))
+    presentation.save(path)
+    deck = _deck()
+
+    report = inspect_pptx(
+        path,
+        deck,
+        expected_editable_text={deck.slides[0].slide_id: [deck.slides[0].title]},
+    )
+
+    assert report["passed"] is True, report
+    assert report["matchedEditableTextCount"] == 1
+
+
 def test_package_qa_matches_markdown_escape_to_visible_punctuation(tmp_path: Path) -> None:
     path = tmp_path / "markdown-escape.pptx"
     _presentation(path)

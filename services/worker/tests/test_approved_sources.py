@@ -172,6 +172,12 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
                 "approvedBy": approved_by,
                 "approvedAt": "2026-08-18T12:00:00Z",
             },
+            "designAuthorization": {
+                "authorized": True,
+                "scope": "strategist-design-and-lock",
+                "authorizedBy": approved_by,
+                "authorizedAt": "2026-08-18T12:00:00Z",
+            },
             "intent": {
                 "title": "季度经营复盘",
                 "goal": "批准下一季度行动",
@@ -259,6 +265,15 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
     assert request.template.active_template_version is None
     assert request.template.candidates[0].content_accessed is False
     assert request.template.candidates[0].installed is False
+    assert request.runtime.max_completion_tokens_per_turn == 40_000
+    assert request.runtime.max_tokens is None
+    assert request.runtime.soft_timeout_seconds == 7_200
+    assert request.runtime.hard_timeout_seconds == 7_500
+    assert request.runtime.preview_idle_timeout_seconds == 9_000
+    assert request.authoring.visual_review_max_rounds == 2
+    assert request.authoring.resolved_visual_review_max_rounds() == 2
+    assert request.production.native_charts is False
+    assert "run_chart_gate" not in request.runtime.allowed_tools
 
     slides[0].title = "published runtime title must not change recovery request"
     recovery_request = build_default_workflow_request(
@@ -268,6 +283,17 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
         sources=sources,
     )
     assert recovery_request == request
+
+    monkeypatch.setenv("PRESENTATION_NATIVE_CHARTS_ENABLED", "true")
+    chart_request = build_default_workflow_request(
+        snapshot,
+        slides,
+        workflow_run_id=new_ulid(),
+        sources=sources,
+    )
+    assert chart_request.production.native_charts is True
+    assert "run_chart_gate" in chart_request.runtime.allowed_tools
+    monkeypatch.delenv("PRESENTATION_NATIVE_CHARTS_ENABLED")
 
     snapshot.payload["imagePolicy"] = {
         "scope": "cover_only",
@@ -321,6 +347,7 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
     monkeypatch.setenv("MOONSHOT_API_KEY", "moonshot-runtime-secret")
     text_environment = _scoped_text_environment(snapshot, image_request)
     assert text_environment == {
+        "TEXT_PROVIDER": "kimi",
         "MOONSHOT_API_KEY": "moonshot-runtime-secret",
         "KIMI_BASE_URL": "https://text.example/v1",
         "KIMI_MODEL": "kimi-k3",
@@ -329,4 +356,33 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
         "KIMI_TIMEOUT_SECONDS": "123.0",
         "KIMI_TRANSPORT_MAX_RETRIES": "2",
         "KIMI_RETRY_BACKOFF_SECONDS": "3.0",
+        "KIMI_ANTHROPIC_STREAMING": "false",
+    }
+
+    snapshot.payload["providerConfiguration"]["planning"] = {
+        "provider": "qwen",
+        "model": "qwen3.8-max",
+        "baseUrl": "https://cf.api.fan/v1",
+        "protocol": "openai",
+        "reasoningEffort": "medium",
+        "enableThinking": True,
+        "preserveThinking": True,
+        "timeoutSeconds": 600,
+        "transportMaxRetries": 4,
+        "retryBackoffSeconds": 2,
+        "streaming": True,
+    }
+    monkeypatch.setenv("QWEN_API_KEY", "qwen-runtime-secret")
+    assert _scoped_text_environment(snapshot, image_request) == {
+        "TEXT_PROVIDER": "qwen",
+        "QWEN_API_KEY": "qwen-runtime-secret",
+        "QWEN_BASE_URL": "https://cf.api.fan/v1",
+        "QWEN_MODEL": "qwen3.8-max",
+        "QWEN_REASONING_EFFORT": "medium",
+        "QWEN_ENABLE_THINKING": "true",
+        "QWEN_PRESERVE_THINKING": "true",
+        "QWEN_TIMEOUT_SECONDS": "600.0",
+        "QWEN_TRANSPORT_MAX_RETRIES": "4",
+        "QWEN_RETRY_BACKOFF_SECONDS": "2.0",
+        "QWEN_STREAMING": "true",
     }

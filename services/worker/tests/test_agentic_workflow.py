@@ -14,10 +14,6 @@ from instant_ppt_worker.presentation_agent_fixture_provider import (
     DeterministicPresentationAgentProvider,
     _fit_text,
 )
-from instant_ppt_worker.presentation_blueprint import (
-    canonical_sha256,
-    validate_page_blueprint,
-)
 from instant_ppt_worker.providers import TextCompletion
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.visual_review_runtime import VisualReviewReport
@@ -192,58 +188,26 @@ def test_sentences_skip_document_metadata_and_preserved_price_notes() -> None:
     assert sentences == ["2026 年 7 月 30 日更新：Luna 的价格下调 80%。"]
 
 
-def test_timeline_blueprint_uses_three_distinct_semantic_milestones() -> None:
-    payload = _payload()
-    payload["outline"][1].update(
-        {
-            "role": "timeline",
-            "title": "发布时间线与版本节奏",
-            "audienceQuestion": "官方公布了哪些发布节点？",
-        }
-    )
-    source_text = (
-        "过度拦截可能阻止防御者测试系统和部署补丁。\n"
-        "2026 年 7 月 9 日，全面推出 Sol。\n"
-        "2026 年 7 月 16 日，Terra 开放 API。\n"
-        "2026 年 7 月 23 日，Luna 扩大可用范围。\n"
-        "2026 年 7 月 30 日，官方更新定价。"
-    )
-    fragment = payload["sources"]["artifacts"][0]["fragments"][0]
-    fragment.update(
-        {
-            "kind": "paragraph",
-            "text": source_text,
-            "textSha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
-        }
-    )
-    request = WorkflowRequestV2.model_validate(payload)
+def test_data_page_defaults_to_metric_cards_without_native_chart() -> None:
+    workflow = _payload()
+    request = WorkflowRequestV2.model_validate(workflow)
+    fragments = [
+        fragment.model_dump(by_alias=True, mode="json")
+        for artifact in request.sources.artifacts
+        for fragment in artifact.fragments
+    ]
 
-    blueprint = workflow_module._build_page_blueprint(request, [fragment])
-    deck, _ = workflow_module._build_deck(request, [fragment], blueprint=blueprint)
+    deck, plan = workflow_module._build_deck(request, fragments)
 
-    timeline = blueprint.pages[1]
-    assert len(timeline.content_blocks) == 3
-    assert len({block.text for block in timeline.content_blocks}) == 3
-    assert all("部署补丁" not in block.text for block in timeline.content_blocks)
-    assert deck.slides[0].title == request.intent.title
-    assert deck.slides[0].body == [request.intent.objective]
-    assert deck.slides[1].title == "发布时间线与版本节奏"
-
-
-def test_concise_title_never_reuses_polluted_outline_or_splits_decimals() -> None:
-    source = (
-        "Sol max 在 Artificial Analysis Coding Agent Index 上以 80 分创纪录，"
-        "比 Fable 5 高 2.8 分，输出 token 和用时都不到一半。"
-    )
-
-    title = workflow_module._concise_title(source)
-
-    assert title == "Sol max 在 Artificial Analysis Coding Agent Index 上以 80 分创纪录"
-    assert not title.endswith(("2", "."))
+    assert request.production.native_charts is False
+    assert request.outline[1].role == "data"
+    assert deck.slides[1].title == request.outline[1].title
+    assert plan["roster"][1]["chart"] is None
 
 
 def test_data_slides_bind_distinct_benchmark_series() -> None:
     workflow = _payload()
+    workflow["production"]["nativeCharts"] = True
     base = workflow["outline"][1]
     workflow["outline"] = [
         workflow["outline"][0],
@@ -287,10 +251,11 @@ def test_data_slides_bind_distinct_benchmark_series() -> None:
     ]
     assert len({tuple(chart["values"]) for chart in charts}) == 3
     assert [slide["title"] for slide in plan["roster"][1:]] == [
-        "Terminal-Bench 2.1 中，Sol Ultra 达到 91.9%，领先 Sol 3%",
-        "BrowseComp 中，Sol Ultra 达到 92.2%，领先 Sol 2%",
-        "SEC-Bench Pro 中，Sol Ultra 达到 74.3%，领先 Sol 4%",
+        base["title"],
+        base["title"],
+        base["title"],
     ]
+    assert len({tuple(slide["chart"]["values"]) for slide in plan["roster"][1:]}) == 3
 
 
 def test_real_gpt56_announcement_supplies_expected_table_chart_series(
@@ -313,9 +278,7 @@ def test_real_gpt56_announcement_supplies_expected_table_chart_series(
         text=True,
         encoding="utf-8",
     )
-    fragments = workflow_module._markdown_table_series(
-        markdown_path.read_text(encoding="utf-8")
-    )
+    fragments = workflow_module._markdown_table_series(markdown_path.read_text(encoding="utf-8"))
     by_context = {item["context"]: item for item in fragments}
 
     assert by_context["Terminal-Bench 2.1"]["values"] == [
@@ -353,70 +316,6 @@ def test_no_source_limited_draft_authors_distinct_topic_specific_copy() -> None:
     assert all(len(body) >= 40 for body in bodies)
     assert all("请生成" not in body and "给出第" not in body for body in bodies)
     assert "结论：" in bodies[-1] and "行动：" in bodies[-1]
-
-
-def test_page_blueprint_uses_semantic_evidence_instead_of_page_position() -> None:
-    workflow = _payload()
-    workflow["outline"][0].update(
-        {
-            "role": "content",
-            "title": "安全审计结论",
-            "audienceQuestion": "安全审计是否通过？",
-        }
-    )
-    workflow["outline"][1].update(
-        {
-            "role": "content",
-            "title": "性能吞吐结论",
-            "audienceQuestion": "性能吞吐是否达标？",
-        }
-    )
-    request = WorkflowRequestV2.model_validate(workflow)
-    fragments = [
-        {
-            "fragmentId": "performance-fragment",
-            "kind": "paragraph",
-            "text": "性能吞吐测试稳定达到预定目标，建议进入受控试点。",
-        },
-        {
-            "fragmentId": "security-fragment",
-            "kind": "paragraph",
-            "text": "安全审计已通过全部强制检查，未发现阻断问题。",
-        },
-    ]
-
-    blueprint = workflow_module._build_page_blueprint(request, fragments)
-    repeated = workflow_module._build_page_blueprint(request, fragments)
-
-    assert blueprint.pages[0].evidence_refs == ["security-fragment"]
-    assert blueprint.pages[1].evidence_refs == ["performance-fragment"]
-    assert [(page.slide_id, page.pnn, page.order) for page in blueprint.pages] == [
-        (slide.slide_id, slide.pnn, slide.order) for slide in request.outline
-    ]
-    assert canonical_sha256(blueprint.model_dump(by_alias=True, mode="json")) == canonical_sha256(
-        repeated.model_dump(by_alias=True, mode="json")
-    )
-    assert validate_page_blueprint(blueprint, request, fragments)["passed"] is True
-
-
-def test_page_blueprint_gate_rejects_an_unsupported_assertion() -> None:
-    workflow = _payload()
-    request = WorkflowRequestV2.model_validate(workflow)
-    fragments = [
-        fragment.model_dump(by_alias=True, mode="json")
-        for artifact in request.sources.artifacts
-        for fragment in artifact.fragments
-    ]
-    blueprint = workflow_module._build_page_blueprint(request, fragments)
-    blueprint.pages[0].assertion = "未经批准的财务收益增长 99%"
-
-    report = validate_page_blueprint(blueprint, request, fragments)
-
-    assert report["passed"] is False
-    assert any(
-        finding["code"] == "BLUEPRINT_ASSERTION_UNSUPPORTED"
-        for finding in report["findings"]
-    )
 
 
 def test_no_source_limited_vertical_slice_passes_all_release_gates(
@@ -477,14 +376,18 @@ def test_no_source_limited_vertical_slice_passes_all_release_gates(
     assert exit_code == 0, response.error.model_dump(mode="json") if response.error else response
     assert response.status == "succeeded"
     [project] = (tmp_path / "generated").glob("no-source_ppt169_*")
-    deck = json.loads((project / "deck-plan.json").read_text(encoding="utf-8"))
-    bodies = ["；".join(slide["body"]) for slide in deck["slides"]]
-    assert len(set(bodies)) == len(bodies)
-    assert all("ISSUE-002 最终用户" in body for body in bodies)
+    assert not (project / "deck-plan.json").exists()
+    assert (project / "design_spec.md").is_file()
+    rendered = [
+        path.read_text(encoding="utf-8") for path in sorted((project / "svg_output").glob("*.svg"))
+    ]
+    assert len(rendered) == len(workflow["outline"])
+    assert all("ISSUE-002 最终用户" in svg for svg in rendered)
 
 
 def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> None:
     workflow = _payload()
+    workflow["production"]["nativeCharts"] = True
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
     request = {
         "schemaVersion": 2,
@@ -517,18 +420,11 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
     evidence_map = json.loads(
         (project / "analysis" / "evidence-map.json").read_text(encoding="utf-8")
     )
-    blueprint = json.loads(
-        (project / "analysis" / "page-blueprint.v1.json").read_text(encoding="utf-8")
+    strategist_receipt = json.loads(
+        (project / "agent" / "phase-receipts" / "strategist.json").read_text(encoding="utf-8")
     )
-    blueprint_support = json.loads(
-        (project / "validation" / "page-blueprint-support.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    blueprint_consistency = json.loads(
-        (project / "validation" / "page-blueprint-consistency.json").read_text(
-            encoding="utf-8"
-        )
+    release_trace = json.loads(
+        (project / "validation" / "release-trace.json").read_text(encoding="utf-8")
     )
     content_reports = {
         stage: json.loads((project / "validation" / filename).read_text(encoding="utf-8"))
@@ -539,26 +435,18 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
         }.items()
     }
     assert all(report["passed"] for report in content_reports.values())
-    blueprint_sha256 = canonical_sha256(blueprint)
-    assert blueprint["authoringMode"] == "agent-strategist"
-    strategist_turn = project / "agent" / "turns" / f"{blueprint['strategistTurnId']}.json"
-    assert strategist_turn.is_file()
-    assert blueprint_support["passed"] is True
-    assert blueprint_support["blueprintSha256"] == blueprint_sha256
-    assert blueprint_consistency["passed"] is True
-    assert blueprint_consistency["pageBlueprintSha256"] == blueprint_sha256
-    assert all(
-        report["pageBlueprintSha256"] == blueprint_sha256
-        for report in content_reports.values()
-    )
+    assert strategist_receipt["status"] == "completed"
+    assert strategist_receipt["turnIds"]
+    assert (project / "agent" / "turns" / f"{strategist_receipt['turnIds'][-1]}.json").is_file()
+    assert release_trace["passed"] is True
+    assert not (project / "analysis" / "page-blueprint.v1.json").exists()
+    assert not (project / "validation" / "page-blueprint-support.json").exists()
     assert all(
         report["evidenceMapSha256"] == evidence_map["evidenceMapSha256"]
         and report["grounding"]["passed"] is True
         for report in content_reports.values()
     )
-    agent_state = json.loads(
-        (project / "agent" / "runtime-state.json").read_text(encoding="utf-8")
-    )
+    agent_state = json.loads((project / "agent" / "runtime-state.json").read_text(encoding="utf-8"))
     page_writes = []
     for tool_path in (project / "agent" / "tool-calls").glob("*.json"):
         record = json.loads(tool_path.read_text(encoding="utf-8"))
@@ -588,7 +476,7 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
 
     chart_svg = (project / "svg_output" / "slide_02.svg").read_text(encoding="utf-8")
     assert 'data-pptx-replace-with="chart"' in chart_svg
-    assert "chart-plot-area: object=throughput-comparison" in chart_svg
+    assert "chart-plot-area: object=source-chart-p02" in chart_svg
 
     pptx = project / "exports" / "deck.pptx"
     assert content_reports["pptx"]["subjectSha256"] == hashlib.sha256(pptx.read_bytes()).hexdigest()
@@ -613,6 +501,89 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
     assert "AI 重生成指令" not in visible_text
     assert "Editable native presentation baseline" not in visible_text
     assert "请生成" not in visible_text
+
+
+def test_gpt56_six_page_chinese_outline_bypasses_lexical_blueprint_gate(
+    tmp_path: Path,
+) -> None:
+    workflow = _payload()
+    source_text = (ROOT / "tests/OpenAI_GPT-5.6_发布公告_中文版_2026-07-09.md").read_text(
+        encoding="utf-8"
+    )
+    fragment = workflow["sources"]["artifacts"][0]["fragments"][0]
+    fragment.update(
+        {
+            "kind": "paragraph",
+            "text": source_text,
+            "textSha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
+        }
+    )
+    roles_and_titles = [
+        ("cover", "GPT-5.6 发布要点"),
+        ("content", "模型家族概览"),
+        ("data", "能力与效率表现"),
+        ("content", "设计判断力"),
+        ("risk_action", "安全边界与部署建议"),
+        ("ending", "试点决策与下一步"),
+    ]
+    workflow["outline"] = [
+        {
+            "outlineSlideId": deterministic_ulid(
+                hashlib.sha256(f"issue004-outline-{order}".encode()).hexdigest()
+            ),
+            "slideId": deterministic_ulid(
+                hashlib.sha256(f"issue004-slide-{order}".encode()).hexdigest()
+            ),
+            "pnn": f"P{order:02d}",
+            "order": order,
+            "role": role,
+            "title": title,
+            "audienceQuestion": f"受众应如何理解“{title}”并形成决策？",
+        }
+        for order, (role, title) in enumerate(roles_and_titles, start=1)
+    ]
+    workflow["production"]["nativeCharts"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    request = {
+        "schemaVersion": 2,
+        "requestId": "issue-004-gpt56-six-page",
+        "operation": "generatePptxDefault",
+        "workspaceRoot": str(tmp_path),
+        "outputKey": "generated/issue004-gpt56",
+        "workflow": workflow,
+    }
+
+    response, exit_code = run_request(json.dumps(request, ensure_ascii=False))
+
+    assert exit_code == 0, response.error.model_dump(mode="json") if response.error else response
+    [project] = (tmp_path / "generated").glob("issue004-gpt56_ppt169_*")
+    assert not (project / "analysis" / "page-blueprint.v1.json").exists()
+    assert not (project / "validation" / "page-blueprint-support.json").exists()
+    assert len(list((project / "svg_output").glob("slide_*.svg"))) == 6
+    assert (project / "exports" / "deck.pptx").is_file()
+    p02 = (project / "svg_output" / "slide_02.svg").read_text(encoding="utf-8")
+    p04 = (project / "svg_output" / "slide_04.svg").read_text(encoding="utf-8")
+    assert "模型家族概览" in p02
+    assert "设计判断力" in p04
+    with zipfile.ZipFile(project / "exports" / "deck.pptx") as archive:
+        assert any(name.startswith("ppt/charts/chart") for name in archive.namelist())
+
+
+def test_executor_does_not_start_before_design_confirmation(tmp_path: Path) -> None:
+    workflow = _payload()
+    workflow["confirmation"]["delegationScope"].remove("strategist-design-and-lock")
+    project = tmp_path / "awaiting-design-confirmation_ppt169_20260827"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+    )
+
+    assert outcome["result"].status == "awaiting_design_confirmation"
+    assert (project / "design_spec.md").is_file()
+    assert not (project / "spec_lock.md").exists()
+    assert list((project / "svg_output").glob("slide_*.svg")) == []
 
 
 def test_enabled_notes_and_custom_animation_run_in_owned_order(tmp_path: Path) -> None:
@@ -693,7 +664,8 @@ def test_explicit_visual_review_renders_and_passes_structured_reviewer(
 ) -> None:
     workflow = _payload()
     workflow["authoring"]["visualReviewRequired"] = True
-    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review@v1"
+    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review-adaptive@v2"
+    workflow["authoring"]["visualReviewMaxRounds"] = 5
     workflow["production"]["visualReview"] = True
     workflow["runtime"]["allowSubagentReview"] = True
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
@@ -726,6 +698,170 @@ def test_explicit_visual_review_renders_and_passes_structured_reviewer(
     assert (project / "exports" / "deck.pptx").is_file()
 
 
+class _LaterPageGateFixtureProvider:
+    provider_name = "later-page-gate-fixture"
+
+    def __init__(self) -> None:
+        self.delegate = DeterministicPresentationAgentProvider()
+        self.inserted_p02_gate = False
+
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+    ) -> TextCompletion:
+        completion = self.delegate.complete(
+            messages,
+            response_format=response_format,
+            max_completion_tokens=max_completion_tokens,
+        )
+        payload = json.loads(completion.content)
+        if (
+            payload.get("terminationReason") == "p02-agent-authoring-complete"
+            and not self.inserted_p02_gate
+        ):
+            self.inserted_p02_gate = True
+            payload = {
+                "schemaVersion": 1,
+                "role": "executor",
+                "action": "tool",
+                "toolName": "run_svg_gate",
+                "arguments": {"pnn": "P02"},
+                "reason": "Verify the later page current hash before completion.",
+                "terminationReason": None,
+            }
+            rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            return TextCompletion(
+                content=rendered,
+                model=completion.model,
+                prompt_tokens=completion.prompt_tokens,
+                completion_tokens=max(1, len(rendered) // 4),
+            )
+        return completion
+
+
+def test_later_executor_page_may_run_bounded_page_local_svg_gate(tmp_path: Path) -> None:
+    workflow = _payload()
+    workflow["authoring"]["visualReviewRequired"] = True
+    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review@v1"
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    provider = _LaterPageGateFixtureProvider()
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        tmp_path / "later-page-gate_ppt169_20260823",
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    project = tmp_path / "later-page-gate_ppt169_20260823"
+    p02_gates = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if (
+            (record := json.loads(path.read_text(encoding="utf-8")))["toolName"] == "run_svg_gate"
+            and record["currentPnn"] == "P02"
+        )
+    ]
+
+    assert outcome["result"].status == "succeeded"
+    assert provider.inserted_p02_gate is True
+    assert len(p02_gates) == 1
+    assert p02_gates[0]["observation"]["report"]["passed"] is True
+    assert p02_gates[0]["observation"]["report"]["methodLevel"][0]["code"] == (
+        "SVG_PAGE_LOCAL_VALIDATED"
+    )
+
+
+def test_blocking_final_svg_gate_is_repaired_by_the_owned_page_agent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = _payload()
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    original_checker = workflow_module._run_final_svg_checker
+    checker_calls = 0
+
+    def injected_checker(
+        workspace_root: Path,
+        project: Path,
+        *,
+        allow_failure: bool = False,
+    ) -> dict[str, Any]:
+        nonlocal checker_calls
+        checker_calls += 1
+        if checker_calls == 1:
+            assert allow_failure is True
+            return {
+                "summary": {"errors": 1, "warnings": 0},
+                "categories": {
+                    "blocking": {
+                        "count": 1,
+                        "issues": [
+                            {
+                                "file": "slide_02.svg",
+                                "code": "TEXT_OVERFLOW",
+                                "message": "P02 body exceeds its owned content bounds.",
+                            }
+                        ],
+                    }
+                },
+                "files": [],
+                "_commandError": "fixture final SVG checker failed",
+            }
+        return original_checker(
+            workspace_root,
+            project,
+            allow_failure=allow_failure,
+        )
+
+    monkeypatch.setattr(workflow_module, "_run_final_svg_checker", injected_checker)
+    project = tmp_path / "final-svg-repair_ppt169_20260823"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+    )
+
+    repair_writes = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if (
+            (record := json.loads(path.read_text(encoding="utf-8")))["toolName"]
+            == "write_or_patch_slide_svg"
+            and record["currentPnn"] == "P02"
+            and record["stage"] == "svg-gate-repair"
+        )
+    ]
+    repair_gates = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if (
+            (record := json.loads(path.read_text(encoding="utf-8")))["toolName"] == "run_svg_gate"
+            and record["currentPnn"] == "P02"
+            and record["stage"] == "svg-gate-repair"
+        )
+    ]
+    receipt = json.loads(
+        (project / "validation" / "receipts" / "final-svg-gate.json").read_text(encoding="utf-8")
+    )
+
+    assert outcome["result"].status == "succeeded"
+    assert checker_calls == 2
+    assert len(repair_writes) == 1
+    assert len(repair_gates) == 1
+    assert repair_gates[0]["observation"]["report"]["passed"] is True
+    assert repair_writes[0]["authorAttempt"] == 2
+    assert repair_writes[0]["observation"]["authoringMode"] == "validated-direct-svg"
+    assert receipt["payload"]["blockingCount"] == 0
+    assert (project / "agent" / "phase-receipts" / "svg-gate-repair-r1-p02.json").is_file()
+
+
 class _VisualRepairFixtureProvider:
     provider_name = "visual-repair-fixture"
 
@@ -755,31 +891,71 @@ class _VisualRepairFixtureProvider:
         self.visual_calls += 1
         payload = json.loads(completion.content)
         if self.visual_calls == 1 or not self.clear_on_second_review:
+            pnn = "P02" if not self.clear_on_second_review and self.visual_calls == 2 else "P01"
             payload.update(
                 {
-                    "passed": False,
                     "issues": [
                         {
-                            "issueId": "VR01",
                             "category": "hierarchy",
                             "severity": "blocking",
-                            "scope": "page",
-                            "pnn": "P01",
-                            "owner": "executor",
-                            "message": "P01 headline and evidence panel have equal visual weight.",
-                            "region": "P01 title/evidence panel",
+                            "pnn": pnn,
+                            "message": (
+                                f"{pnn} headline and evidence panel have equal visual weight."
+                            ),
+                            "region": f"{pnn} title/evidence panel",
                             "suggestedAction": (
                                 "Strengthen the title-to-evidence hierarchy without changing copy."
                             ),
                         }
                     ],
-                    "summary": "P01 hierarchy blocks a clean visual reading order.",
                 }
             )
         rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         return TextCompletion(
             content=rendered,
             model="visual-repair-fixture@v1",
+            prompt_tokens=completion.prompt_tokens,
+            completion_tokens=max(1, len(rendered) // 4),
+        )
+
+
+class _DirectSvgVisualRepairFixtureProvider(_VisualRepairFixtureProvider):
+    """Named fixture retained to assert the Direct SVG-only repair path."""
+
+    def __init__(self, project: Path) -> None:
+        del project
+        super().__init__()
+
+
+class _PostVisualSvgRepairFixtureProvider(_VisualRepairFixtureProvider):
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+    ) -> TextCompletion:
+        completion = super().complete(
+            messages,
+            response_format=response_format,
+            max_completion_tokens=max_completion_tokens,
+        )
+        if not any(
+            "svg-gate-repair-post-visual" in str(message.get("content") or "")
+            for message in messages
+        ):
+            return completion
+        payload = json.loads(completion.content)
+        if payload.get("toolName") != "write_or_patch_slide_svg":
+            return completion
+        svg = str(payload["arguments"]["svg"])
+        payload["arguments"]["svg"] = svg.replace(
+            "<svg ", '<svg data-post-visual-repair="true" ', 1
+        )
+        rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        return TextCompletion(
+            content=rendered,
+            model="post-visual-svg-repair-fixture@v1",
             prompt_tokens=completion.prompt_tokens,
             completion_tokens=max(1, len(rendered) // 4),
         )
@@ -806,19 +982,22 @@ def test_visual_blocking_observation_repairs_owned_page_and_rereviews(
     project = tmp_path / "visual-repair_ppt169_20260818"
     result = outcome["result"]
     round_one = json.loads(
-        (project / "validation" / "visual-review-round-1.json").read_text(
-            encoding="utf-8"
-        )
+        (project / "validation" / "visual-review-round-1.json").read_text(encoding="utf-8")
     )
     final_review = json.loads(
         (project / "validation" / "visual-review.json").read_text(encoding="utf-8")
     )
-    scene = json.loads(
-        (project / "agent" / "scene-graphs" / "P01.json").read_text(encoding="utf-8")
-    )
-    stale = json.loads(
-        (project / "validation" / "agent-stale.json").read_text(encoding="utf-8")
-    )
+    repair_writes = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if (
+            (record := json.loads(path.read_text(encoding="utf-8")))["toolName"]
+            == "write_or_patch_slide_svg"
+            and record["currentPnn"] == "P01"
+            and record["stage"] == "visual-repair"
+        )
+    ]
+    stale = json.loads((project / "validation" / "agent-stale.json").read_text(encoding="utf-8"))
 
     assert result.status == "succeeded"
     assert provider.visual_calls == 2
@@ -827,26 +1006,141 @@ def test_visual_blocking_observation_repairs_owned_page_and_rereviews(
     assert final_review["passed"] is True
     assert final_review["reviewRound"] == 2
     assert VisualReviewReport.model_validate(final_review).passed is True
-    assert scene["authorAttempt"] == 2
+    assert len(repair_writes) == 1
+    assert repair_writes[0]["authorAttempt"] == 2
+    assert repair_writes[0]["observation"]["authoringMode"] == "validated-direct-svg"
     assert len(list((project / ".preview").glob("round-*/contact-sheet.png"))) == 2
     assert any(entry["pnn"] == "P01" for entry in stale["entries"])
     final_gate = json.loads(
-        (project / "validation" / "receipts" / "final-svg-gate.json").read_text(
-            encoding="utf-8"
-        )
+        (project / "validation" / "receipts" / "final-svg-gate.json").read_text(encoding="utf-8")
     )
     assert final_gate["payload"]["rerunAfterVisualRepairRound"] == 1
-    assert final_gate["subjectSha256"] != final_gate["payload"][
-        "stalePreviousSubjectSha256"
+    assert final_gate["subjectSha256"] != final_gate["payload"]["stalePreviousSubjectSha256"]
+
+
+def test_visual_repair_reruns_and_repairs_final_svg_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = _payload()
+    workflow["authoring"]["visualReviewRequired"] = True
+    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review@v1"
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    provider = _PostVisualSvgRepairFixtureProvider()
+    original_checker = workflow_module._run_final_svg_checker
+    checker_calls = 0
+
+    def injected_checker(
+        workspace_root: Path,
+        project: Path,
+        *,
+        allow_failure: bool = False,
+    ) -> dict[str, Any]:
+        nonlocal checker_calls
+        checker_calls += 1
+        if checker_calls == 2:
+            assert allow_failure is True
+            return {
+                "summary": {"errors": 1, "warnings": 0},
+                "categories": {
+                    "blocking": {
+                        "count": 1,
+                        "issues": [
+                            {
+                                "file": "slide_01.svg",
+                                "code": "TEXT_OVERFLOW",
+                                "message": "P01 visual repair pushed title beyond the canvas.",
+                            }
+                        ],
+                    }
+                },
+                "files": [],
+                "_commandError": "fixture post-visual SVG checker failed",
+            }
+        return original_checker(
+            workspace_root,
+            project,
+            allow_failure=allow_failure,
+        )
+
+    monkeypatch.setattr(workflow_module, "_run_final_svg_checker", injected_checker)
+    project = tmp_path / "visual-post-svg-repair_ppt169_20260826"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    assert outcome["result"].status == "succeeded"
+    assert checker_calls >= 3
+    phase_receipt = (
+        project / "agent" / "phase-receipts" / "svg-gate-repair-post-visual-v1-r1-p01.json"
+    )
+    assert phase_receipt.is_file()
+    repair_writes = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if (
+            (record := json.loads(path.read_text(encoding="utf-8")))["toolName"]
+            == "write_or_patch_slide_svg"
+            and record["currentPnn"] == "P01"
+            and record["stage"] == "svg-gate-repair"
+        )
     ]
+    assert len(repair_writes) == 1
 
 
-def test_visual_review_stops_without_export_when_round_two_remains_blocking(
+def test_visual_review_repairs_direct_svg_without_switching_authoring_mode(
     tmp_path: Path,
 ) -> None:
     workflow = _payload()
     workflow["authoring"]["visualReviewRequired"] = True
     workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review@v1"
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    project = tmp_path / "visual-repair-direct-svg_ppt169_20260825"
+    provider = _DirectSvgVisualRepairFixtureProvider(project)
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    assert outcome["result"].status == "succeeded"
+    assert provider.visual_calls == 2
+    render_round_one = json.loads(
+        (project / "validation" / "visual-render-round-1.json").read_text(encoding="utf-8")
+    )
+    assert {page["authoringMode"] for page in render_round_one["pages"]} == {"validated-direct-svg"}
+    writes = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+    ]
+    p01_writes = [
+        record
+        for record in writes
+        if record["toolName"] == "write_or_patch_slide_svg" and record["currentPnn"] == "P01"
+    ]
+    assert {record["stage"] for record in p01_writes} >= {"executor", "visual-repair"}
+    assert {record["observation"]["authoringMode"] for record in p01_writes} == {
+        "validated-direct-svg"
+    }
+
+
+def test_visual_review_stops_without_export_when_final_round_remains_blocking(
+    tmp_path: Path,
+) -> None:
+    workflow = _payload()
+    workflow["authoring"]["visualReviewRequired"] = True
+    workflow["authoring"]["visualReviewPolicyVersion"] = "visual-review-adaptive@v2"
+    workflow["authoring"]["visualReviewMaxRounds"] = 5
     workflow["production"]["visualReview"] = True
     workflow["runtime"]["allowSubagentReview"] = True
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
@@ -868,9 +1162,14 @@ def test_visual_review_stops_without_export_when_round_two_remains_blocking(
     assert result.status == "needs_manual"
     assert result.stage == "visual_review"
     assert [error.code for error in result.errors] == ["VISUAL_REVIEW_BLOCKING"]
-    assert provider.visual_calls == 2
-    assert final_review["reviewRound"] == 2
+    assert provider.visual_calls == 3
+    assert final_review["reviewRound"] == 1
     assert final_review["passed"] is False
+    decision = json.loads(
+        (project / "agent" / "visual-reviews" / "decision-round-3.json").read_text(encoding="utf-8")
+    )
+    assert decision["reason"] == "stalled-two-rounds"
+    assert decision["bestRound"] == 1
     assert not (project / "exports" / "deck.pptx").exists()
     assert not (project / "canonical-project-bundle.zip").exists()
     assert not (project / "validation" / "receipts" / "visual-review.json").exists()
@@ -911,13 +1210,9 @@ def test_deterministic_template_fallback_is_disclosed_without_agent_evidence(
     assert exit_code == 0, response.error.model_dump(mode="json") if response.error else response
     [project] = (tmp_path / "generated").glob("template-fallback_ppt169_*")
     result = json.loads((project / "workflow-result.json").read_text(encoding="utf-8"))
-    events = (project / "validation" / "workflow-events.jsonl").read_text(
-        encoding="utf-8"
-    )
+    events = (project / "validation" / "workflow-events.jsonl").read_text(encoding="utf-8")
     receipt = json.loads(
-        (project / "validation" / "receipts" / "first-page-gate.json").read_text(
-            encoding="utf-8"
-        )
+        (project / "validation" / "receipts" / "first-page-gate.json").read_text(encoding="utf-8")
     )
 
     assert result["status"] == "succeeded"

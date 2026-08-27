@@ -22,8 +22,8 @@ repository evidence. ProviderCall records retain a request hash, model, purpose,
 timing and token/image units rather than raw secret values or response bodies.
 
 When `PRESENTATION_AUTHORING_MODE=agent-authoring`, the private Provider Gateway also
-sends Kimi the approved snapshot intent, the exact approved source fragments needed for
-the current page, Page Blueprint/Design Spec constraints, bounded page-roster summaries,
+sends Kimi the approved snapshot intent, approved Outline, the approved source fragments,
+Design Spec/spec-lock constraints, bounded page-roster summaries,
 and sanitized checker/tool observations. Source text is untrusted data and cannot alter
 system instructions, tool permissions, research policy, or credential access. A visual
 review turn sends rendered slide PNGs/contact sheets plus their hash-bound review context

@@ -24,7 +24,18 @@ class PlanningSchemaError(RuntimeError):
 
 
 class PlanningUnavailableError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        upstream_status: int | None = None,
+        upstream_code: str | None = None,
+        failure_kind: str | None = None,
+    ) -> None:
+        self.upstream_status = upstream_status
+        self.upstream_code = upstream_code
+        self.failure_kind = failure_kind
+        super().__init__(message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +207,17 @@ def _post_json(url: str, payload: bytes, headers: dict[str, str], timeout: float
     return decoded
 
 
+def _gateway_failure(exc: error.HTTPError) -> dict[str, Any]:
+    try:
+        raw = exc.read(64 * 1024 + 1)
+        if len(raw) > 64 * 1024:
+            return {}
+        decoded = json.loads(raw)
+        return decoded if isinstance(decoded, dict) else {}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+
+
 class RemotePlanningGateway:
     """Synchronous API facade over the internal, secret-holding Provider service."""
 
@@ -205,8 +227,10 @@ class RemotePlanningGateway:
         *,
         sender: Any = _post_json,
     ) -> None:
-        if settings.backend != "kimi":
-            raise ValueError("RemotePlanningGateway requires PLANNING_BACKEND=kimi")
+        if settings.backend not in {"kimi", "qwen"}:
+            raise ValueError(
+                "RemotePlanningGateway requires PLANNING_BACKEND=kimi or qwen"
+            )
         if not settings.gateway_url.startswith(("http://", "https://")):
             raise ValueError("PROVIDER_GATEWAY_URL must be an HTTP(S) URL")
         if not settings.gateway_token:
@@ -246,7 +270,22 @@ class RemotePlanningGateway:
             )
         except error.HTTPError as exc:
             if exc.code in {502, 503, 504}:
-                raise PlanningUnavailableError("live planning provider is unavailable") from exc
+                failure = _gateway_failure(exc)
+                upstream_status = failure.get("upstreamStatus")
+                upstream_code = failure.get("upstreamCode")
+                failure_kind = failure.get("failureKind")
+                if not isinstance(upstream_status, int):
+                    upstream_status = None
+                if not isinstance(upstream_code, str):
+                    upstream_code = None
+                if not isinstance(failure_kind, str):
+                    failure_kind = None
+                raise PlanningUnavailableError(
+                    "live planning provider is unavailable",
+                    upstream_status=upstream_status,
+                    upstream_code=upstream_code,
+                    failure_kind=failure_kind,
+                ) from exc
             raise PlanningSchemaError("provider gateway rejected the planning request") from exc
         except (error.URLError, TimeoutError) as exc:
             raise PlanningUnavailableError("provider gateway is unavailable") from exc
@@ -288,6 +327,6 @@ def create_planning_gateway(
     resolved = settings or PlanningGatewaySettings.from_env()
     if resolved.backend == "fake":
         return DeterministicPlanningGateway()
-    if resolved.backend == "kimi":
+    if resolved.backend in {"kimi", "qwen"}:
         return RemotePlanningGateway(resolved)
-    raise ValueError("PLANNING_BACKEND must be fake or kimi")
+    raise ValueError("PLANNING_BACKEND must be fake, kimi, or qwen")

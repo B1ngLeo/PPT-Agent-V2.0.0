@@ -123,6 +123,29 @@
         "failed": [],
         "cancelled": []
       }
+    },
+    "planning": {
+      "initial": "queued",
+      "terminal": [
+        "succeeded",
+        "failed"
+      ],
+      "transitions": {
+        "queued": [
+          "running"
+        ],
+        "running": [
+          "retrying",
+          "succeeded",
+          "failed"
+        ],
+        "retrying": [
+          "running",
+          "failed"
+        ],
+        "succeeded": [],
+        "failed": []
+      }
     }
   },
   "jobEventStatusMap": {

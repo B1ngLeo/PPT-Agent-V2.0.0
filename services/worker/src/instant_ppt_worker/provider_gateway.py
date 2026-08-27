@@ -12,7 +12,7 @@ from typing import Any
 
 from instant_ppt_domain.runtime_contract import RuntimeIdentity
 
-from instant_ppt_worker.planning import KimiPlanningService
+from instant_ppt_worker.planning import PlanningService
 from instant_ppt_worker.providers import (
     ProviderConfigurationError,
     ProviderRequestError,
@@ -41,12 +41,19 @@ class ProviderGatewayHandler(BaseHTTPRequestHandler):
         encoded = json.dumps(
             body, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(encoded)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(encoded)
+        except (BrokenPipeError, ConnectionResetError):
+            logger.info(
+                "provider_gateway_client_disconnected path=%s status=%s",
+                self.path,
+                status,
+            )
 
     def _authorized(self) -> bool:
         expected = os.getenv("PROVIDER_GATEWAY_TOKEN", "")
@@ -77,7 +84,7 @@ class ProviderGatewayHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
                 raise ValueError("request must be an object")
-            service = KimiPlanningService.from_env()
+            service = PlanningService.from_env()
             try:
                 if self.path == "/internal/v1/planning/intent":
                     value = service.infer_intent(
@@ -94,6 +101,11 @@ class ProviderGatewayHandler(BaseHTTPRequestHandler):
                         target_slide_id=(
                             str(payload["targetSlideId"])
                             if payload.get("targetSlideId")
+                            else None
+                        ),
+                        source_context=(
+                            dict(payload["sourceContext"])
+                            if payload.get("sourceContext")
                             else None
                         ),
                     )
@@ -114,14 +126,25 @@ class ProviderGatewayHandler(BaseHTTPRequestHandler):
         except ProviderRequestError as error:
             logger.warning(
                 "provider_gateway_request_failed path=%s provider=%s status=%s "
-                "request_id=%s failure_kind=%s",
+                "request_id=%s failure_kind=%s upstream_code=%s",
                 self.path,
                 error.provider,
                 error.status_code,
                 error.request_id,
                 error.failure_kind,
+                error.upstream_code,
             )
-            self._write(HTTPStatus.BAD_GATEWAY, {"error": "provider_request_failed"})
+            body: dict[str, Any] = {
+                "error": "provider_request_failed",
+                "provider": error.provider,
+                "failureKind": error.failure_kind,
+                "retryable": bool(error.retryable),
+            }
+            if error.status_code is not None:
+                body["upstreamStatus"] = error.status_code
+            if error.upstream_code:
+                body["upstreamCode"] = error.upstream_code
+            self._write(HTTPStatus.BAD_GATEWAY, body)
 
     def log_message(self, format: str, *args: object) -> None:
         # Do not emit prompts, authorization headers, or Provider response bodies.

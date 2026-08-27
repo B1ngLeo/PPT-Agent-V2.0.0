@@ -52,12 +52,14 @@ WORKFLOW_TRANSITIONS: dict[str, frozenset[str]] = {
     "awaiting_stage1_confirmation": frozenset({"running", "cancel_requested", "failed"}),
     "template_handoff_ready": frozenset({"running", "cancel_requested", "failed"}),
     "awaiting_stage2_confirmation": frozenset({"running", "cancel_requested", "failed"}),
+    "awaiting_design_confirmation": frozenset(
+        {"running", "design_confirmed", "cancel_requested", "failed"}
+    ),
+    "design_confirmed": frozenset({"running", "cancel_requested", "failed"}),
     "final_confirmed": frozenset(
         {"running", "awaiting_refine_spec_approval", "cancel_requested", "failed"}
     ),
-    "awaiting_refine_spec_approval": frozenset(
-        {"running", "cancel_requested", "failed"}
-    ),
+    "awaiting_refine_spec_approval": frozenset({"running", "cancel_requested", "failed"}),
     "cancel_requested": frozenset({"cancelled"}),
     "needs_manual": frozenset({"running", "cancel_requested", "failed"}),
     "partially_succeeded": frozenset(),
@@ -103,7 +105,6 @@ def validate_stage_entry(
     receipts: Mapping[str, Mapping[str, str]],
     *,
     request_sha256: str,
-    page_blueprint_sha256: str | None = None,
     design_spec_sha256: str | None = None,
     spec_lock_sha256: str | None = None,
     final_svg_sha256: str | None = None,
@@ -127,18 +128,16 @@ def validate_stage_entry(
     if WORKFLOW_STAGES.index(next_stage) >= WORKFLOW_STAGES.index("design_spec_gate1"):
         validate_receipt(receipts, "stage2-confirmation", subject_sha256=request_sha256)
     if WORKFLOW_STAGES.index(next_stage) > WORKFLOW_STAGES.index("design_spec_gate1"):
-        if page_blueprint_sha256 is None:
-            raise WorkflowTransitionError("page blueprint is required")
-        validate_receipt(
-            receipts,
-            "page-blueprint-gate",
-            subject_sha256=page_blueprint_sha256,
-        )
         if design_spec_sha256 is None:
             raise WorkflowTransitionError("design spec is required")
         validate_receipt(
             receipts,
             "design-spec-gate1",
+            subject_sha256=design_spec_sha256,
+        )
+        validate_receipt(
+            receipts,
+            "design-confirmation",
             subject_sha256=design_spec_sha256,
         )
     if refine_spec and WORKFLOW_STAGES.index(next_stage) >= WORKFLOW_STAGES.index(

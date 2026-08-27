@@ -650,6 +650,68 @@ def set_slide_stage(
     return slide
 
 
+def report_slide_authored(
+    session: Session,
+    job_id: str,
+    slide_id: str,
+    worker_id: str,
+    *,
+    render_sha256: str,
+    authoring_mode: str,
+) -> GenerationJobSlide:
+    """Persist live page-authoring progress before whole-deck QA finishes.
+
+    A real Agent workflow authors every SVG inside a supervised child process.
+    Publication remains gated on deck QA, but the website should not report
+    ``0/N`` while those owned SVGs already exist.  The first observation for a
+    page advances the progress counter; later repair observations only refresh
+    its render fingerprint.
+    """
+
+    job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id).with_for_update())
+    if job is None:
+        raise ResourceNotFound(f"generation job not found: {job_id}")
+    if job.lease_owner != worker_id:
+        raise LeaseConflict(f"worker does not own job lease: {job_id}")
+    slide = session.scalar(
+        select(GenerationJobSlide)
+        .where(GenerationJobSlide.job_id == job_id, GenerationJobSlide.slide_id == slide_id)
+        .with_for_update()
+    )
+    if slide is None:
+        raise ResourceNotFound(f"generation slide not found: {slide_id}")
+    if slide.status in {"ready", "failed", "cancelled"}:
+        return slide
+    if slide.status in {"pending", "retrying"}:
+        validate_slide_transition(slide.status, "running")
+        slide.status = "running"
+        slide.attempt += 1
+    first_authored_observation = slide.render_sha256 is None
+    slide.stage = "rendering"
+    slide.render_sha256 = render_sha256
+    slide.qa_report = {
+        **dict(slide.qa_report or {}),
+        "authoringMode": authoring_mode,
+        "authoringStatus": "svg-authored-awaiting-deck-qa",
+    }
+    slide.error_code = None
+    slide.lock_version += 1
+    if first_authored_observation:
+        job.progress_completed = min(job.progress_total, job.progress_completed + 1)
+    _append_event(
+        session,
+        job,
+        "slide.authored" if first_authored_observation else "slide.revised",
+        slide=slide,
+        data={
+            "renderSha256": render_sha256,
+            "authoringMode": authoring_mode,
+            "awaitingDeckQa": True,
+        },
+    )
+    return slide
+
+
 def start_next_slide(session: Session, job_id: str, worker_id: str) -> SlideStart | None:
     job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id).with_for_update())
     if job is None:
@@ -722,6 +784,7 @@ def complete_slide(
     if slide.status in {"ready", "failed", "cancelled"}:
         return slide
     target = "ready" if succeeded else "failed"
+    already_counted_as_authored = slide.render_sha256 is not None
     validate_slide_transition(slide.status, target)
     slide.status = target
     slide.stage = "qa"
@@ -733,7 +796,8 @@ def complete_slide(
         )
         slide.render_sha256 = render_sha256
         slide.error_code = None
-        job.progress_completed += 1
+        if not already_counted_as_authored:
+            job.progress_completed += 1
         _append_event(
             session,
             job,

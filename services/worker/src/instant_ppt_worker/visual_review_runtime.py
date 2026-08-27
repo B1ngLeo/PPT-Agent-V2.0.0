@@ -8,18 +8,47 @@ import io
 import json
 import math
 import os
+import re
 import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+import resvg_py
+from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from instant_ppt_worker.presentation_agent_tools import SceneNode, SlideSceneGraph
-from instant_ppt_worker.presentation_blueprint import canonical_sha256
-from instant_ppt_worker.providers import ProviderRequestError, TextProvider
+from instant_ppt_worker.canonical import canonical_sha256
+from instant_ppt_worker.providers import TextProvider
 from instant_ppt_worker.workflow_models import WorkflowRequestV2
+
+VISUAL_REVIEW_MAX_COMPLETION_TOKENS = 40_000
+VISUAL_REVIEW_MAX_PAGES_PER_BATCH = 2
+_NOTO_FONT_ROOT = Path("/usr/share/fonts")
+_NOTO_SANS_REGULAR = Path(
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+)
+_NOTO_SANS_BOLD = Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc")
+_NOTO_SERIF_REGULAR = Path(
+    "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc"
+)
+
+
+def _visual_review_completion_limit(runtime_limit: int) -> int:
+    """Keep multimodal review bounded without constraining SVG authoring turns."""
+
+    return min(runtime_limit, VISUAL_REVIEW_MAX_COMPLETION_TOKENS)
+
+
+def _visual_review_page_batches(
+    pages: list[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    """Bound each multimodal call while retaining contact-sheet deck context."""
+
+    return [
+        pages[index : index + VISUAL_REVIEW_MAX_PAGES_PER_BATCH]
+        for index in range(0, len(pages), VISUAL_REVIEW_MAX_PAGES_PER_BATCH)
+    ]
 
 
 class VisualReviewContract(BaseModel):
@@ -35,6 +64,7 @@ class VisualReviewContract(BaseModel):
 
 class VisualReviewFinding(VisualReviewContract):
     issue_id: str = Field(pattern=r"^VR\d{2,3}$")
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
     category: Literal[
         "hierarchy",
         "density-whitespace",
@@ -61,10 +91,180 @@ class VisualReviewFinding(VisualReviewContract):
         return self
 
 
+class VisualReviewModelFinding(VisualReviewContract):
+    """Minimal subjective finding returned by the multimodal model."""
+
+    category: Literal[
+        "hierarchy",
+        "density-whitespace",
+        "alignment-rhythm-balance",
+        "consecutive-repetition",
+        "content-visual-fit",
+        "image-crop-contrast-readability",
+        "deck-consistency",
+    ]
+    severity: Literal["blocking", "advisory"]
+    pnn: str | None = Field(default=None, pattern=r"^P\d{2,3}$")
+    message: str = Field(min_length=1, max_length=1000)
+    region: str = Field(min_length=1, max_length=300)
+    suggested_action: str = Field(min_length=1, max_length=1000)
+
+
+class VisualReviewModelResult(VisualReviewContract):
+    """Strict model-facing contract; provenance is attached by the runtime."""
+
+    issues: list[VisualReviewModelFinding] = Field(default_factory=list, max_length=80)
+
+
+VISUAL_REVIEW_HARD_MAX_ROUNDS = 5
+_MATERIAL_ADVISORY_MARKERS = (
+    "excessive",
+    "unbalanced",
+    "inconsistent footer",
+    "pagination",
+    "page number",
+    "disproportionately",
+    "truncated",
+    "incomplete",
+    "clipped",
+    "overlap",
+    "过多留白",
+    "失衡",
+    "页脚不一致",
+    "页码",
+    "截断",
+    "重叠",
+)
+
+
+def effective_visual_severity(finding: VisualReviewModelFinding) -> str:
+    """Promote delivery-impacting advisories so the adaptive loop repairs them."""
+
+    if finding.severity == "blocking":
+        return "blocking"
+    message = f"{finding.message} {finding.region} {finding.suggested_action}".casefold()
+    if finding.category == "deck-consistency":
+        return "blocking"
+    if any(marker in message for marker in _MATERIAL_ADVISORY_MARKERS):
+        return "blocking"
+    return "advisory"
+
+
+def visual_finding_fingerprint(
+    *, category: str, scope: str, pnn: str | None, region: str
+) -> str:
+    """Return a cross-round identity that ignores mutable reviewer wording."""
+
+    normalized_region = re.sub(r"\s+", " ", region).strip().casefold()
+    return canonical_sha256(
+        {
+            "category": category,
+            "scope": scope,
+            "pnn": pnn,
+            "region": normalized_region,
+        }
+    )
+
+
+def visual_review_metrics(
+    report: dict[str, Any], roster: Iterable[str]
+) -> dict[str, Any]:
+    """Build an explainable, lexicographically ordered quality measurement."""
+
+    roster_values = list(roster)
+    blocking = [issue for issue in report.get("issues") or [] if issue["severity"] == "blocking"]
+    advisory_count = sum(
+        1 for issue in report.get("issues") or [] if issue["severity"] == "advisory"
+    )
+    affected: set[str] = set()
+    for issue in blocking:
+        if issue.get("scope") == "deck":
+            affected.update(roster_values)
+        elif issue.get("pnn"):
+            affected.add(str(issue["pnn"]))
+    quality_key = [len(blocking), len(affected), advisory_count]
+    return {
+        "blockingCount": quality_key[0],
+        "affectedPageCount": quality_key[1],
+        "advisoryCount": quality_key[2],
+        "score": quality_key[0] * 10_000 + quality_key[1] * 100 + quality_key[2],
+        "qualityKey": quality_key,
+        "blockingFingerprints": sorted(
+            str(issue["fingerprint"]) for issue in blocking if issue.get("fingerprint")
+        ),
+    }
+
+
+def adaptive_visual_review_decision(
+    *,
+    review_round: int,
+    max_rounds: int,
+    metrics_history: list[dict[str, Any]],
+    current_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    """Choose pass, repair, rollback, or bounded manual handoff from quality progress."""
+
+    if not 1 <= max_rounds <= VISUAL_REVIEW_HARD_MAX_ROUNDS:
+        raise ValueError("visual review max rounds must be between one and five")
+    all_metrics = [*metrics_history, current_metrics]
+    best_index = min(
+        range(len(all_metrics)), key=lambda index: tuple(all_metrics[index]["qualityKey"])
+    )
+    best_round = best_index + 1
+    if current_metrics["blockingCount"] == 0:
+        return {
+            "decision": "pass",
+            "reason": "zero-blocking",
+            "bestRound": best_round,
+            "stagnationCount": 0,
+        }
+    if review_round >= max_rounds:
+        return {
+            "decision": "needs-manual",
+            "reason": "max-rounds",
+            "bestRound": best_round,
+            "stagnationCount": 0,
+        }
+    if metrics_history:
+        best_previous_key = min(
+            tuple(item["qualityKey"]) for item in metrics_history
+        )
+        current_key = tuple(current_metrics["qualityKey"])
+        if current_key > best_previous_key:
+            return {
+                "decision": "rollback-needs-manual",
+                "reason": "quality-regressed",
+                "bestRound": best_round,
+                "stagnationCount": 1,
+            }
+        stagnation_count = 0
+        for index in range(len(all_metrics) - 1, 0, -1):
+            if tuple(all_metrics[index]["qualityKey"]) < tuple(
+                all_metrics[index - 1]["qualityKey"]
+            ):
+                break
+            stagnation_count += 1
+        if stagnation_count >= 2:
+            return {
+                "decision": "needs-manual",
+                "reason": "stalled-two-rounds",
+                "bestRound": best_round,
+                "stagnationCount": stagnation_count,
+            }
+    else:
+        stagnation_count = 0
+    return {
+        "decision": "repair",
+        "reason": "blocking-with-progress-budget",
+        "bestRound": best_round,
+        "stagnationCount": stagnation_count,
+    }
+
+
 class VisualReviewReport(VisualReviewContract):
     schema_version: Literal[1] = 1
     workflow_run_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
-    review_round: int = Field(ge=1, le=2)
+    review_round: int = Field(ge=1, le=VISUAL_REVIEW_HARD_MAX_ROUNDS)
     subject_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     render_set_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     contact_sheet_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -83,8 +283,104 @@ class VisualReviewReport(VisualReviewContract):
         return self
 
 
+def _materialize_batch_report(
+    model_result: VisualReviewModelResult,
+    *,
+    context: dict[str, Any],
+    batch_roster: list[str],
+) -> VisualReviewReport:
+    """Attach deterministic IDs, ownership, provenance, and pass/fail state."""
+
+    findings: list[dict[str, Any]] = []
+    for index, finding in enumerate(model_result.issues, start=1):
+        scope = "deck" if finding.pnn is None else "page"
+        fingerprint = visual_finding_fingerprint(
+            category=finding.category,
+            scope=scope,
+            pnn=finding.pnn,
+            region=finding.region,
+        )
+        findings.append(
+            {
+                "issueId": f"VR{index:03d}",
+                "fingerprint": fingerprint,
+                "category": finding.category,
+                "severity": effective_visual_severity(finding),
+                "scope": scope,
+                "pnn": finding.pnn,
+                "owner": "strategist" if scope == "deck" else "executor",
+                "message": finding.message,
+                "region": finding.region,
+                "suggestedAction": finding.suggested_action,
+            }
+        )
+    blocking = any(finding["severity"] == "blocking" for finding in findings)
+    summary = (
+        f"Detected {len(findings)} visual finding(s) in batch "
+        f"{', '.join(batch_roster)}."
+        if findings
+        else f"No visual findings detected in batch {', '.join(batch_roster)}."
+    )
+    return VisualReviewReport.model_validate(
+        {
+            "schemaVersion": 1,
+            "workflowRunId": context["workflowRunId"],
+            "reviewRound": context["reviewRound"],
+            "subjectSha256": context["subjectSha256"],
+            "renderSetSha256": context["renderSetSha256"],
+            "contactSheetSha256": context["contactSheetSha256"],
+            "passed": not blocking,
+            "issues": findings,
+            "summary": summary,
+        }
+    )
+
+
 class VisualReviewError(RuntimeError):
     pass
+
+
+def _merge_visual_review_reports(
+    reports: list[VisualReviewReport],
+    *,
+    context: dict[str, Any],
+) -> VisualReviewReport:
+    """Merge batch reports into one hash-bound deck report with stable issue IDs."""
+
+    unique_findings: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for report in reports:
+        for finding in report.issues:
+            payload = finding.model_dump(by_alias=True, mode="json")
+            identity = finding.fingerprint
+            if identity in seen:
+                continue
+            seen.add(identity)
+            unique_findings.append(payload)
+    if len(unique_findings) > 80:
+        raise VisualReviewError("batched visual review returned more than 80 unique issues")
+    for index, finding in enumerate(unique_findings, start=1):
+        finding["issueId"] = f"VR{index:03d}"
+    blocking = any(
+        finding["severity"] == "blocking" for finding in unique_findings
+    )
+    summary = " | ".join(
+        f"Batch {index}: {report.summary}"
+        for index, report in enumerate(reports, start=1)
+    )[:2000]
+    return VisualReviewReport.model_validate(
+        {
+            "schemaVersion": 1,
+            "workflowRunId": context["workflowRunId"],
+            "reviewRound": context["reviewRound"],
+            "subjectSha256": context["subjectSha256"],
+            "renderSetSha256": context["renderSetSha256"],
+            "contactSheetSha256": context["contactSheetSha256"],
+            "passed": not blocking,
+            "issues": unique_findings,
+            "summary": summary or "Batched visual review completed.",
+        }
+    )
 
 
 def _sha_file(path: Path) -> str:
@@ -124,165 +420,60 @@ def _font(size: float, *, bold: bool = False) -> ImageFont.FreeTypeFont | ImageF
     return ImageFont.load_default(size=pixel_size)
 
 
-def _color(value: str, fallback: str = "#000000") -> tuple[int, int, int, int] | None:
-    if value == "none":
-        return None
-    try:
-        rgb = ImageColor.getrgb(value)
-    except ValueError:
-        rgb = ImageColor.getrgb(fallback)
-    return (*rgb[:3], 255)
+def _render_svg(svg_path: Path, target: Path) -> None:
+    """Rasterize the final SVG, which is the visual-review source of truth."""
 
-
-def _draw_node(
-    image: Image.Image,
-    draw: ImageDraw.ImageDraw,
-    node: SceneNode,
-    project: Path,
-) -> None:
-    box = (node.x, node.y, node.x + node.width, node.y + node.height)
-    if node.kind == "group":
-        for child in node.children:
-            _draw_node(image, draw, child, project)
-        return
-    if node.kind == "shape":
-        fill = _color(node.fill)
-        outline = _color(node.stroke)
-        width = max(1, round(node.stroke_width)) if outline else 0
-        if node.shape == "ellipse":
-            draw.ellipse(box, fill=fill, outline=outline, width=width)
-        elif node.shape == "line":
-            draw.line(box, fill=outline or fill or (0, 0, 0, 255), width=width)
-        elif node.shape == "round-rect":
-            draw.rounded_rectangle(
-                box,
-                radius=min(20, node.height / 4),
-                fill=fill,
-                outline=outline,
-                width=width,
-            )
-        else:
-            draw.rectangle(box, fill=fill, outline=outline, width=width)
-        return
-    if node.kind == "text":
-        font = _font(node.font_size, bold=node.font_weight >= 600)
-        anchor = {"start": "la", "middle": "ma", "end": "ra"}[node.text_anchor]
-        draw.multiline_text(
-            (node.x, node.y),
-            str(node.text),
-            fill=_color(node.text_color) or (0, 0, 0, 255),
-            font=font,
-            spacing=max(2, round(node.font_size * 0.25)),
-            anchor=anchor,
-        )
-        return
-    if node.kind == "image":
-        source = (project / "svg_output" / str(node.href)).resolve()
-        with Image.open(source) as opened:
-            visual = opened.convert("RGBA")
-            target = (max(1, round(node.width)), max(1, round(node.height)))
-            if node.crop == "contain":
-                visual.thumbnail(target, Image.Resampling.LANCZOS)
-                offset = (
-                    round(node.x + (node.width - visual.width) / 2),
-                    round(node.y + (node.height - visual.height) / 2),
-                )
-            else:
-                scale = max(target[0] / visual.width, target[1] / visual.height)
-                visual = visual.resize(
-                    (math.ceil(visual.width * scale), math.ceil(visual.height * scale)),
-                    Image.Resampling.LANCZOS,
-                )
-                left = max(0, (visual.width - target[0]) // 2)
-                top = max(0, (visual.height - target[1]) // 2)
-                visual = visual.crop((left, top, left + target[0], top + target[1]))
-                offset = (round(node.x), round(node.y))
-            image.alpha_composite(visual, offset)
-        return
-    if node.kind == "chart" and node.chart is not None:
-        draw.rounded_rectangle(
-            box,
-            radius=12,
-            fill=_color(node.fill),
-            outline=_color(node.stroke),
-            width=1,
-        )
-        values = [point.value for point in node.chart.values]
-        maximum = max(1.0, max(values))
-        gap = max(1.0, (node.width - 96) / len(values))
-        for index, point in enumerate(node.chart.values):
-            height = max(1.0, (node.height - 120) * max(0, point.value) / maximum)
-            x = node.x + 56 + index * gap + gap * 0.2
-            y = node.y + node.height - 64 - height
-            draw.rounded_rectangle(
-                (x, y, x + gap * 0.6, y + height),
-                radius=5,
-                fill=_color("#2563EB" if index == 0 else "#0F766E"),
-            )
-            draw.text(
-                (x + gap * 0.3, node.y + node.height - 42),
-                point.label,
-                font=_font(13),
-                fill=_color("#334155"),
-                anchor="ma",
-            )
-        return
-    if node.kind == "table" and node.table is not None:
-        rows = [node.table.columns, *node.table.rows]
-        cell_width = node.width / len(node.table.columns)
-        cell_height = node.height / len(rows)
-        for row_index, row in enumerate(rows):
-            for column_index, value in enumerate(row):
-                cell = (
-                    node.x + column_index * cell_width,
-                    node.y + row_index * cell_height,
-                    node.x + (column_index + 1) * cell_width,
-                    node.y + (row_index + 1) * cell_height,
-                )
-                draw.rectangle(
-                    cell,
-                    fill=_color("#E2E8F0" if row_index == 0 else "#FFFFFF"),
-                    outline=_color("#CBD5E1"),
-                    width=1,
-                )
-                draw.text(
-                    (cell[0] + 8, cell[1] + 8),
-                    value,
-                    font=_font(14, bold=row_index == 0),
-                    fill=_color("#1E293B"),
-                )
-
-
-def _render_scene_graph(project: Path, scene_path: Path, target: Path) -> None:
-    graph = SlideSceneGraph.model_validate_json(scene_path.read_text(encoding="utf-8"))
-    image = Image.new("RGBA", (1280, 720), _color(graph.background) or (255, 255, 255, 255))
-    draw = ImageDraw.Draw(image)
-    for node in graph.nodes:
-        _draw_node(image, draw, node, project)
     target.parent.mkdir(parents=True, exist_ok=True)
-    image.convert("RGB").save(target, format="PNG", optimize=True)
+    font_options: dict[str, Any] = {}
+    noto_files = [
+        path
+        for path in (_NOTO_SANS_REGULAR, _NOTO_SANS_BOLD, _NOTO_SERIF_REGULAR)
+        if path.is_file()
+    ]
+    if noto_files:
+        # Authored SVGs intentionally use a portable stack such as
+        # ``Microsoft YaHei, Arial, sans-serif``.  resvg does not reliably
+        # advance from missing named families to its generic Linux fallback,
+        # so explicitly bind the generic families to the CJK pack installed in
+        # the worker image.  Without this, review PNGs contain the layout
+        # geometry but silently lose every text node.
+        font_options = {
+            "font_dirs": [str(_NOTO_FONT_ROOT)],
+            "font_files": [str(path) for path in noto_files],
+            "sans_serif_family": "Noto Sans CJK SC",
+            "serif_family": "Noto Serif CJK SC",
+        }
+    try:
+        target.write_bytes(
+            resvg_py.svg_to_bytes(
+                svg_path=str(svg_path),
+                resources_dir=str(svg_path.parent),
+                width=1280,
+                height=720,
+                background="#FFFFFF",
+                **font_options,
+            )
+        )
+    except Exception as error:  # resvg exposes backend-specific exception types.
+        raise VisualReviewError(f"unable to render {svg_path.name}: {error}") from error
 
 
 def render_visual_assets(project: Path, *, review_round: int) -> dict[str, Any]:
     preview = project / ".preview" / f"round-{review_round}"
     preview.mkdir(parents=True, exist_ok=True)
-    scene_paths = sorted((project / "agent" / "scene-graphs").glob("P*.json"))
     svg_paths = sorted((project / "svg_output").glob("slide_*.svg"))
-    if len(scene_paths) != len(svg_paths) or not svg_paths:
-        raise VisualReviewError(
-            "visual review requires one current Scene Graph for every approved SVG page"
-        )
+    if not svg_paths:
+        raise VisualReviewError("visual review requires at least one approved SVG page")
     records: list[dict[str, Any]] = []
-    for index, (scene_path, svg_path) in enumerate(
-        zip(scene_paths, svg_paths, strict=True), start=1
-    ):
+    for index, svg_path in enumerate(svg_paths, start=1):
+        pnn = f"P{index:02d}"
         target = preview / f"slide_{index:02d}.png"
-        _render_scene_graph(project, scene_path, target)
+        _render_svg(svg_path, target)
         records.append(
             {
-                "pnn": f"P{index:02d}",
+                "pnn": pnn,
                 "svgSha256": _sha_file(svg_path),
-                "sceneGraphSha256": _sha_file(scene_path),
+                "authoringMode": "validated-direct-svg",
                 "pngKey": target.relative_to(project).as_posix(),
                 "pngSha256": _sha_file(target),
                 "bytes": target.stat().st_size,
@@ -302,6 +493,7 @@ def render_visual_assets(project: Path, *, review_round: int) -> dict[str, Any]:
     }
     payload["receiptSha256"] = canonical_sha256(payload)
     path = project / "validation" / f"visual-render-round-{review_round}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
         encoding="utf-8",
@@ -385,87 +577,126 @@ def review_visual_assets(
             "deck-consistency",
         ],
     }
-    schema = VisualReviewReport.model_json_schema(by_alias=True)
-    content: list[dict[str, Any]] = [
-        {
-            "type": "text",
-            "text": (
-                "Review the contact sheet and every page image. Return only strict JSON. "
-                "Do not edit slides. A successful report has zero blocking issues. "
-                f"reviewContext={json.dumps(context, ensure_ascii=False, separators=(',', ':'))}; "
-                f"schema={json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
-            ),
-        },
-        _review_image_part(project / render_set["contactSheetKey"]),
-    ]
-    content.extend(
-        _review_image_part(project / page["pngKey"]) for page in render_set["pages"]
-    )
-    messages: list[dict[str, Any]] = [
-        {
-            "role": "system",
-            "content": (
-                "You are the read-only Visual Review Agent. Inspect rendered pixels against "
-                "the supplied rubric. Never author or patch SVG, never invent source facts, and "
-                "return only VisualReviewReport v1 JSON."
-            ),
-        },
-        {"role": "user", "content": content},
-    ]
-    prompt_sha256 = canonical_sha256(messages)
+    schema = VisualReviewModelResult.model_json_schema(by_alias=True)
+    schema_json = json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
+    page_batches = _visual_review_page_batches(list(render_set["pages"]))
+    if not page_batches:
+        raise VisualReviewError("visual review requires at least one rendered page")
+    batch_prompt_sha256s: list[str] = []
+    batch_report_payloads: list[dict[str, Any]] = []
+    batch_reports: list[VisualReviewReport] = []
     total_input = 0
     total_output = 0
     elapsed = 0.0
-    report: VisualReviewReport | None = None
     completion_model = request.versions.model
-    last_error = "invalid visual review output"
-    for repair_count in range(max_schema_repairs + 1):
-        started = time.monotonic()
-        completion = provider.complete(
-            messages,
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "visual_review", "schema": schema},
-            },
-            max_completion_tokens=request.runtime.max_completion_tokens_per_turn,
+    schema_repair_count = 0
+    for batch_index, batch_pages in enumerate(page_batches, start=1):
+        batch_roster = [page["pnn"] for page in batch_pages]
+        batch_context = {
+            "batchIndex": batch_index,
+            "batchCount": len(page_batches),
+            "batchRoster": batch_roster,
+            "deckRoster": roster,
+            "rubric": context["rubric"],
+        }
+        batch_context_json = json.dumps(
+            batch_context, ensure_ascii=False, separators=(",", ":")
         )
-        elapsed += max(0.0, time.monotonic() - started)
-        total_input += completion.prompt_tokens
-        total_output += completion.completion_tokens
-        completion_model = completion.model
-        try:
-            decoded = json.loads(completion.content)
-            report = VisualReviewReport.model_validate(decoded)
-            if (
-                report.workflow_run_id != request.workflow_run_id
-                or report.review_round != review_round
-                or report.subject_sha256 != subject_sha256
-                or report.render_set_sha256 != render_set["renderSetSha256"]
-                or report.contact_sheet_sha256 != render_set["contactSheetSha256"]
-                or any(issue.pnn not in roster for issue in report.issues if issue.pnn)
-            ):
-                raise ValueError("visual review ownership/hash/roster does not match the request")
-            break
-        except (json.JSONDecodeError, ValidationError, ValueError) as error:
-            last_error = str(error)[:500]
-            if repair_count >= max_schema_repairs:
-                raise ProviderRequestError(
-                    "visual-review-structured-output", None, None
-                ) from error
-            messages.extend(
-                [
-                    {"role": "assistant", "content": completion.content},
-                    {
-                        "role": "user",
-                        "content": (
-                            "Return only a corrected VisualReviewReport v1 JSON object. "
-                            f"Validation error: {last_error}"
-                        ),
+        content: list[dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    "Use the contact sheet for deck-wide context and inspect every supplied "
+                    "batch page image in detail. Return only strict JSON. Do not edit slides. "
+                    "Set pnn to one of batchRoster for page findings and to null only for "
+                    "deck-wide findings. Return an empty issues array when no issue is visible. "
+                    "Treat material delivery defects as blocking, including excessive or "
+                    "unbalanced whitespace, clipped/overlapping text, unreadable hierarchy, "
+                    "inconsistent footers or pagination, and incomplete audience-facing copy. "
+                    f"reviewContext={batch_context_json}; schema={schema_json}"
+                ),
+            },
+            _review_image_part(project / render_set["contactSheetKey"]),
+        ]
+        content.extend(
+            _review_image_part(project / page["pngKey"]) for page in batch_pages
+        )
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are the read-only Visual Review Agent. Inspect rendered pixels against "
+                    "the supplied rubric. Never author or patch SVG, never invent source facts, "
+                    "and return only VisualReviewModelResult v1 JSON."
+                ),
+            },
+            {"role": "user", "content": content},
+        ]
+        batch_prompt_sha256s.append(canonical_sha256(messages))
+        batch_model_result: VisualReviewModelResult | None = None
+        last_error = "invalid visual review output"
+        for repair_count in range(max_schema_repairs + 1):
+            started = time.monotonic()
+            completion = provider.complete(
+                messages,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "visual_review",
+                        "schema": schema,
+                        "strict": True,
                     },
-                ]
+                },
+                max_completion_tokens=_visual_review_completion_limit(
+                    request.runtime.max_completion_tokens_per_turn
+                ),
             )
-    if report is None:
-        raise VisualReviewError(last_error)
+            elapsed += max(0.0, time.monotonic() - started)
+            total_input += completion.prompt_tokens
+            total_output += completion.completion_tokens
+            completion_model = completion.model
+            try:
+                decoded = json.loads(completion.content)
+                batch_model_result = VisualReviewModelResult.model_validate(decoded)
+                if any(
+                    issue.pnn not in batch_roster
+                    for issue in batch_model_result.issues
+                    if issue.pnn
+                ):
+                    raise ValueError("visual review page finding is outside batchRoster")
+                break
+            except (json.JSONDecodeError, ValidationError, ValueError) as error:
+                last_error = str(error)[:500]
+                if repair_count >= max_schema_repairs:
+                    raise VisualReviewError(
+                        f"visual review structured output remained invalid: {last_error}"
+                    ) from error
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": completion.content},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Return only a corrected VisualReviewModelResult v1 JSON object. "
+                                f"Validation error: {last_error}"
+                            ),
+                        },
+                    ]
+                )
+        if batch_model_result is None:
+            raise VisualReviewError(last_error)
+        schema_repair_count += repair_count
+        batch_report = _materialize_batch_report(
+            batch_model_result,
+            context=context,
+            batch_roster=batch_roster,
+        )
+        batch_reports.append(batch_report)
+        batch_report_payloads.append(
+            batch_model_result.model_dump(by_alias=True, mode="json")
+        )
+    report = _merge_visual_review_reports(batch_reports, context=context)
+    prompt_sha256 = canonical_sha256(batch_prompt_sha256s)
     usage = {
         "inputTokens": total_input,
         "outputTokens": total_output,
@@ -487,7 +718,11 @@ def review_visual_assets(
         "modelVersion": request.versions.model,
         "promptVersion": request.versions.prompt,
         "referenceVersion": request.versions.reference,
-        "schemaRepairCount": repair_count,
+        "schemaRepairCount": schema_repair_count,
+        "batchCount": len(page_batches),
+        "maxPagesPerBatch": VISUAL_REVIEW_MAX_PAGES_PER_BATCH,
+        "batchPromptSha256s": batch_prompt_sha256s,
+        "batchReports": batch_report_payloads,
         "usage": usage,
         "report": report_payload,
     }

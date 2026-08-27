@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from instant_ppt_worker.artifacts import artifact_ref, sha256_file
+from instant_ppt_worker.canonical import canonical_sha256
 from instant_ppt_worker.content_quality import evaluate_deck
 from instant_ppt_worker.errors import CONTENT_QA_FAILED, RENDER_FAILED, AdapterError
 from instant_ppt_worker.grounding_quality import build_evidence_map
@@ -40,36 +42,32 @@ from instant_ppt_worker.presentation_agent_runtime import (
 from instant_ppt_worker.presentation_agent_tools import (
     PresentationAgentToolRegistry,
     PresentationToolContext,
-    SlideSceneGraph,
     ToolCallbacks,
-)
-from instant_ppt_worker.presentation_blueprint import (
-    canonical_sha256,
-    extract_literal_constraints,
-    semantic_support_score,
-    semantic_terms,
-    validate_page_blueprint,
+    ToolPolicyError,
+    validate_direct_svg,
 )
 from instant_ppt_worker.providers import (
     ImageProvider,
-    KimiProvider,
     ProviderConfigurationError,
     ProviderRequestError,
     TextProvider,
+    create_text_provider,
+    create_visual_review_text_provider,
 )
 from instant_ppt_worker.renderer import _normalize_pptx_zip
-from instant_ppt_worker.settings import KimiProviderSettings, OpenAIImageSettings
+from instant_ppt_worker.settings import OpenAIImageSettings
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.svg_author import author_slide
 from instant_ppt_worker.visual_review_runtime import (
     VisualReviewError,
+    adaptive_visual_review_decision,
     blocking_pages,
     render_visual_assets,
     review_visual_assets,
+    visual_review_metrics,
 )
 from instant_ppt_worker.workflow_models import (
     ApprovedOutlineSlide,
-    PageBlueprintArtifact,
     WorkflowArtifactRef,
     WorkflowError,
     WorkflowReceipt,
@@ -80,6 +78,9 @@ from instant_ppt_worker.workflow_models import (
 from instant_ppt_worker.workflow_state import validate_stage_entry
 
 PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+# One initial authoring pass plus four deterministic-gate repair passes keeps
+# page author attempts within the runtime hard maximum of five.
+FINAL_SVG_REPAIR_HARD_MAX_ROUNDS = 4
 PROMPT_INJECTION_PATTERNS = (
     re.compile(r"ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions", re.IGNORECASE),
     re.compile(r"(?:system|developer)\s*(?:prompt|message)\s*[:：]", re.IGNORECASE),
@@ -402,10 +403,12 @@ def _sentences(fragments: list[dict[str, Any]]) -> list[tuple[str, str]]:
             ).strip()
             normalized = re.sub(r"\\([\\`*{}\[\]()#+.!_])", r"\1", normalized)
             normalized = normalized.replace("**", "").replace("__", "").replace("`", "")
-            if len(normalized) >= 8 and not any(
-                pattern.search(normalized) for pattern in PROMPT_INJECTION_PATTERNS
-            ) and not any(
-                pattern.search(normalized) for pattern in SOURCE_PROCESSING_NOTE_PATTERNS
+            if (
+                len(normalized) >= 8
+                and not any(pattern.search(normalized) for pattern in PROMPT_INJECTION_PATTERNS)
+                and not any(
+                    pattern.search(normalized) for pattern in SOURCE_PROCESSING_NOTE_PATTERNS
+                )
             ):
                 values.append((normalized, str(fragment["fragmentId"])))
     return values
@@ -436,8 +439,10 @@ _MARKDOWN_TABLE_VALUE = re.compile(
     re.IGNORECASE,
 )
 
+_UNITLESS_CHART_UNIT = "无单位"
 
-def _normalized_chart_unit(value: str | None, *, unitless: str = "分") -> str:
+
+def _normalized_chart_unit(value: str | None, *, unitless: str = _UNITLESS_CHART_UNIT) -> str:
     if not value:
         return unitless
     normalized = value.casefold()
@@ -479,9 +484,7 @@ def _chart_context_candidate(
         seen: dict[str, float] = {}
         for label, value in raw_pairs:
             key = label.casefold()
-            if key in seen and not math.isclose(
-                seen[key], value, rel_tol=1e-9, abs_tol=1e-9
-            ):
+            if key in seen and not math.isclose(seen[key], value, rel_tol=1e-9, abs_tol=1e-9):
                 if not conflict_is_error:
                     pairs = []
                     break
@@ -548,9 +551,7 @@ def _markdown_table_row_candidate(
         seen: dict[str, float] = {}
         for label, value in raw_pairs:
             key = label.casefold()
-            if key in seen and not math.isclose(
-                seen[key], value, rel_tol=1e-9, abs_tol=1e-9
-            ):
+            if key in seen and not math.isclose(seen[key], value, rel_tol=1e-9, abs_tol=1e-9):
                 raise AdapterError(
                     CONTENT_QA_FAILED,
                     (
@@ -678,487 +679,68 @@ def _chart_values(fragments: list[dict[str, Any]]) -> tuple[list[tuple[str, floa
     return list(series[0]["values"]), str(series[0]["unit"])
 
 
-def _concise_title(value: str, *, max_characters: int = 66) -> str:
-    normalized = re.sub(r"^#{1,6}\s+", "", " ".join(value.split())).rstrip("。")
-    if len(normalized) <= max_characters:
-        return normalized
-    clauses = [
-        item
-        for item in re.findall(r".+?(?:[，；。！？]|$)", normalized)
-        if item.strip()
-    ]
-    selected = ""
-    for clause in clauses:
-        candidate = selected + clause
-        if selected and len(candidate) > max_characters:
-            break
-        selected = candidate
-        if len(selected) >= max_characters * 0.65:
-            break
-    if selected and len(selected) <= max_characters:
-        return selected.rstrip("。，；！？")
-    prefix = normalized[:max_characters]
-    boundary = max(
-        (prefix.rfind(token) for token in ("，", "；", "、", ",", ";", " ")),
-        default=-1,
-    )
-    if boundary >= max_characters // 2:
-        prefix = prefix[:boundary]
-    while prefix and prefix[-1] in ".-_/" and len(prefix) > max_characters // 2:
-        prefix = prefix[:-1]
-    return prefix.rstrip("。，；！？ ") + "…"
-
-
-def _assertion_title(
-    slide: ApprovedOutlineSlide,
-    sentences: list[tuple[str, str]],
-    chart: list[tuple[str, float]],
-    unit: str,
-    chart_context: str = "",
-) -> str:
-    if slide.role == "data" and len(chart) >= 2:
-        ranked = sorted(chart, key=lambda item: item[1], reverse=True)
-        leader, runner_up = ranked[0], ranked[1]
-        delta = ((leader[1] - runner_up[1]) / runner_up[1] * 100) if runner_up[1] else 0
-        displayed_value = (
-            f"{leader[1]:g}{unit}"
-            if unit in {"%", "倍", "亿元", "万元"}
-            else f"{leader[1]:g} {unit}"
-        )
-        prefix = f"{chart_context} 中，" if chart_context else ""
-        return f"{prefix}{leader[0]} 达到 {displayed_value}，领先 {runner_up[0]} {delta:.0f}%"
-    if slide.role == "cover":
-        return slide.title
-    if sentences:
-        sentence = sentences[min(slide.order - 1, len(sentences) - 1)][0]
-        return _concise_title(sentence)
-    return slide.title
-
-
 def _limited_general_body(
     request: WorkflowRequestV2,
     slide: ApprovedOutlineSlide,
 ) -> list[str]:
-    """Author useful, non-factual copy when the user explicitly approved no-source mode."""
+    """Create audience-ready copy for the explicitly approved no-source mode."""
 
-    topic = request.intent.title.rstrip("。")
-    topic_label = topic if len(topic) <= 18 else f"{topic[:17]}…"
-    outcome = request.intent.desired_outcome.rstrip("。")
-    audience = request.intent.audience.rstrip("。")
-    title = slide.title.rstrip("。")
-    if not request.intent.language.lower().startswith("zh"):
-        return [
-            f"Working position: use {title} to advance {topic} without inventing evidence.",
-            f"Next decision: {audience} validates sources and confirms {outcome}.",
-        ]
     if slide.role == "cover":
-        return [f"主题：{topic_label}；沟通目标：帮助{audience}形成“{outcome}”的初步判断"]
-    if slide.role == "section":
         return [
-            f"本节聚焦“{title}”，为“{topic_label}”建立清晰的讨论边界",
-            f"先对齐判断标准，再由{audience}确认优先级",
-        ]
-    if slide.role == "comparison":
-        return [
-            f"“{title}”：从价值、成本和可逆性评估“{topic_label}”",
-            "证据边界：无已批准数据，暂不判断优劣",
-        ]
-    if slide.role == "timeline":
-        return [
-            f"目标对齐：明确“{topic_label}”的负责人",
-            "分段验证：按检查点推进，并保留回退路径",
-        ]
-    if slide.role == "risk_action":
-        return [
-            f"风险：缺少来源会让“{topic_label}”的判断失真",
-            "行动：补齐材料与验收口径，发布前复核",
+            f"{request.intent.title}面向{request.intent.audience}，聚焦{request.intent.objective}。",
+            f"本页建立共同语境，以便后续围绕“{slide.audience_question}”形成一致判断。",
         ]
     if slide.role == "ending":
         return [
-            f"结论：围绕“{topic_label}”先形成可编辑、可审计的决策初稿",
-            f"行动：由{audience}补充来源，并在下一步确认“{outcome}”",
+            f"结论：{request.intent.title}需要回答“{slide.audience_question}”",
+            f"行动：{request.intent.desired_outcome}",
         ]
     return [
-        f"判断：“{title}”需服务于“{topic_label}”的可执行选择",
-        f"建议：由{audience}先对齐“{outcome}”",
-    ]
-
-
-def _semantic_rank(query: str, evidence: str) -> float:
-    query_terms = semantic_terms(query)
-    if not query_terms:
-        return 0.0
-    overlap = len(query_terms & semantic_terms(evidence)) / len(query_terms)
-    return max(overlap, semantic_support_score(query, evidence))
-
-
-def _blueprint_query(request: WorkflowRequestV2, slide: ApprovedOutlineSlide) -> str:
-    return " ".join(
+        f"{request.intent.title}面向{request.intent.audience}回答：{slide.audience_question}",
         (
-            slide.title,
-            slide.audience_question,
-            request.intent.title,
-            request.intent.objective,
-            request.intent.desired_outcome,
-        )
-    )
-
-
-def _blueprint_relevance(
-    request: WorkflowRequestV2,
-    slide: ApprovedOutlineSlide,
-    evidence: str,
-) -> float:
-    """Weight page-specific semantics ahead of broad deck intent terms."""
-
-    page_query = f"{slide.title} {slide.audience_question}".casefold()
-    folded_evidence = evidence.casefold()
-    expansion_score = sum(
-        sum(cue.casefold() in folded_evidence for cue in cues)
-        for triggers, cues in _TOPIC_EXPANSIONS
-        if any(trigger.casefold() in page_query for trigger in triggers)
-    )
-    return (
-        5 * _semantic_rank(slide.title, evidence)
-        + 3 * _semantic_rank(slide.audience_question, evidence)
-        + _semantic_rank(_blueprint_query(request, slide), evidence)
-        + 2 * expansion_score
-    )
-
-
-def _timeline_signal_score(evidence: str) -> int:
-    """Prefer real dated availability milestones over incidental deployment wording."""
-
-    score = 0
-    if re.search(r"20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日", evidence):
-        score += 12
-    elif re.search(r"\d{1,2}\s*月\s*\d{1,2}\s*日", evidence):
-        score += 9
-    elif re.search(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", evidence):
-        score += 12
-    if re.search(r"\d+\s*(?:小时|天|周|个月)(?:内|后|前)?", evidence):
-        score += 4
-    score += 2 * sum(
-        cue in evidence
-        for cue in ("发布", "推出", "更新", "开放", "上线", "可用", "启用", "日前", "未来")
-    )
-    return score
-
-
-def _build_page_blueprint(
-    request: WorkflowRequestV2,
-    fragments: list[dict[str, Any]],
-) -> PageBlueprintArtifact:
-    """Create a stable page contract by semantic evidence selection, never page rotation."""
-
-    sentences = _sentences(fragments)
-    chart_series = _chart_series(fragments)
-    if any(slide.role == "data" for slide in request.outline) and not chart_series:
-        raise AdapterError(
-            CONTENT_QA_FAILED,
-            "data page requires at least two sourced labeled values; no values may be invented",
-        )
-    used_sentences: set[int] = set()
-    used_charts: set[int] = set()
-    pages: list[dict[str, Any]] = []
-    for outline in request.outline:
-        if not fragments:
-            body = _limited_general_body(request, outline)
-            pages.append(
-                {
-                    "schemaVersion": 1,
-                    "outlineSlideId": outline.outline_slide_id,
-                    "slideId": outline.slide_id,
-                    "pnn": outline.pnn,
-                    "order": outline.order,
-                    "role": outline.role,
-                    "assertion": outline.title,
-                    "audienceMove": (
-                        f"Answer '{outline.audience_question}' so {request.intent.audience} "
-                        f"can {request.intent.desired_outcome}."
-                    ),
-                    "evidenceRefs": [],
-                    "contentBlocks": [
-                        {
-                            "blockId": f"{outline.pnn}-message-{index}",
-                            "kind": "assertion" if index == 1 else "action",
-                            "hierarchy": index,
-                            "text": value,
-                            "relationship": "supports" if index == 1 else "acts-on",
-                            "evidenceRefs": [],
-                        }
-                        for index, value in enumerate(body, start=1)
-                    ],
-                    "visualForm": (
-                        "comparison"
-                        if outline.role == "comparison"
-                        else "timeline"
-                        if outline.role == "timeline"
-                        else "mixed"
-                    ),
-                    "layoutIntent": _layout_for_role(outline.role),
-                    "literalConstraints": [outline.title],
-                    "sourceMode": "no-source-limited",
-                }
-            )
-            continue
-
-        if outline.role == "data":
-            chart_index = max(
-                range(len(chart_series)),
-                key=lambda index: (
-                    _blueprint_relevance(
-                        request,
-                        outline,
-                        str(chart_series[index]["context"]),
-                    ),
-                    index not in used_charts,
-                    len(chart_series[index]["values"]),
-                    -index,
-                ),
-            )
-            used_charts.add(chart_index)
-            selected_chart = chart_series[chart_index]
-            evidence_ref = str(selected_chart.get("evidenceRef") or "")
-            if not evidence_ref:
-                raise AdapterError(
-                    CONTENT_QA_FAILED,
-                    "sourced chart series is missing immutable fragment provenance",
-                )
-            context = str(selected_chart["context"] or selected_chart["values"][0][0])
-            chart_values = list(selected_chart["values"])
-            unit = str(selected_chart["unit"])
-            assertion = _assertion_title(outline, [], chart_values, unit, context)
-            literal_constraints = [
-                value
-                for value in dict.fromkeys(
-                    [context]
-                    + [str(label) for label, _ in chart_values]
-                    + [f"{value:g}" for _, value in chart_values]
-                    + [unit]
-                )
-                if value
-            ]
-            pages.append(
-                {
-                    "schemaVersion": 1,
-                    "outlineSlideId": outline.outline_slide_id,
-                    "slideId": outline.slide_id,
-                    "pnn": outline.pnn,
-                    "order": outline.order,
-                    "role": outline.role,
-                    "assertion": assertion,
-                    "audienceMove": (
-                        f"Use the sourced {context} comparison to answer "
-                        f"'{outline.audience_question}'."
-                    ),
-                    "evidenceRefs": [evidence_ref],
-                    "contentBlocks": [
-                        {
-                            "blockId": f"{outline.pnn}-chart",
-                            "kind": "chart",
-                            "hierarchy": 1,
-                            "text": context,
-                            "relationship": "supports",
-                            "evidenceRefs": [evidence_ref],
-                        }
-                    ],
-                    "visualForm": "chart",
-                    "layoutIntent": _layout_for_role(outline.role),
-                    "literalConstraints": literal_constraints,
-                    "sourceMode": "approved-artifacts",
-                    "chartSpec": {
-                        "objectKey": "throughput-comparison",
-                        "context": context,
-                        "chartType": "column",
-                        "values": [
-                            {"label": label, "value": value}
-                            for label, value in chart_values
-                        ],
-                        "unit": unit,
-                        "comparisonBaseline": 0,
-                        "evidenceRefs": [evidence_ref],
-                    },
-                }
-            )
-            continue
-
-        if outline.role == "timeline":
-            ranked_indices = sorted(
-                range(len(sentences)),
-                key=lambda index: (
-                    index not in used_sentences,
-                    _timeline_signal_score(sentences[index][0]),
-                    _blueprint_relevance(request, outline, sentences[index][0]),
-                    len(semantic_terms(sentences[index][0])),
-                    -index,
-                ),
-                reverse=True,
-            )
-            selected_indices = sorted(ranked_indices[:3])
-            selected = [sentences[index] for index in selected_indices]
-            used_sentences.update(selected_indices)
-            evidence_refs = list(dict.fromkeys(value[1] for value in selected))
-            assertion = _concise_title(selected[0][0])
-            pages.append(
-                {
-                    "schemaVersion": 1,
-                    "outlineSlideId": outline.outline_slide_id,
-                    "slideId": outline.slide_id,
-                    "pnn": outline.pnn,
-                    "order": outline.order,
-                    "role": outline.role,
-                    "assertion": assertion,
-                    "audienceMove": (
-                        f"Use the approved milestones to answer "
-                        f"'{outline.audience_question}'."
-                    ),
-                    "evidenceRefs": evidence_refs,
-                    "contentBlocks": [
-                        {
-                            "blockId": f"{outline.pnn}-milestone-{index}",
-                            "kind": "sequence",
-                            "hierarchy": min(index, 3),
-                            "text": sentence,
-                            "relationship": (
-                                "precedes" if index < len(selected) else "supports"
-                            ),
-                            "evidenceRefs": [evidence_ref],
-                        }
-                        for index, (sentence, evidence_ref) in enumerate(
-                            selected, start=1
-                        )
-                    ],
-                    "visualForm": "timeline",
-                    "layoutIntent": _layout_for_role(outline.role),
-                    "literalConstraints": list(
-                        dict.fromkeys(
-                            literal
-                            for sentence, _ in selected
-                            for literal in (
-                                extract_literal_constraints(sentence) or [sentence]
-                            )
-                        )
-                    )[:64],
-                    "sourceMode": "approved-artifacts",
-                }
-            )
-            continue
-
-        sentence_index = max(
-            range(len(sentences)),
-            key=lambda index: (
-                (
-                    _blueprint_relevance(request, outline, sentences[index][0])
-                    if outline.role == "content"
-                    else int(index not in used_sentences)
-                ),
-                (
-                    int(index not in used_sentences)
-                    if outline.role == "content"
-                    else _blueprint_relevance(request, outline, sentences[index][0])
-                ),
-                len(semantic_terms(sentences[index][0])),
-                -index,
-            ),
-        )
-        used_sentences.add(sentence_index)
-        sentence, evidence_ref = sentences[sentence_index]
-        assertion = sentence[:1000].rstrip()
-        literal_constraints = extract_literal_constraints(sentence)
-        if not literal_constraints:
-            literal_constraints = [assertion]
-        pages.append(
-            {
-                "schemaVersion": 1,
-                "outlineSlideId": outline.outline_slide_id,
-                "slideId": outline.slide_id,
-                "pnn": outline.pnn,
-                "order": outline.order,
-                "role": outline.role,
-                "assertion": assertion,
-                "audienceMove": (
-                    f"这组已批准证据回答“{outline.audience_question}”，据此可"
-                    f"{request.intent.desired_outcome}。"
-                ),
-                "evidenceRefs": [evidence_ref],
-                "contentBlocks": [
-                    {
-                        "blockId": f"{outline.pnn}-evidence",
-                        "kind": "evidence",
-                        "hierarchy": 1,
-                        "text": sentence,
-                        "relationship": "supports",
-                        "evidenceRefs": [evidence_ref],
-                    }
-                ],
-                "visualForm": (
-                    "comparison"
-                    if outline.role == "comparison"
-                    else "timeline"
-                    if outline.role == "timeline"
-                    else "mixed"
-                ),
-                "layoutIntent": _layout_for_role(outline.role),
-                "literalConstraints": literal_constraints,
-                "sourceMode": "approved-artifacts",
-            }
-        )
-    return PageBlueprintArtifact.model_validate(
-        {
-            "schemaVersion": 1,
-            "workflowRunId": request.workflow_run_id,
-            "approvedSnapshotSha256": request.approval.snapshot_sha256,
-            "inputSha256": _request_hash(request),
-            "authoringMode": "deterministic-planner",
-            "modelVersion": "semantic-blueprint@v1",
-            "promptVersion": request.versions.prompt,
-            "referenceVersion": request.versions.reference,
-            "pages": pages,
-        }
-    )
+            "当前为已明确授权的受限通用表达：仅组织沟通结构与决策顺序，"
+            "不扩展、暗示或补充任何未经核实的外部事实。"
+        ),
+    ]
 
 
 def _build_deck(
     request: WorkflowRequestV2,
     fragments: list[dict[str, Any]],
-    *,
-    blueprint: PageBlueprintArtifact | None = None,
 ) -> tuple[DeckPlan, dict[str, Any]]:
-    blueprint = blueprint or _build_page_blueprint(request, fragments)
-    chart_series = _chart_series(fragments)
     slides: list[dict[str, Any]] = []
     roster: list[dict[str, Any]] = []
-    for index, (outline, page) in enumerate(zip(request.outline, blueprint.pages, strict=True)):
+    chart_candidates = _chart_series(fragments) if request.production.native_charts else []
+    chart_candidate_index = 0
+    for index, outline in enumerate(request.outline):
         chart_entry: dict[str, Any] | None = None
-        if page.chart_spec is not None:
+        if outline.role == "data" and chart_candidate_index < len(chart_candidates):
+            candidate = chart_candidates[chart_candidate_index]
+            chart_candidate_index += 1
             chart_entry = {
-                "objectKey": page.chart_spec.object_key,
-                "context": page.chart_spec.context,
-                "values": [(item.label, item.value) for item in page.chart_spec.values],
-                "unit": page.chart_spec.unit,
+                "objectKey": f"source-chart-{outline.pnn.lower()}",
+                "context": str(candidate["context"]),
+                "values": list(candidate["values"]),
+                "unit": str(candidate["unit"]),
             }
-        title = (
-            request.intent.title
-            if page.role == "cover"
-            else page.assertion
-            if chart_entry
-            else outline.title
-        )
-        body = [block.text for block in page.content_blocks]
-        if page.role == "cover" and fragments:
+        title = outline.title
+        body = [
+            value.strip()
+            for value in re.split(r"[；;\n]+", outline.audience_question)
+            if value.strip()
+        ] or [outline.audience_question]
+        if outline.role == "cover":
             body = [request.intent.objective]
-        if page.role == "data":
+        if outline.role == "data" and chart_entry:
             body = ["对比结论直接来自已批准来源，未执行外部研究。"]
-        if page.role == "ending":
-            body = (
-                [
-                    f"结论：{body[0]}",
-                    f"行动：{request.intent.desired_outcome}",
-                ]
-                if page.evidence_refs
-                else _limited_general_body(request, outline)
-            )
+        if outline.role == "ending":
+            body = [
+                f"结论：{body[0]}",
+                *[f"展望：{value}" for value in body[1:2]],
+                f"行动：{request.intent.desired_outcome}",
+            ]
+        if not fragments:
+            body = _limited_general_body(request, outline)
         plan_role = outline.role
         slides.append(
             {
@@ -1183,17 +765,10 @@ def _build_deck(
                 "approvedOutlineTitle": outline.title,
                 "intentObjective": request.intent.objective,
                 "body": body,
-                "factIds": page.evidence_refs,
+                "factIds": [],
                 "chart": chart_entry,
-                "assertion": page.assertion,
-                "audienceMove": page.audience_move,
-                "evidenceRefs": page.evidence_refs,
-                "contentBlocks": [
-                    item.model_dump(by_alias=True, mode="json") for item in page.content_blocks
-                ],
-                "visualForm": page.visual_form,
-                "layoutIntent": page.layout_intent,
-                "literalConstraints": page.literal_constraints,
+                "audienceQuestion": outline.audience_question,
+                "approvedOutlineKeyPoints": body,
             }
         )
     free_id = deterministic_ulid(hashlib.sha256(b"issue002-free-design").hexdigest())
@@ -1216,7 +791,8 @@ def _build_deck(
             "slides": slides,
         }
     )
-    first_chart = next((item["chart"] for item in roster if item["chart"]), None)
+    chart_series = [item["chart"] for item in roster if item["chart"]]
+    first_chart = chart_series[0] if chart_series else None
     return deck, {
         "roster": roster,
         "chartSeries": chart_series,
@@ -1342,7 +918,8 @@ def _design_spec(
             "| Purpose | Anchor Size (px) |",
             "| --- | ---: |",
             "| Body | 22 |",
-            "| Title | 38 |",
+            "| Slide title | 48 |",
+            "| Cover title | 64 |",
             "| Subtitle | 24 |",
             "| Annotation | 15 |",
             "| Data | 18 |",
@@ -1417,21 +994,13 @@ def _design_spec(
             [
                 f"#### Slide {item['order']:02d} / {item['pnn']} - {item['title']}",
                 "",
-                f"- **Assertion**: {item['assertion']}",
-                f"- **Audience move**: {item['audienceMove']}",
-                f"- **Visual form**: {item['visualForm']}",
-                f"- **Layout intent**: {item['layoutIntent']}",
+                f"- **Communication goal**: {item['audienceQuestion']}",
+                f"- **Audience move**: {item['audienceQuestion']}",
                 f"- **Layout**: {_layout_for_role(str(item['role']))}",
                 f"- **Title**: {item['title']}",
                 f"- **Core message**: {item['body'][0]}",
                 f"- **Content**: {'；'.join(item['body'])}",
-                (
-                    "- **Evidence refs**: "
-                    + (", ".join(item["evidenceRefs"]) or "none (approved limited draft)")
-                ),
-                "- **Content blocks**: "
-                + json.dumps(item["contentBlocks"], ensure_ascii=False, separators=(",", ":")),
-                "- **Literal constraints**: " + " | ".join(item["literalConstraints"]),
+                "- **Source policy**: use approved source fragments only; no lexical score gate",
             ]
         )
         if item["chart"]:
@@ -1477,10 +1046,14 @@ def _design_spec(
     return "\n".join(lines)
 
 
-def _layout_for_role(role: str) -> str:
+def _layout_for_role(role: str, *, native_chart: bool = False) -> str:
     return {
         "cover": "assertion-led opening with one sourced hook and generous whitespace",
-        "data": "full-width comparison chart spine with direct labels and a source line",
+        "data": (
+            "full-width comparison chart spine with direct labels and a source line"
+            if native_chart
+            else "ranked metric cards with direct labels, values, and a source line"
+        ),
         "comparison": "two evidence columns with a shared decision criterion",
         "timeline": "ordered milestones with evidence bound to each step",
         "risk_action": "risk-to-mitigation rows ending in a named owner action",
@@ -1492,6 +1065,8 @@ def _spec_lock(
     request: WorkflowRequestV2,
     plan: dict[str, Any],
     image_preparation: ImagePreparation,
+    *,
+    design_spec_sha256: str,
 ) -> str:
     rows = [
         "<!-- ppt-master-schema: spec-lock/v1 -->",
@@ -1545,7 +1120,8 @@ def _spec_lock(
             "- body_family: Microsoft YaHei, Arial, sans-serif",
             "- data_family: Arial, Microsoft YaHei, sans-serif",
             "- body: 22",
-            "- title: 38",
+            "- title: 48",
+            "- cover_title: 64",
             "- subtitle: 24",
             "- annotation: 15",
             "- data: 18",
@@ -1770,6 +1346,29 @@ def _svg_roster_hash(svg_paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
+def _snapshot_svg_roster(svg_paths: list[Path], target: Path) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    expected = {path.name for path in svg_paths}
+    for existing in target.glob("slide_*.svg"):
+        if existing.name not in expected:
+            existing.unlink()
+    for path in svg_paths:
+        shutil.copy2(path, target / path.name)
+
+
+def _restore_svg_roster(snapshot: Path, svg_dir: Path) -> list[Path]:
+    source_paths = sorted(snapshot.glob("slide_*.svg"))
+    if not source_paths:
+        raise VisualReviewError("best visual-review SVG snapshot is missing")
+    expected = {path.name for path in source_paths}
+    for existing in svg_dir.glob("slide_*.svg"):
+        if existing.name not in expected:
+            existing.unlink()
+    for path in source_paths:
+        shutil.copy2(path, svg_dir / path.name)
+    return sorted(svg_dir.glob("slide_*.svg"))
+
+
 def _svg_visible_text(svg_paths: list[Path]) -> str:
     values: list[str] = []
     for path in svg_paths:
@@ -1783,25 +1382,48 @@ def _svg_visible_text(svg_paths: list[Path]) -> str:
     return "\n".join(values)
 
 
+def _svg_page_body(path: Path, *, title: str, pnn: str) -> list[str]:
+    """Extract a post-authoring publication summary without creating a page contract."""
+
+    root = ET.fromstring(path.read_text(encoding="utf-8"))
+    values: list[str] = []
+    seen: set[str] = set()
+    normalized_title = "".join(title.split()).casefold()
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "text":
+            continue
+        value = " ".join("".join(element.itertext()).split()).strip()
+        normalized = "".join(value.split()).casefold()
+        if (
+            not value
+            or normalized == normalized_title
+            or value == pnn
+            or value.startswith(f"{pnn} ")
+            or value.startswith("依据：")
+        ):
+            continue
+        if normalized not in seen:
+            seen.add(normalized)
+            values.append(value)
+    return values
+
+
 def _bundle(project: Path, target: Path) -> None:
     included = [
         project / "design_spec.md",
         project / "spec_lock.md",
         project / "deck-plan.json",
         project / "analysis" / "provider-request.json",
-        project / "analysis" / "page-blueprint.proposal.v1.json",
-        project / "analysis" / "page-blueprint.v1.json",
         project / "analysis" / "evidence-map.json",
         project / "analysis" / "image_analysis.csv",
         project / "analysis" / "image-resource-audit.json",
         project / "validation" / "svg_quality_first_page_report.json",
         project / "validation" / "svg_quality_report.json",
         project / "validation" / "chart-verification.json",
-        project / "validation" / "page-blueprint-support.json",
-        project / "validation" / "page-blueprint-consistency.json",
         project / "validation" / "content-design-spec.json",
         project / "validation" / "content-final-svg.json",
         project / "validation" / "content-pptx.json",
+        project / "validation" / "release-trace.json",
         project / "validation" / "pptx-package-qa.json",
         project / "validation" / "agent-stale.json",
         project / "validation" / "workflow-events.jsonl",
@@ -1821,7 +1443,6 @@ def _bundle(project: Path, target: Path) -> None:
         "phase-receipts",
         "locked-context",
         "checkpoints",
-        "scene-graphs",
         "visual-reviews",
     ):
         included.extend(sorted((project / "agent" / agent_directory).glob("*.json")))
@@ -1924,18 +1545,6 @@ def _workflow_result(
         else {}
     )
     artifact_paths = [
-        (
-            "page_blueprint",
-            project / "analysis" / "page-blueprint.v1.json",
-            "application/json",
-            "design_spec_gate1",
-        ),
-        (
-            "blueprint_consistency",
-            project / "validation" / "page-blueprint-consistency.json",
-            "application/json",
-            "pptx_content_gate",
-        ),
         ("design_spec", project / "design_spec.md", "text/markdown", "design_spec_gate1"),
         ("spec_lock", project / "spec_lock.md", "text/markdown", "spec_lock_gate2"),
         ("canonical_pptx", project / "exports" / "deck.pptx", PPTX_MEDIA_TYPE, "step7_export"),
@@ -1956,6 +1565,12 @@ def _workflow_result(
             project / "analysis" / "image-resource-audit.json",
             "application/json",
             "design_spec_gate1",
+        ),
+        (
+            "release_trace",
+            project / "validation" / "release-trace.json",
+            "application/json",
+            "pptx_content_gate",
         ),
     ]
     artifacts = [
@@ -2013,11 +1628,28 @@ def _presentation_text_provider(
     if request.versions.model == "fake-agent@v1":
         return DeterministicPresentationAgentProvider(), True
     try:
-        return KimiProvider(KimiProviderSettings.from_env()), True
+        return create_text_provider(), True
     except ProviderConfigurationError as error:
         raise AdapterError(
             RENDER_FAILED,
             "Main Presentation Agent text provider is unavailable",
+        ) from error
+
+
+def _visual_review_text_provider(
+    request: WorkflowRequestV2,
+    injected: TextProvider | None,
+) -> tuple[TextProvider, bool]:
+    if injected is not None:
+        return injected, False
+    if request.versions.model == "fake-agent@v1":
+        return DeterministicPresentationAgentProvider(), True
+    try:
+        return create_visual_review_text_provider(), True
+    except ProviderConfigurationError as error:
+        raise AdapterError(
+            RENDER_FAILED,
+            "Visual Review Agent text provider is unavailable",
         ) from error
 
 
@@ -2038,21 +1670,17 @@ def _require_agent_phase(result: AgentPhaseResult, stage: str) -> None:
         )
 
 
-def _author_blueprint_with_agent(
+def _author_design_spec_with_agent(
     project: Path,
     request: WorkflowRequestV2,
-    blueprint_proposal: PageBlueprintArtifact,
-    proposal_sha256: str,
-    proposal_payload: dict[str, Any],
     fragments: list[dict[str, Any]],
+    image_preparation: ImagePreparation,
     text_provider: TextProvider | None,
-) -> PageBlueprintArtifact:
+) -> str:
     strategist_tools = PresentationAgentToolRegistry(
         PresentationToolContext(
             project=project,
             request=request,
-            blueprint=blueprint_proposal,
-            blueprint_sha256=proposal_sha256,
             fragments=tuple(fragments),
             allowed_tools=frozenset(
                 {
@@ -2064,6 +1692,7 @@ def _author_blueprint_with_agent(
             current_pnn="P01",
             stage="strategist",
             author_attempt=1,
+            prepared_images=image_preparation.resources,
         )
     )
     strategist_provider, strategist_provider_owned = _presentation_text_provider(
@@ -2079,24 +1708,28 @@ def _author_blueprint_with_agent(
             phase_id="strategist",
             role="strategist",
             goal=(
-                "Inspect the exact approved evidence and Blueprint proposal, establish the "
-                "deck-wide communication/design strategy, persist the owned planning artifact, "
-                "then complete without changing approved Outline authority."
+                "Read the approved Intent, Outline, complete source corpus, template choice, and "
+                "production policy. Independently establish the narrative and visual language, "
+                "then directly author the canonical design_spec.md. Do not create a Page "
+                "Blueprint, page contract, support score, or other intermediate page schema."
             ),
             locked_context={
-                "schema": "instant-ppt.strategist-context.v1",
+                "schema": "instant-ppt.strategist-context.v2",
                 "workflowRunId": request.workflow_run_id,
-                "proposalSha256": proposal_sha256,
                 "intent": request.intent.model_dump(by_alias=True, mode="json"),
                 "approvedOutline": [
-                    item.model_dump(by_alias=True, mode="json")
-                    for item in request.outline
+                    item.model_dump(by_alias=True, mode="json") for item in request.outline
                 ],
-                "pageBlueprintProposal": proposal_payload,
                 "untrustedSourceData": fragments,
-                "researchPolicy": request.research.model_dump(
-                    by_alias=True, mode="json"
-                ),
+                "template": request.template.model_dump(by_alias=True, mode="json"),
+                "imagePolicy": request.image.model_dump(by_alias=True, mode="json"),
+                "preparedImages": list(image_preparation.resources),
+                "researchPolicy": request.research.model_dump(by_alias=True, mode="json"),
+                "visualReviewPolicy": {
+                    "required": request.authoring.visual_review_required,
+                    "policyVersion": request.authoring.visual_review_policy_version,
+                    "maxRounds": request.authoring.resolved_visual_review_max_rounds(),
+                },
                 "requiredTools": [
                     "read_approved_context",
                     "read_design_catalog",
@@ -2120,8 +1753,7 @@ def _author_blueprint_with_agent(
         _close_owned_text_provider(strategist_provider, strategist_provider_owned)
     _require_agent_phase(strategist_result, "Strategist")
     strategist_tool_names = {
-        record["toolName"]
-        for record in _agent_tool_records(project, strategist_result)
+        record["toolName"] for record in _agent_tool_records(project, strategist_result)
     }
     if not {
         "read_approved_context",
@@ -2132,13 +1764,10 @@ def _author_blueprint_with_agent(
             RENDER_FAILED,
             "Main Presentation Agent Strategist completed without its required tool loop",
         )
-    return blueprint_proposal.model_copy(
-        update={
-            "authoring_mode": "agent-strategist",
-            "strategist_turn_id": strategist_result.turn_ids[-1],
-            "model_version": request.versions.model,
-        }
-    )
+    design_spec_path = project / "design_spec.md"
+    if not design_spec_path.is_file():
+        raise AdapterError(RENDER_FAILED, "Strategist completed without design_spec.md")
+    return strategist_result.turn_ids[-1]
 
 
 def _agent_tool_records(project: Path, result: AgentPhaseResult) -> list[dict[str, Any]]:
@@ -2264,32 +1893,168 @@ def _first_page_agent_gate(
     }
 
 
-def _run_final_svg_checker(workspace_root: Path, project: Path) -> dict[str, Any]:
-    report_path = project / "validation" / "svg_quality_report.json"
-    _run(
-        [
-            sys.executable,
-            str(ENGINE_SCRIPTS / "svg_quality_checker.py"),
-            str(project),
-            "--format",
-            "ppt169",
-            "--stage",
-            "final",
-            "--json-output",
-            str(report_path),
+def _page_local_agent_gate(
+    project: Path,
+    pnn: str,
+    svg_path: Path,
+    subject_sha256: str,
+) -> dict[str, Any]:
+    expected_name = f"slide_{int(pnn[1:]):02d}.svg"
+    if svg_path.name != expected_name or not svg_path.is_file():
+        return {
+            "passed": False,
+            "subjectSha256": subject_sha256,
+            "pageLocal": [
+                {
+                    "classification": "page-local",
+                    "code": "SVG_PAGE_OWNERSHIP_MISMATCH",
+                    "message": "page-local gate received a stale or cross-page SVG path",
+                }
+            ],
+        }
+    try:
+        validate_direct_svg(svg_path.read_text(encoding="utf-8"), project)
+    except (ToolPolicyError, OSError, UnicodeError) as error:
+        return {
+            "passed": False,
+            "subjectSha256": subject_sha256,
+            "pageLocal": [
+                {
+                    "classification": "page-local",
+                    "code": "SVG_PAGE_LOCAL_INVALID",
+                    "message": str(error)[:1000],
+                }
+            ],
+        }
+    return {
+        "passed": True,
+        "subjectSha256": subject_sha256,
+        "methodLevel": [
+            {
+                "classification": "page-local",
+                "code": "SVG_PAGE_LOCAL_VALIDATED",
+                "message": "current page SVG passed the independent safe-SVG contract",
+            }
         ],
-        cwd=workspace_root,
-        timeout=240,
-        error_code=RENDER_FAILED,
+        "pageLocal": [],
+        "notExercised": ["multi-page-rhythm", "cross-page-repetition"],
+        "failureMessage": None,
+    }
+
+
+def _final_svg_report_passed(report: dict[str, Any]) -> bool:
+    return (
+        int(report.get("summary", {}).get("errors") or 0) == 0
+        and int(report.get("categories", {}).get("blocking", {}).get("count") or 0) == 0
+        and not report.get("_commandError")
     )
+
+
+def _final_svg_failure_message(report: dict[str, Any]) -> str:
+    issues = report.get("categories", {}).get("blocking", {}).get("issues") or []
+    compact = [
+        {
+            "file": str(issue.get("file") or ""),
+            "code": str(issue.get("code") or "SVG_FINAL_BLOCKING"),
+            "message": str(issue.get("message") or issue)[:1000],
+        }
+        for issue in issues[:12]
+        if isinstance(issue, dict)
+    ]
+    return json.dumps(
+        {
+            "summary": report.get("summary") or {},
+            "blocking": compact,
+            "commandError": str(report.get("_commandError") or "")[:1000],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _run_final_svg_checker(
+    workspace_root: Path,
+    project: Path,
+    *,
+    allow_failure: bool = False,
+) -> dict[str, Any]:
+    report_path = project / "validation" / "svg_quality_report.json"
+    command_error: AdapterError | None = None
+    try:
+        _run(
+            [
+                sys.executable,
+                str(ENGINE_SCRIPTS / "svg_quality_checker.py"),
+                str(project),
+                "--format",
+                "ppt169",
+                "--stage",
+                "final",
+                "--json-output",
+                str(report_path),
+            ],
+            cwd=workspace_root,
+            timeout=240,
+            error_code=RENDER_FAILED,
+        )
+    except AdapterError as error:
+        command_error = error
+    if not report_path.is_file():
+        if command_error is not None:
+            raise command_error
+        raise AdapterError(RENDER_FAILED, "final SVG checker produced no JSON report")
     _normalize_project_paths(report_path, project)
-    return json.loads(report_path.read_text(encoding="utf-8"))
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if command_error is not None:
+        report["_commandError"] = command_error.message
+        if not allow_failure:
+            raise AdapterError(RENDER_FAILED, _final_svg_failure_message(report))
+    return report
+
+
+def _svg_gate_findings_by_page(
+    report: dict[str, Any],
+    roster: list[dict[str, Any]],
+) -> dict[str, list[dict[str, str]]]:
+    pnn_by_file = {
+        f"slide_{index:02d}.svg": str(item["pnn"]) for index, item in enumerate(roster, start=1)
+    }
+    findings: dict[str, list[dict[str, str]]] = {}
+    candidates = list(report.get("categories", {}).get("blocking", {}).get("issues") or [])
+    for file_report in report.get("files") or []:
+        if not isinstance(file_report, dict):
+            continue
+        for message in file_report.get("errors") or []:
+            candidates.append(
+                {
+                    "file": file_report.get("file"),
+                    "code": "SVG_FILE_ERROR",
+                    "message": message,
+                }
+            )
+    seen: set[tuple[str, str, str]] = set()
+    for issue in candidates:
+        if not isinstance(issue, dict):
+            continue
+        filename = Path(str(issue.get("file") or "")).name
+        pnn = pnn_by_file.get(filename)
+        if pnn is None:
+            continue
+        finding = {
+            "file": filename,
+            "code": str(issue.get("code") or "SVG_FINAL_BLOCKING"),
+            "message": str(issue.get("message") or issue)[:1000],
+        }
+        identity = (pnn, finding["code"], finding["message"])
+        if identity in seen:
+            continue
+        seen.add(identity)
+        findings.setdefault(pnn, []).append(finding)
+    return findings
 
 
 def _executor_locked_context(
     request: WorkflowRequestV2,
-    blueprint: PageBlueprintArtifact,
-    blueprint_sha256: str,
     deck: DeckPlan,
     plan: dict[str, Any],
     *,
@@ -2299,14 +2064,14 @@ def _executor_locked_context(
     image_crop: str,
     author_attempt: int = 1,
 ) -> dict[str, Any]:
-    page = blueprint.pages[index]
+    page = request.outline[index]
     slide = deck.slides[index]
     return {
         "schema": "instant-ppt.executor-page-context.v1",
         "workflowRunId": request.workflow_run_id,
-        "blueprintSha256": blueprint_sha256,
         "page": page.model_dump(by_alias=True, mode="json"),
         "slide": slide.model_dump(by_alias=True, mode="json"),
+        "chart": plan["roster"][index].get("chart"),
         "roster": plan["roster"],
         "completedPages": completed_pages,
         "imageHref": image_href,
@@ -2317,15 +2082,16 @@ def _executor_locked_context(
             if page.pnn == "P01"
             else ["read_approved_context", "write_or_patch_slide_svg"]
         ),
-        "sceneGraphContract": {
-            "root": list(
-                SlideSceneGraph.model_json_schema(by_alias=True).get("required", [])
+        "directSvgContract": {
+            "canvas": "exact viewBox 0 0 1280 720",
+            "ids": "unique stable kebab-case IDs",
+            "chart": (
+                "native metadata values must be explicitly present in approved source facts"
+                if request.production.native_charts
+                else "disabled; use SVG comparison or metric-card visuals"
             ),
-            "canvas": "1280x720; all nodes must be in bounds",
-            "nodeKinds": ["text", "shape", "group", "image", "chart", "table"],
-            "ownership": "workflowRunId/slideId/pnn/blueprintSha256/authorAttempt exact",
-            "chart": "exactly preserve page.chartSpec objectKey/type/values/unit/context",
-            "image": "only supplied project-local ../images href",
+            "image": "only the supplied project-local ../images href",
+            "safety": "no scripts, foreignObject, external hrefs, or event handlers",
         },
     }
 
@@ -2347,9 +2113,7 @@ def _author_slides_with_template(
         for slide_id in resource["slideIds"]
     }
     completed_pages: list[dict[str, Any]] = []
-    for page_index, (slide, roster) in enumerate(
-        zip(deck.slides, plan["roster"], strict=True)
-    ):
+    for page_index, (slide, roster) in enumerate(zip(deck.slides, plan["roster"], strict=True)):
         pnn = str(roster["pnn"])
         svg_path = svg_dir / f"slide_{page_index + 1:02d}.svg"
         if roster["chart"]:
@@ -2369,9 +2133,7 @@ def _author_slides_with_template(
                 image_path=image_preparation.by_slide.get(slide.slide_id),
                 image_placeholder=blocking_image_by_slide.get(slide.slide_id),
                 image_crop_policy=str(
-                    resource.get("cropPolicy", "adaptive")
-                    if resource
-                    else "adaptive"
+                    resource.get("cropPolicy", "adaptive") if resource else "adaptive"
                 ),
             )
         subject_sha256 = sha256_file(svg_path)
@@ -2427,8 +2189,6 @@ def _author_slides_with_agent(
     workspace_root: Path,
     project: Path,
     request: WorkflowRequestV2,
-    blueprint: PageBlueprintArtifact,
-    blueprint_sha256: str,
     fragments: list[dict[str, Any]],
     deck: DeckPlan,
     plan: dict[str, Any],
@@ -2439,18 +2199,14 @@ def _author_slides_with_agent(
 ) -> list[dict[str, Any]]:
     svg_dir = project / "svg_output"
     completed_pages: list[dict[str, Any]] = []
-    executor_provider, executor_provider_owned = _presentation_text_provider(
-        request, text_provider
-    )
+    executor_provider, executor_provider_owned = _presentation_text_provider(request, text_provider)
     try:
         executor_agent = MainPresentationAgent(
             project=project,
             request=request,
             provider=executor_provider,
         )
-        for page_index, (slide, roster) in enumerate(
-            zip(deck.slides, plan["roster"], strict=True)
-        ):
+        for page_index, (slide, roster) in enumerate(zip(deck.slides, plan["roster"], strict=True)):
             pnn = str(roster["pnn"])
             svg_path = svg_dir / f"slide_{page_index + 1:02d}.svg"
             image_path = image_preparation.by_slide.get(slide.slide_id)
@@ -2464,9 +2220,7 @@ def _author_slides_with_agent(
                     )
                 image_href = f"../images/{resolved_image.name}"
             resource = image_resource_by_slide.get(slide.slide_id)
-            requested_crop = str(
-                resource.get("cropPolicy", "cover") if resource else "cover"
-            )
+            requested_crop = str(resource.get("cropPolicy", "cover") if resource else "cover")
             image_crop = "contain" if requested_crop in {"contain", "fit"} else "cover"
             allowed_tools = {
                 "read_approved_context",
@@ -2487,12 +2241,22 @@ def _author_slides_with_agent(
                         )
                     )
                 )
+            elif request.authoring.visual_review_required:
+                allowed_tools.add("run_svg_gate")
+                callbacks = ToolCallbacks(
+                    svg_gate=lambda current_pnn, current_path, current_sha256: (
+                        _page_local_agent_gate(
+                            project,
+                            current_pnn,
+                            current_path,
+                            current_sha256,
+                        )
+                    )
+                )
             tools = PresentationAgentToolRegistry(
                 PresentationToolContext(
                     project=project,
                     request=request,
-                    blueprint=blueprint,
-                    blueprint_sha256=blueprint_sha256,
                     fragments=tuple(fragments),
                     allowed_tools=frozenset(allowed_tools),
                     current_pnn=pnn,
@@ -2506,19 +2270,24 @@ def _author_slides_with_agent(
                 phase_id=phase_id,
                 role="executor",
                 goal=(
-                    f"Author {pnn} as an editable semantic SVG from its exact Blueprint. "
+                    f"Author {pnn} as an editable Direct SVG from the approved Outline, source "
+                    "facts, design_spec.md, and spec_lock.md. "
                     + (
                         "Run the first-page SVG gate, consume the full observation, revise if "
                         "blocking, and complete only after a passing current-hash gate."
                         if pnn == "P01"
-                        else "Preserve the P01 visual system without inserting an intermediate "
-                        "checker, then complete this page before advancing in roster order."
+                        else (
+                            "Preserve the P01 visual system. A page-local SVG gate is available "
+                            "if you choose to verify the current hash; it is optional for this "
+                            "phase. Complete after the required tools succeed before advancing."
+                            if request.authoring.visual_review_required
+                            else "Preserve the P01 visual system without inserting an intermediate "
+                            "checker, then complete this page before advancing in roster order."
+                        )
                     )
                 ),
                 locked_context=_executor_locked_context(
                     request,
-                    blueprint,
-                    blueprint_sha256,
                     deck,
                     plan,
                     index=page_index,
@@ -2550,6 +2319,7 @@ def _author_slides_with_agent(
                     "subjectSha256": author_receipt["subjectSha256"],
                     "turnId": author_receipt["turnId"],
                     "toolCallId": author_receipt["toolCallId"],
+                    "authoringMode": author_receipt["authoringMode"],
                 }
             )
             _event(
@@ -2565,8 +2335,7 @@ def _author_slides_with_agent(
                     record
                     for record in reversed(_agent_tool_records(project, result))
                     if record.get("toolName") == "run_svg_gate"
-                    and record.get("subjectSha256")
-                    == author_receipt["subjectSha256"]
+                    and record.get("subjectSha256") == author_receipt["subjectSha256"]
                 )
                 _receipt(
                     project,
@@ -2589,6 +2358,190 @@ def _author_slides_with_agent(
     finally:
         _close_owned_text_provider(executor_provider, executor_provider_owned)
     return completed_pages
+
+
+def _repair_final_svg_gate_with_agent(
+    workspace_root: Path,
+    project: Path,
+    request: WorkflowRequestV2,
+    fragments: list[dict[str, Any]],
+    deck: DeckPlan,
+    plan: dict[str, Any],
+    image_preparation: ImagePreparation,
+    image_resource_by_slide: dict[str, dict[str, Any]],
+    completed_pages: list[dict[str, Any]],
+    initial_report: dict[str, Any],
+    text_provider: TextProvider | None,
+    *,
+    phase_prefix: str = "svg-gate-repair",
+) -> tuple[list[dict[str, Any]], list[Path], str, dict[str, Any]]:
+    report = initial_report
+    repair_provider, repair_provider_owned = _presentation_text_provider(request, text_provider)
+    try:
+        repair_agent = MainPresentationAgent(
+            project=project,
+            request=request,
+            provider=repair_provider,
+        )
+        for repair_round in range(1, FINAL_SVG_REPAIR_HARD_MAX_ROUNDS + 1):
+            findings_by_page = _svg_gate_findings_by_page(report, plan["roster"])
+            if not findings_by_page:
+                raise AdapterError(
+                    RENDER_FAILED,
+                    "final SVG gate failed without page-owned repair findings: "
+                    + _final_svg_failure_message(report),
+                )
+            before_hash = _svg_roster_hash(sorted((project / "svg_output").glob("*.svg")))
+            for pnn, findings in findings_by_page.items():
+                page_index = next(
+                    index for index, page in enumerate(request.outline) if page.pnn == pnn
+                )
+                slide = deck.slides[page_index]
+                image_path = image_preparation.by_slide.get(slide.slide_id)
+                image_href = (
+                    f"../images/{Path(image_path).name}" if image_path is not None else None
+                )
+                resource = image_resource_by_slide.get(slide.slide_id)
+                requested_crop = str(resource.get("cropPolicy", "cover") if resource else "cover")
+                repair_context = _executor_locked_context(
+                    request,
+                    deck,
+                    plan,
+                    index=page_index,
+                    completed_pages=completed_pages,
+                    image_href=image_href,
+                    image_crop=("contain" if requested_crop in {"contain", "fit"} else "cover"),
+                    author_attempt=repair_round + 1,
+                )
+                repair_context.update(
+                    {
+                        "mode": "svg-gate-repair",
+                        "repairRound": repair_round,
+                        "finalSvgGateFindings": findings,
+                        "geometryContract": {
+                            "viewBox": [0, 0, 1280, 720],
+                            "dataPptxBoundsFormat": "x y width height",
+                            "invariants": [
+                                "x >= 0 and y >= 0",
+                                "width > 0 and height > 0",
+                                "x + width <= 1280",
+                                "y + height <= 720",
+                            ],
+                            "example": {
+                                "region": "from (72,160) to (1208,640)",
+                                "correct": "72 160 1136 480",
+                                "incorrect": "72 160 1208 640",
+                            },
+                            "textOverflowRepair": (
+                                "wrap prose with direct tspan children, reduce card copy, "
+                                "or enlarge its owned box without lowering required title sizes"
+                            ),
+                        },
+                        "requiredTools": [
+                            "read_approved_context",
+                            "write_or_patch_slide_svg",
+                            "run_svg_gate",
+                        ],
+                    }
+                )
+                repair_tools = PresentationAgentToolRegistry(
+                    PresentationToolContext(
+                        project=project,
+                        request=request,
+                        fragments=tuple(fragments),
+                        allowed_tools=frozenset(
+                            {
+                                "read_approved_context",
+                                "read_design_catalog",
+                                "write_or_patch_slide_svg",
+                                "run_svg_gate",
+                            }
+                        ),
+                        current_pnn=pnn,
+                        stage="svg-gate-repair",
+                        author_attempt=repair_round + 1,
+                        callbacks=ToolCallbacks(
+                            svg_gate=lambda current_pnn, current_path, current_sha256: (
+                                _page_local_agent_gate(
+                                    project,
+                                    current_pnn,
+                                    current_path,
+                                    current_sha256,
+                                )
+                            )
+                        ),
+                        required_authoring_mode="direct-svg",
+                    )
+                )
+                phase_id = f"{phase_prefix}-r{repair_round}-{pnn.lower()}"
+                result = repair_agent.run_phase(
+                    phase_id=phase_id,
+                    role="executor",
+                    goal=(
+                        f"Repair {pnn} for every supplied final SVG gate finding. Preserve "
+                        "approved facts, stable IDs, page ownership, and all unaffected content. "
+                        "Treat every data-pptx-bounds tuple as x y width height, never as "
+                        "x1 y1 x2 y2. After every write, run the page SVG gate, consume its "
+                        "complete observation, and continue repairing until the current SVG "
+                        "hash passes before completing the phase."
+                    ),
+                    locked_context=repair_context,
+                    tools=repair_tools,
+                    required_tools=frozenset(
+                        {
+                            "read_approved_context",
+                            "write_or_patch_slide_svg",
+                            "run_svg_gate",
+                        }
+                    ),
+                )
+                _require_agent_phase(result, phase_id)
+                svg_path = project / "svg_output" / f"slide_{page_index + 1:02d}.svg"
+                receipt = _agent_page_author_receipt(
+                    project,
+                    result,
+                    pnn=pnn,
+                    svg_path=svg_path,
+                    require_svg_gate=True,
+                )
+                completed_pages[page_index] = {
+                    "pnn": pnn,
+                    "slideId": slide.slide_id,
+                    "subjectSha256": receipt["subjectSha256"],
+                    "turnId": receipt["turnId"],
+                    "toolCallId": receipt["toolCallId"],
+                    "authoringMode": receipt["authoringMode"],
+                }
+                _event(
+                    project,
+                    "final_svg_gate",
+                    "agent-repaired",
+                    repairRound=repair_round,
+                    findingCodes=[finding["code"] for finding in findings],
+                    **receipt,
+                )
+            svg_paths = sorted((project / "svg_output").glob("*.svg"))
+            final_hash = _svg_roster_hash(svg_paths)
+            if final_hash == before_hash:
+                raise AdapterError(
+                    RENDER_FAILED,
+                    "final SVG gate repair completed without changing the SVG roster hash",
+                )
+            report = _run_final_svg_checker(
+                workspace_root,
+                project,
+                allow_failure=True,
+            )
+            if _final_svg_report_passed(report):
+                return completed_pages, svg_paths, final_hash, report
+    finally:
+        _close_owned_text_provider(repair_provider, repair_provider_owned)
+    raise AdapterError(
+        RENDER_FAILED,
+        "final SVG gate remained blocking after "
+        f"{FINAL_SVG_REPAIR_HARD_MAX_ROUNDS} Agent repair rounds: "
+        + _final_svg_failure_message(report),
+    )
 
 
 def run_default_workflow(
@@ -2836,77 +2789,15 @@ def run_default_workflow(
             },
         )
 
-    blueprint_proposal = _build_page_blueprint(request, fragments)
-    proposal_payload = blueprint_proposal.model_dump(by_alias=True, mode="json")
-    proposal_sha256 = canonical_sha256(proposal_payload)
-    _write_json(
-        project / "analysis" / "page-blueprint.proposal.v1.json",
-        proposal_payload,
-    )
-    blueprint = (
-        _author_blueprint_with_agent(
-            project,
-            request,
-            blueprint_proposal,
-            proposal_sha256,
-            proposal_payload,
-            fragments,
-            text_provider,
-        )
-        if request.authoring.mode == "agent-authoring"
-        else blueprint_proposal
-    )
-    blueprint_payload = blueprint.model_dump(by_alias=True, mode="json")
-    blueprint_path = project / "analysis" / "page-blueprint.v1.json"
-    _write_json(blueprint_path, blueprint_payload)
-    blueprint_report = validate_page_blueprint(blueprint, request, fragments)
-    blueprint_report_path = project / "validation" / "page-blueprint-support.json"
-    _write_json(blueprint_report_path, blueprint_report)
-    if not blueprint_report["passed"]:
-        raise AdapterError(CONTENT_QA_FAILED, json.dumps(blueprint_report, ensure_ascii=False))
-    blueprint_sha256 = canonical_sha256(blueprint_payload)
-    _receipt(
-        project,
-        request,
-        receipts,
-        kind="page-blueprint-gate",
-        status="passed",
-        subject_sha256=blueprint_sha256,
-        payload={
-            "approvedSnapshotSha256": request.approval.snapshot_sha256,
-            "sourceManifestSha256": request.sources.manifest_sha256,
-            "supportReportSha256": sha256_file(blueprint_report_path),
-            "pageCount": len(blueprint.pages),
-            "roster": [page.pnn for page in blueprint.pages],
-            "author": request.authoring.mode,
-            "strategistTurnId": blueprint.strategist_turn_id,
-            "strategistPhaseReceipt": (
-                (project / "agent" / "phase-receipts" / "strategist.json")
-                .relative_to(project)
-                .as_posix()
-                if request.authoring.mode == "agent-authoring"
-                else None
-            ),
-        },
-    )
-    _event(
-        project,
-        "design_spec_gate1",
-        "page-blueprint-validated",
-        blueprintSha256=blueprint_sha256,
-        supportReportSha256=sha256_file(blueprint_report_path),
-        author=request.authoring.mode,
-        strategistTurnId=blueprint.strategist_turn_id,
-    )
-    deck, plan = _build_deck(request, fragments, blueprint=blueprint)
+    deck, plan = _build_deck(request, fragments)
     chart_slide_ids = {str(value["slideId"]) for value in plan["roster"] if value.get("chart")}
     if chart_slide_ids & set(image_preparation.by_slide):
         raise AdapterError(
             RENDER_FAILED,
             "this release gate does not overlay raster images on native chart pages",
         )
-    deck_payload = deck.model_dump(by_alias=True, mode="json")
-    _write_json(project / "deck-plan.json", deck_payload)
+    if request.authoring.mode == "deterministic-template":
+        _write_json(project / "deck-plan.json", deck.model_dump(by_alias=True, mode="json"))
     evidence_map = build_evidence_map(
         deck,
         plan["roster"],
@@ -2914,8 +2805,17 @@ def run_default_workflow(
         source_manifest_sha256=request.sources.manifest_sha256,
     )
     _write_json(project / "analysis" / "evidence-map.json", evidence_map)
-    design_spec = _design_spec(request, plan, image_preparation)
-    _write_text(project / "design_spec.md", design_spec)
+    strategist_turn_id: str | None = None
+    if request.authoring.mode == "agent-authoring":
+        strategist_turn_id = _author_design_spec_with_agent(
+            project,
+            request,
+            fragments,
+            image_preparation,
+            text_provider,
+        )
+    else:
+        _write_text(project / "design_spec.md", _design_spec(request, plan, image_preparation))
     design_spec_sha256 = sha256_file(project / "design_spec.md")
     design_content = evaluate_deck(
         deck,
@@ -2924,10 +2824,11 @@ def run_default_workflow(
         evidence_map=evidence_map,
         source_fragments=fragments,
         source_manifest_sha256=request.sources.manifest_sha256,
-        represented_text=design_spec,
+        represented_text=(project / "design_spec.md").read_text(encoding="utf-8"),
+        representation_requirements=[
+            (slide.slide_id, "title", slide.title) for slide in deck.slides
+        ],
     )
-    design_content["pageBlueprintSha256"] = blueprint_sha256
-    design_content["blueprintSupportReportSha256"] = sha256_file(blueprint_report_path)
     design_content["reportSha256"] = _sha(
         {key: value for key, value in design_content.items() if key != "reportSha256"}
     )
@@ -2946,8 +2847,44 @@ def run_default_workflow(
             "roster": [item["pnn"] for item in plan["roster"]],
             "sourceManifestSha256": request.sources.manifest_sha256,
             "evidenceMapSha256": evidence_map["evidenceMapSha256"],
-            "pageBlueprintSha256": blueprint_sha256,
+            "strategistTurnId": strategist_turn_id,
         },
+    )
+    if "strategist-design-and-lock" not in request.confirmation.delegation_scope:
+        result = _workflow_result(
+            project,
+            request,
+            request_sha256,
+            receipts,
+            status="awaiting_design_confirmation",
+            stage="awaiting_design_confirmation",
+            checkpoint_id=checkpoint_id,
+        )
+        _write_json(project / "workflow-result.json", result.model_dump(by_alias=True, mode="json"))
+        return {
+            "result": result,
+            "paths": [project / "design_spec.md", project / "workflow-result.json"],
+        }
+    _receipt(
+        project,
+        request,
+        receipts,
+        kind="design-confirmation",
+        status="passed",
+        subject_sha256=design_spec_sha256,
+        payload={
+            "mode": "delegated",
+            "authorization": "strategist-design-and-lock",
+            "strategistTurnId": strategist_turn_id,
+            "approvedRoster": [item.pnn for item in request.outline],
+        },
+    )
+    _event(
+        project,
+        "design_confirmed",
+        "delegated-design-confirmation-recorded",
+        designSpecSha256=design_spec_sha256,
+        strategistTurnId=strategist_turn_id,
     )
     if request.production.refine_spec:
         result = _workflow_result(
@@ -2965,13 +2902,20 @@ def run_default_workflow(
             "paths": [project / "design_spec.md", project / "workflow-result.json"],
         }
 
-    _write_text(project / "spec_lock.md", _spec_lock(request, plan, image_preparation))
+    _write_text(
+        project / "spec_lock.md",
+        _spec_lock(
+            request,
+            plan,
+            image_preparation,
+            design_spec_sha256=design_spec_sha256,
+        ),
+    )
     spec_lock_sha256 = sha256_file(project / "spec_lock.md")
     validate_stage_entry(
         "spec_lock_gate2",
         receipts,
         request_sha256=request_sha256,
-        page_blueprint_sha256=blueprint_sha256,
         design_spec_sha256=design_spec_sha256,
     )
     _run(
@@ -3026,7 +2970,10 @@ def run_default_workflow(
             "colors": ["#F8FAFC", "#0F172A", "#2563EB", "#0F766E"],
             "titleFont": "Microsoft YaHei, Arial, sans-serif",
             "bodyFont": "Microsoft YaHei, Arial, sans-serif",
+            "slideTitleSize": 48,
+            "coverTitleSize": 64,
             "bodySize": 22,
+            "footerPageNumber": "exact PNN at bottom-right",
         },
     )
     preview_command = [
@@ -3088,8 +3035,6 @@ def run_default_workflow(
             workspace_root,
             project,
             request,
-            blueprint,
-            blueprint_sha256,
             fragments,
             deck,
             plan,
@@ -3113,9 +3058,7 @@ def run_default_workflow(
 
     svg_paths = sorted(svg_dir.glob("*.svg"))
     if len(svg_paths) != len(deck.slides):
-        raise AdapterError(
-            RENDER_FAILED, "authored SVG roster does not match the approved Outline"
-        )
+        raise AdapterError(RENDER_FAILED, "authored SVG roster does not match the approved Outline")
     final_svg_sha256 = _svg_roster_hash(svg_paths)
     if request.image.scope != "none" and (
         current_image_inventory_sha256(project) != image_preparation.inventory_sha256
@@ -3124,7 +3067,32 @@ def run_default_workflow(
             RENDER_FAILED,
             "images changed after analysis; regenerate image_analysis.csv before final QA",
         )
-    _run_final_svg_checker(workspace_root, project)
+    final_svg_report = _run_final_svg_checker(
+        workspace_root,
+        project,
+        allow_failure=request.authoring.mode == "agent-authoring",
+    )
+    if not _final_svg_report_passed(final_svg_report):
+        if request.authoring.mode != "agent-authoring":
+            raise AdapterError(
+                RENDER_FAILED,
+                _final_svg_failure_message(final_svg_report),
+            )
+        completed_pages, svg_paths, final_svg_sha256, final_svg_report = (
+            _repair_final_svg_gate_with_agent(
+                workspace_root,
+                project,
+                request,
+                fragments,
+                deck,
+                plan,
+                image_preparation,
+                image_resource_by_slide,
+                completed_pages,
+                final_svg_report,
+                text_provider,
+            )
+        )
     _receipt(
         project,
         request,
@@ -3135,22 +3103,38 @@ def run_default_workflow(
         payload={
             "pageCount": len(svg_paths),
             "exactRoster": [item["pnn"] for item in plan["roster"]],
+            "blockingCount": int(
+                final_svg_report.get("categories", {}).get("blocking", {}).get("count", 0)
+            ),
         },
     )
 
     if request.production.visual_review:
-        review_provider, review_provider_owned = _presentation_text_provider(
-            request, text_provider
-        )
+        review_provider: TextProvider | None = None
+        review_provider_owned = False
+        review_agent_provider: TextProvider | None = None
+        review_agent_provider_owned = False
         final_review: dict[str, Any] | None = None
         final_review_evidence: dict[str, Any] | None = None
+        max_review_rounds = request.authoring.resolved_visual_review_max_rounds()
+        metrics_history: list[dict[str, Any]] = []
+        best_review: dict[str, Any] | None = None
+        best_review_evidence: dict[str, Any] | None = None
+        best_snapshot = project / "agent" / "visual-reviews" / "best-svg"
+        terminal_review_decision: dict[str, Any] | None = None
         try:
+            review_provider, review_provider_owned = _visual_review_text_provider(
+                request, text_provider
+            )
+            review_agent_provider, review_agent_provider_owned = _presentation_text_provider(
+                request, text_provider
+            )
             review_agent = MainPresentationAgent(
                 project=project,
                 request=request,
-                provider=review_provider,
+                provider=review_agent_provider,
             )
-            for review_round in range(1, 3):
+            for review_round in range(1, max_review_rounds + 1):
                 render_set = render_visual_assets(project, review_round=review_round)
                 review_phase_id = f"visual-review-r{review_round}"
 
@@ -3174,8 +3158,6 @@ def run_default_workflow(
                     PresentationToolContext(
                         project=project,
                         request=request,
-                        blueprint=blueprint,
-                        blueprint_sha256=blueprint_sha256,
                         fragments=tuple(fragments),
                         allowed_tools=frozenset({"request_visual_review"}),
                         current_pnn="P01",
@@ -3196,9 +3178,7 @@ def run_default_workflow(
                         "mode": "visual-review",
                         "workflowRunId": request.workflow_run_id,
                         "reviewRound": review_round,
-                        "page": blueprint.pages[0].model_dump(
-                            by_alias=True, mode="json"
-                        ),
+                        "page": request.outline[0].model_dump(by_alias=True, mode="json"),
                         "renderSet": render_set,
                         "requiredTools": ["request_visual_review"],
                     },
@@ -3217,6 +3197,37 @@ def run_default_workflow(
                     project / "validation" / f"visual-review-round-{review_round}.json",
                     final_review,
                 )
+                current_metrics = visual_review_metrics(
+                    final_review, [item["pnn"] for item in plan["roster"]]
+                )
+                decision = adaptive_visual_review_decision(
+                    review_round=review_round,
+                    max_rounds=max_review_rounds,
+                    metrics_history=metrics_history,
+                    current_metrics=current_metrics,
+                )
+                is_new_best = not metrics_history or tuple(current_metrics["qualityKey"]) < min(
+                    tuple(item["qualityKey"]) for item in metrics_history
+                )
+                if is_new_best:
+                    _snapshot_svg_roster(sorted(svg_dir.glob("slide_*.svg")), best_snapshot)
+                    best_review = dict(final_review)
+                    best_review_evidence = dict(final_review_evidence)
+                decision_evidence = {
+                    "schema": "instant-ppt.visual-review-decision.v1",
+                    "workflowRunId": request.workflow_run_id,
+                    "reviewRound": review_round,
+                    "maxRounds": max_review_rounds,
+                    "subjectSha256": final_review["subjectSha256"],
+                    "svgRosterSha256": _svg_roster_hash(sorted(svg_dir.glob("slide_*.svg"))),
+                    "metrics": current_metrics,
+                    **decision,
+                }
+                decision_evidence["evidenceSha256"] = canonical_sha256(decision_evidence)
+                _write_json(
+                    project / "agent" / "visual-reviews" / f"decision-round-{review_round}.json",
+                    decision_evidence,
+                )
                 _event(
                     project,
                     "visual_review",
@@ -3225,15 +3236,26 @@ def run_default_workflow(
                     reviewToolCallId=review_record["toolCallId"],
                     subjectSha256=review_record["subjectSha256"],
                     blockingCount=sum(
-                        1
-                        for issue in final_review["issues"]
-                        if issue["severity"] == "blocking"
+                        1 for issue in final_review["issues"] if issue["severity"] == "blocking"
                     ),
+                    decision=decision["decision"],
+                    decisionReason=decision["reason"],
+                    bestRound=decision["bestRound"],
+                    stagnationCount=decision["stagnationCount"],
                 )
-                if final_review["passed"]:
+                metrics_history.append(current_metrics)
+                if decision["decision"] == "pass":
                     break
-                if review_round == 2:
-                    continue
+                if decision["decision"] != "repair":
+                    terminal_review_decision = decision_evidence
+                    svg_paths = _restore_svg_roster(best_snapshot, svg_dir)
+                    final_svg_sha256 = _svg_roster_hash(svg_paths)
+                    _run_final_svg_checker(workspace_root, project)
+                    if best_review is not None:
+                        final_review = best_review
+                    if best_review_evidence is not None:
+                        final_review_evidence = best_review_evidence
+                    break
                 findings_by_page = blocking_pages(
                     final_review, [item["pnn"] for item in plan["roster"]]
                 )
@@ -3244,16 +3266,12 @@ def run_default_workflow(
                 before_review_repair_sha256 = final_svg_sha256
                 for pnn, findings in findings_by_page.items():
                     page_index = next(
-                        index
-                        for index, page in enumerate(blueprint.pages)
-                        if page.pnn == pnn
+                        index for index, page in enumerate(request.outline) if page.pnn == pnn
                     )
                     slide = deck.slides[page_index]
                     image_path = image_preparation.by_slide.get(slide.slide_id)
                     image_href = (
-                        f"../images/{Path(image_path).name}"
-                        if image_path is not None
-                        else None
+                        f"../images/{Path(image_path).name}" if image_path is not None else None
                     )
                     resource = image_resource_by_slide.get(slide.slide_id)
                     requested_crop = str(
@@ -3261,23 +3279,18 @@ def run_default_workflow(
                     )
                     repair_context = _executor_locked_context(
                         request,
-                        blueprint,
-                        blueprint_sha256,
                         deck,
                         plan,
                         index=page_index,
                         completed_pages=completed_pages,
                         image_href=image_href,
-                        image_crop=(
-                            "contain"
-                            if requested_crop in {"contain", "fit"}
-                            else "cover"
-                        ),
+                        image_crop=("contain" if requested_crop in {"contain", "fit"} else "cover"),
                         author_attempt=review_round + 1,
                     )
                     repair_context.update(
                         {
                             "mode": "visual-repair",
+                            "requiredAuthoringMode": "direct-svg",
                             "reviewRound": review_round,
                             "reviewSubjectSha256": final_review["subjectSha256"],
                             "visualFindings": findings,
@@ -3287,8 +3300,6 @@ def run_default_workflow(
                         PresentationToolContext(
                             project=project,
                             request=request,
-                            blueprint=blueprint,
-                            blueprint_sha256=blueprint_sha256,
                             fragments=tuple(fragments),
                             allowed_tools=frozenset(
                                 {
@@ -3300,6 +3311,7 @@ def run_default_workflow(
                             current_pnn=pnn,
                             stage="visual-repair",
                             author_attempt=review_round + 1,
+                            required_authoring_mode="direct-svg",
                         )
                     )
                     repair_phase_id = f"visual-repair-r{review_round}-{pnn.lower()}"
@@ -3331,6 +3343,7 @@ def run_default_workflow(
                         "subjectSha256": repair_receipt["subjectSha256"],
                         "turnId": repair_receipt["turnId"],
                         "toolCallId": repair_receipt["toolCallId"],
+                        "authoringMode": repair_receipt["authoringMode"],
                     }
                     _event(
                         project,
@@ -3346,7 +3359,31 @@ def run_default_workflow(
                     raise VisualReviewError(
                         "visual repair completed without changing the owned SVG roster hash"
                     )
-                _run_final_svg_checker(workspace_root, project)
+                post_visual_svg_report = _run_final_svg_checker(
+                    workspace_root,
+                    project,
+                    allow_failure=True,
+                )
+                if not _final_svg_report_passed(post_visual_svg_report):
+                    (
+                        completed_pages,
+                        svg_paths,
+                        final_svg_sha256,
+                        post_visual_svg_report,
+                    ) = _repair_final_svg_gate_with_agent(
+                        workspace_root,
+                        project,
+                        request,
+                        fragments,
+                        deck,
+                        plan,
+                        image_preparation,
+                        image_resource_by_slide,
+                        completed_pages,
+                        post_visual_svg_report,
+                        review_agent_provider,
+                        phase_prefix=(f"svg-gate-repair-post-visual-v{review_round}"),
+                    )
                 _receipt(
                     project,
                     request,
@@ -3364,7 +3401,13 @@ def run_default_workflow(
         except (AgentRuntimeError, ProviderRequestError, VisualReviewError) as error:
             raise AdapterError(RENDER_FAILED, f"bounded visual review failed: {error}") from error
         finally:
-            _close_owned_text_provider(review_provider, review_provider_owned)
+            if review_provider is not None:
+                _close_owned_text_provider(review_provider, review_provider_owned)
+            if review_agent_provider is not None:
+                _close_owned_text_provider(
+                    review_agent_provider,
+                    review_agent_provider_owned,
+                )
         if final_review is None:
             raise AdapterError(RENDER_FAILED, "visual review produced no structured report")
         if final_review_evidence is None:
@@ -3383,7 +3426,10 @@ def run_default_workflow(
                     WorkflowError(
                         code="VISUAL_REVIEW_BLOCKING",
                         message=(
-                            "blocking visual findings remain after the bounded review/repair loop"
+                            "blocking visual findings remain after adaptive review: "
+                            + str(
+                                (terminal_review_decision or {}).get("reason", "bounded-loop-ended")
+                            )
                         ),
                         owner="runtime",
                         recovery_stage="visual_review",
@@ -3489,9 +3535,15 @@ def run_default_workflow(
         source_fragments=fragments,
         source_manifest_sha256=request.sources.manifest_sha256,
         represented_text=_svg_visible_text(svg_paths),
+        representation_requirements=(
+            [
+                (page.slide_id, "title", roster["title"])
+                for page, roster in zip(request.outline, plan["roster"], strict=True)
+            ]
+        )
+        if request.authoring.mode == "agent-authoring"
+        else None,
     )
-    final_content["pageBlueprintSha256"] = blueprint_sha256
-    final_content["blueprintSupportReportSha256"] = sha256_file(blueprint_report_path)
     final_content["reportSha256"] = _sha(
         {key: value for key, value in final_content.items() if key != "reportSha256"}
     )
@@ -3508,7 +3560,6 @@ def run_default_workflow(
         payload={
             "reportSha256": sha256_file(project / "validation" / "content-final-svg.json"),
             "evidenceMapSha256": evidence_map["evidenceMapSha256"],
-            "pageBlueprintSha256": blueprint_sha256,
         },
     )
 
@@ -3750,7 +3801,18 @@ def run_default_workflow(
         payload={"reportSha256": sha256_file(postflights[-1]), "qualityGate": "current-final"},
     )
 
-    package_report = inspect_pptx(pptx_path, deck)
+    package_report = inspect_pptx(
+        pptx_path,
+        deck,
+        expected_editable_text=(
+            {
+                page.slide_id: [str(roster["title"])]
+                for page, roster in zip(request.outline, plan["roster"], strict=True)
+            }
+            if request.authoring.mode == "agent-authoring"
+            else None
+        ),
+    )
     package_report_path = project / "validation" / "pptx-package-qa.json"
     write_package_report(package_report_path, package_report)
     if not package_report["passed"]:
@@ -3767,8 +3829,6 @@ def run_default_workflow(
         representation_verified=bool(package_report["passed"]),
     )
     pptx_content["editableNativeChartCount"] = package_report["editableNativeShapeCount"]
-    pptx_content["pageBlueprintSha256"] = blueprint_sha256
-    pptx_content["blueprintSupportReportSha256"] = sha256_file(blueprint_report_path)
     pptx_content["reportSha256"] = _sha(
         {key: value for key, value in pptx_content.items() if key != "reportSha256"}
     )
@@ -3784,20 +3844,18 @@ def run_default_workflow(
             "reportSha256": sha256_file(project / "validation" / "content-pptx.json"),
             "packageQaSha256": sha256_file(package_report_path),
             "evidenceMapSha256": evidence_map["evidenceMapSha256"],
-            "pageBlueprintSha256": blueprint_sha256,
         },
     )
-    consistency_report = {
-        "schema": "instant-ppt.page-blueprint-consistency.v1",
+    release_trace = {
+        "schema": "instant-ppt.release-trace.v1",
         "workflowRunId": request.workflow_run_id,
         "approvedSnapshotSha256": request.approval.snapshot_sha256,
-        "pageBlueprintSha256": blueprint_sha256,
         "designSpecSha256": design_spec_sha256,
+        "specLockSha256": spec_lock_sha256,
         "finalSvgSha256": final_svg_sha256,
         "compiledPptxSha256": pptx_sha256,
         "evidenceMapSha256": evidence_map["evidenceMapSha256"],
         "reports": {
-            "blueprintSupport": sha256_file(blueprint_report_path),
             "designSpec": sha256_file(project / "validation" / "content-design-spec.json"),
             "finalSvg": sha256_file(project / "validation" / "content-final-svg.json"),
             "compiledPptx": sha256_file(project / "validation" / "content-pptx.json"),
@@ -3806,28 +3864,29 @@ def run_default_workflow(
             {
                 "pnn": page.pnn,
                 "slideId": page.slide_id,
-                "assertion": page.assertion,
-                "renderedTitle": roster["title"],
-                "evidenceRefs": page.evidence_refs,
-                "literalConstraints": page.literal_constraints,
+                "title": roster["title"],
+                "body": _svg_page_body(
+                    project / "svg_final" / f"slide_{page.order:02d}.svg",
+                    title=str(roster["title"]),
+                    pnn=page.pnn,
+                ),
             }
-            for page, roster in zip(blueprint.pages, plan["roster"], strict=True)
+            for page, roster in zip(request.outline, plan["roster"], strict=True)
         ],
         "passed": bool(
-            blueprint_report["passed"]
-            and design_content["passed"]
+            design_content["passed"]
             and final_content["passed"]
             and pptx_content["passed"]
             and package_report["passed"]
         ),
     }
-    consistency_report["reportSha256"] = _sha(consistency_report)
+    release_trace["reportSha256"] = _sha(release_trace)
     _write_json(
-        project / "validation" / "page-blueprint-consistency.json",
-        consistency_report,
+        project / "validation" / "release-trace.json",
+        release_trace,
     )
-    if not consistency_report["passed"]:
-        raise AdapterError(CONTENT_QA_FAILED, json.dumps(consistency_report, ensure_ascii=False))
+    if not release_trace["passed"]:
+        raise AdapterError(CONTENT_QA_FAILED, json.dumps(release_trace, ensure_ascii=False))
 
     if request.production.effective_narration_audio == "enabled":
         _receipt(
@@ -3888,7 +3947,6 @@ def run_default_workflow(
         "publish",
         receipts,
         request_sha256=request_sha256,
-        page_blueprint_sha256=blueprint_sha256,
         design_spec_sha256=design_spec_sha256,
         spec_lock_sha256=spec_lock_sha256,
         final_svg_sha256=final_svg_sha256,

@@ -7,6 +7,7 @@ server-side text provider and never fall through to this implementation.
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import unicodedata
@@ -78,18 +79,8 @@ def _visual_review_completion(messages: list[dict[str, Any]]) -> TextCompletion:
         context, _ = json.JSONDecoder().raw_decode(text[start + len(marker) :])
         break
     if context is None:
-        raise RuntimeError("visual review fixture received no hash-bound review context")
-    payload = {
-        "schemaVersion": 1,
-        "workflowRunId": context["workflowRunId"],
-        "reviewRound": context["reviewRound"],
-        "subjectSha256": context["subjectSha256"],
-        "renderSetSha256": context["renderSetSha256"],
-        "contactSheetSha256": context["contactSheetSha256"],
-        "passed": True,
-        "issues": [],
-        "summary": "Fixture reviewer found no blocking visual issue in the rendered roster.",
-    }
+        raise RuntimeError("visual review fixture received no bounded review context")
+    payload = {"issues": []}
     rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     image_count = sum(
         1
@@ -190,41 +181,118 @@ def _strategist_decision(
         )
     if "write_planning_artifact" not in tools:
         context = phase["context"]
-        proposal = context["pageBlueprintProposal"]
+        outline = list(context["approvedOutline"])
+        lines = [
+            "<!-- ppt-master-schema: design-spec/v1 -->",
+            f"# {context['intent']['title']} - Design Spec",
+            "",
+            "## I. Project Information",
+            "",
+            f"- Project: {context['intent']['title']}",
+            f"- Audience: {context['intent']['audience']}",
+            f"- Objective: {context['intent']['objective']}",
+            "",
+            "## II. Canvas Specification",
+            "",
+            "- PPT 16:9, 1280 × 720, 72 px safe margin.",
+            "",
+            "## III. Visual Theme",
+            "",
+            "- Conclusion-first editorial system derived from the approved source corpus.",
+            "- Restrained data-journalism palette with a clear evidence hierarchy.",
+            "",
+            "### AI Image Strategy",
+            "",
+            "- Use only explicitly approved resources; keep all factual text as native SVG.",
+            "",
+            "## IV. Typography System",
+            "",
+            "- Microsoft YaHei / Arial; 64 px cover title, 48 px slide title, 22 px body.",
+            "",
+            "## V. Layout Principles",
+            "",
+            "- Preserve stable page identities and use Direct SVG on a 1280 × 720 canvas.",
+            "- Native chart/table metadata is allowed only when approved source values support it.",
+            "",
+            "## VI. Icon Usage Specification",
+            "",
+            "- No generic icon library is required; use simple native geometry when needed.",
+            "",
+            "## VIII. Image Resource List",
+            "",
+            (
+                "| Filename | Dimensions | Ratio | Purpose | Type | Layout pattern | "
+                "Crop Policy | Acquire Via | Status | Reference | text_policy | page_role |"
+            ),
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "",
+            "## IX. Content Outline",
+            "",
+        ]
+        for index, resource in enumerate(context.get("preparedImages") or [], start=1):
+            if resource.get("status") == "Resolved-Native":
+                continue
+            filename = str(resource.get("filename") or f"pending-image-{index:02d}.png")
+            lines.insert(
+                lines.index("## IX. Content Outline") - 1,
+                "| "
+                + " | ".join(
+                    [
+                        filename,
+                        str(resource.get("dimensions") or "n/a"),
+                        str(resource.get("ratio") or "n/a"),
+                        str(resource.get("purpose") or "approved image resource"),
+                        "Illustration",
+                        str(resource.get("layoutPattern") or "editorial image beside native copy"),
+                        str(resource.get("cropPolicy") or "adaptive"),
+                        str(resource.get("acquireVia") or "placeholder"),
+                        str(resource.get("status") or "Pending"),
+                        ",".join(str(value) for value in resource.get("slideIds") or []),
+                        "none",
+                        "hero_page",
+                    ]
+                )
+                + " |",
+            )
+        for page in outline:
+            lines.extend(
+                [
+                    f"#### Slide {page['order']:02d} / {page['pnn']} - {page['title']}",
+                    f"- Communication goal: {page['audienceQuestion']}",
+                    f"- Audience move: {page['audienceQuestion']}",
+                    f"- Narrative role: {page['role']}",
+                    "- Layout: choose freely within the shared visual system.",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "## X. Speaker Notes Requirements",
+                "",
+                "- Follow the approved production policy and keep notes page-local.",
+            ]
+        )
         return _decision(
             "strategist",
             tool_name="write_planning_artifact",
             arguments={
-                "filename": "strategist-plan.json",
-                "payload": {
-                    "schema": "instant-ppt.strategist-plan.v1",
-                    "workflowRunId": context["workflowRunId"],
-                    "proposalSha256": context["proposalSha256"],
-                    "pageCount": len(proposal["pages"]),
-                    "roster": [page["pnn"] for page in proposal["pages"]],
-                    "decision": "accepted-with-semantic-page-ownership",
-                },
+                "filename": "design_spec.md",
+                "content": "\n".join(lines),
             },
-            reason="Persist the model-selected storyline and page ownership decision.",
+            reason="Directly persist the Strategist-authored design specification.",
         )
     return _decision(
         "strategist",
-        reason="The proposal, evidence ownership, and design vocabulary were inspected and fixed.",
+        reason="The approved context was transformed directly into the locked design direction.",
         termination_reason="strategist-plan-complete",
     )
 
 
-def _executor_decision(
-    phase: dict[str, Any], observations: list[dict[str, Any]]
-) -> dict[str, Any]:
+def _executor_decision(phase: dict[str, Any], observations: list[dict[str, Any]]) -> dict[str, Any]:
     context = phase["context"]
     pnn = str(context["page"]["pnn"])
     if context.get("mode") == "visual-review":
-        observations = [
-            value
-            for value in observations
-            if value.get("stage") == phase["phaseId"]
-        ]
+        observations = [value for value in observations if value.get("stage") == phase["phaseId"]]
         if "request_visual_review" not in _tool_names(observations):
             return _decision(
                 "executor",
@@ -237,7 +305,9 @@ def _executor_decision(
             termination_reason=f"visual-review-round-{context['reviewRound']}-observed",
         )
     expected_stage = (
-        "visual-repair" if phase["phaseId"].startswith("visual-repair-") else "executor"
+        "visual-repair"
+        if phase["phaseId"].startswith("visual-repair-")
+        else ("svg-gate-repair" if phase["phaseId"].startswith("svg-gate-repair-") else "executor")
     )
     observations = [
         value
@@ -264,20 +334,15 @@ def _executor_decision(
         if value.get("toolName") == "write_or_patch_slide_svg"
     ]
     gate_indexes = [
-        index
-        for index, value in enumerate(observations)
-        if value.get("toolName") == "run_svg_gate"
+        index for index, value in enumerate(observations) if value.get("toolName") == "run_svg_gate"
     ]
     latest_gate_passed = bool(
         gate_indexes
-        and observations[gate_indexes[-1]]
-        .get("observation", {})
-        .get("report", {})
-        .get("passed")
+        and observations[gate_indexes[-1]].get("observation", {}).get("report", {}).get("passed")
         is True
     )
     needs_revision = bool(
-        pnn == "P01"
+        (pnn == "P01" or expected_stage == "svg-gate-repair")
         and gate_indexes
         and gate_indexes[-1] > write_indexes[-1]
         and not latest_gate_passed
@@ -288,23 +353,21 @@ def _executor_decision(
             tool_name="write_or_patch_slide_svg",
             arguments={
                 "pnn": pnn,
-                "mode": "scene-graph",
-                "sceneGraph": _scene_graph(
+                "mode": "direct-svg",
+                "svg": _direct_svg(
                     context,
-                    revision=max(
-                        int(context.get("authorAttempt") or 1), len(write_indexes) + 1
-                    ),
+                    revision=max(int(context.get("authorAttempt") or 1), len(write_indexes) + 1),
                 ),
             },
             reason=(
                 "Revise the page using the complete checker observation."
                 if write_indexes
-                else "Author the page from its Blueprint with editable semantic objects."
+                else "Author the page from approved context with editable semantic objects."
             ),
         )
-    if expected_stage == "executor" and pnn == "P01" and (
-        not gate_indexes or gate_indexes[-1] < write_indexes[-1]
-    ):
+    if (
+        (expected_stage == "executor" and pnn == "P01") or expected_stage == "svg-gate-repair"
+    ) and (not gate_indexes or gate_indexes[-1] < write_indexes[-1]):
         return _decision(
             "executor",
             tool_name="run_svg_gate",
@@ -396,8 +459,9 @@ def _text_node(
     size: float,
     weight: int = 400,
     color: str = "#1E293B",
+    text_anchor: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    node = {
         "nodeId": node_id,
         "kind": "text",
         "x": x,
@@ -409,6 +473,9 @@ def _text_node(
         "fontWeight": weight,
         "textColor": color,
     }
+    if text_anchor is not None:
+        node["textAnchor"] = text_anchor
+    return node
 
 
 def _shape_node(
@@ -470,7 +537,7 @@ def _stacked_text_nodes(
     return nodes
 
 
-def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
+def _fixture_layout(context: dict[str, Any], *, revision: int) -> list[dict[str, Any]]:
     page = context["page"]
     slide = context["slide"]
     title = _wrapped(_display_copy(str(slide["title"])), 28)
@@ -506,12 +573,12 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
             y=76,
             width=1136,
             height=106,
-            size=38 if role != "cover" else 46,
+            size=64 if role == "cover" else 48,
             weight=700,
             color="#0F172A",
         ),
     ]
-    chart = page.get("chartSpec")
+    chart = context.get("chart")
     image_href = context.get("imageHref")
     if chart:
         nodes.extend(
@@ -527,8 +594,10 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
                     "stroke": "#CBD5E1",
                     "chart": {
                         "objectKey": chart["objectKey"],
-                        "chartType": chart["chartType"],
-                        "values": chart["values"],
+                        "chartType": "column",
+                        "values": [
+                            {"label": label, "value": value} for label, value in chart["values"]
+                        ],
                         "unit": chart["unit"],
                         "sourceText": str(chart["context"]),
                     },
@@ -612,9 +681,7 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
         fitted_right, right_size = _fit_text(right, 488, 250, 25)
         nodes.extend(
             [
-                _shape_node(
-                    "left-panel", x=72, y=220, width=536, height=380, fill="#FFFFFF"
-                ),
+                _shape_node("left-panel", x=72, y=220, width=536, height=380, fill="#FFFFFF"),
                 _shape_node(
                     "right-panel",
                     x=640,
@@ -666,12 +733,8 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
             2: [260, 760],
             3: [120, 490, 860],
         }[len(statements)]
-        for index, (statement, x) in enumerate(
-            zip(statements, positions, strict=True)
-        ):
-            fitted_statement, statement_size = _fit_text(
-                statement, 300, 120, 18
-            )
+        for index, (statement, x) in enumerate(zip(statements, positions, strict=True)):
+            fitted_statement, statement_size = _fit_text(statement, 300, 120, 18)
             nodes.extend(
                 [
                     _shape_node(
@@ -742,13 +805,125 @@ def _scene_graph(context: dict[str, Any], *, revision: int) -> dict[str, Any]:
             color="#64748B",
         )
     )
-    return {
-        "schemaVersion": 1,
-        "workflowRunId": context["workflowRunId"],
-        "slideId": page["slideId"],
-        "pnn": page["pnn"],
-        "pageBlueprintSha256": context["blueprintSha256"],
-        "authorAttempt": context["authorAttempt"],
-        "background": "#F8FAFC",
-        "nodes": nodes,
-    }
+    nodes.append(
+        _text_node(
+            "page-number",
+            str(page["pnn"]),
+            x=1208,
+            y=648,
+            width=48,
+            height=24,
+            size=15,
+            color="#64748B",
+            text_anchor="end",
+        )
+    )
+    return nodes
+
+
+def _direct_svg(context: dict[str, Any], *, revision: int) -> str:
+    """Render the deterministic test fixture straight to the production SVG contract."""
+
+    def esc(value: Any) -> str:
+        return html.escape(str(value), quote=True)
+
+    def render(node: dict[str, Any]) -> list[str]:
+        node_id = esc(node["nodeId"])
+        kind = node["kind"]
+        x = float(node["x"])
+        y = float(node["y"])
+        width = float(node["width"])
+        height = float(node["height"])
+        if kind == "text":
+            size = float(node.get("fontSize") or 22)
+            parts = str(node.get("text") or "").splitlines() or [""]
+            spans = "".join(
+                f'<tspan x="{x:g}" dy="{0 if index == 0 else size * 1.25:g}">{esc(part)}</tspan>'
+                for index, part in enumerate(parts)
+            )
+            return [
+                f'<text id="{node_id}" x="{x:g}" y="{y + size:g}" '
+                f'font-family="Microsoft YaHei, Arial, sans-serif" font-size="{size:g}" '
+                f'font-weight="{int(node.get("fontWeight") or 400)}" '
+                f'text-anchor="{esc(node.get("textAnchor") or "start")}" '
+                f'fill="{esc(node.get("textColor") or "#1E293B")}">{spans}</text>'
+            ]
+        if kind == "shape":
+            fill = esc(node.get("fill") or "#FFFFFF")
+            stroke = esc(node.get("stroke") or "#CBD5E1")
+            shape = node.get("shape") or "round-rect"
+            if shape == "line":
+                return [
+                    f'<line id="{node_id}" x1="{x:g}" y1="{y:g}" '
+                    f'x2="{x + width:g}" y2="{y + height:g}" stroke="{stroke}"/>'
+                ]
+            if shape == "ellipse":
+                return [
+                    f'<ellipse id="{node_id}" cx="{x + width / 2:g}" '
+                    f'cy="{y + height / 2:g}" rx="{width / 2:g}" ry="{height / 2:g}" '
+                    f'fill="{fill}" stroke="{stroke}"/>'
+                ]
+            radius = 0 if shape == "rect" else min(20, height / 4)
+            return [
+                f'<rect id="{node_id}" x="{x:g}" y="{y:g}" width="{width:g}" '
+                f'height="{height:g}" rx="{radius:g}" fill="{fill}" stroke="{stroke}"/>'
+            ]
+        if kind == "image":
+            aspect = "meet" if node.get("crop") == "contain" else "slice"
+            return [
+                f'<image id="{node_id}" x="{x:g}" y="{y:g}" width="{width:g}" '
+                f'height="{height:g}" href="{esc(node["href"])}" '
+                f'preserveAspectRatio="xMidYMid {aspect}"/>'
+            ]
+        if kind == "chart":
+            chart = node["chart"]
+            values = [point["value"] for point in chart["values"]]
+            metadata = {
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+                "name": chart["objectKey"],
+                "type": chart["chartType"],
+                "categories": [point["label"] for point in chart["values"]],
+                "series": [{"name": chart["unit"], "values": values}],
+                "show_legend": False,
+                "source": {"text": chart["sourceText"]},
+            }
+            bars = []
+            maximum = max([abs(float(value)) for value in values] or [1.0]) or 1.0
+            bar_width = max(12.0, (width - 96) / max(1, len(values)) - 12)
+            for index, value in enumerate(values):
+                bar_height = (height - 120) * abs(float(value)) / maximum
+                bar_x = x + 56 + index * (bar_width + 12)
+                bars.append(
+                    f'<rect id="{node_id}-bar-{index + 1}" x="{bar_x:g}" '
+                    f'y="{y + height - 48 - bar_height:g}" width="{bar_width:g}" '
+                    f'height="{bar_height:g}" fill="#2563EB"/>'
+                )
+            return [
+                f'<g id="{node_id}" data-pptx-bounds="{x:g} {y:g} {width:g} {height:g}" '
+                'data-pptx-replace-with="chart">',
+                '<metadata type="application/json">'
+                + html.escape(json.dumps(metadata, ensure_ascii=False, separators=(",", ":")))
+                + "</metadata>",
+                f"<!-- chart-plot-area: object={esc(chart['objectKey'])} -->",
+                f'<rect id="{node_id}-panel" x="{x:g}" y="{y:g}" width="{width:g}" '
+                f'height="{height:g}" rx="12" fill="#FFFFFF" stroke="#CBD5E1"/>',
+                *bars,
+                "</g>",
+            ]
+        raise ValueError(f"unsupported deterministic fixture element: {kind}")
+
+    page_role = esc(str(context["page"]["role"]).replace("_", "-"))
+    lines = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
+        f'viewBox="0 0 1280 720" data-pptx-page-role="{page_role}">',
+        '<rect id="page-background" x="0" y="0" width="1280" height="720" '
+        'fill="#F8FAFC" data-pptx-role="background"/>',
+        '<g id="page-content" data-pptx-bounds="0 0 1280 720">',
+    ]
+    for item in _fixture_layout(context, revision=revision):
+        lines.extend(render(item))
+    lines.extend(["</g>", "</svg>"])
+    return "\n".join(lines) + "\n"

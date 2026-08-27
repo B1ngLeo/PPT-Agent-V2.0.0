@@ -9,7 +9,7 @@ from typing import Any
 
 from instant_ppt_worker.models import DeckPlan
 
-_FACT_PREFIX = re.compile(r"^(?:结论|证据|事实|数据)[：:]\s*")
+_FACT_PREFIX = re.compile(r"^(?:结论|展望|证据|事实|数据)[：:]\s*")
 _NUMBER = re.compile(r"(?<![A-Za-z0-9])[-+]?(?:\d+(?:\.\d+)?|\.\d+)%?")
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9._-]*|[\u3400-\u9fff]")
 
@@ -81,9 +81,10 @@ def build_evidence_map(
     cited_core: set[tuple[str, str]] = set()
     for slide, planned in zip(deck.slides, roster, strict=True):
         claims: list[dict[str, Any]] = []
-        visible = [("title", slide.title), *(
-            (f"body[{index}]", value) for index, value in enumerate(slide.body)
-        )]
+        visible = [
+            ("title", slide.title),
+            *((f"body[{index}]", value) for index, value in enumerate(slide.body)),
+        ]
         for field, text in visible:
             if not fragments:
                 claim_type = "limited-general"
@@ -100,6 +101,12 @@ def build_evidence_map(
                 supporting = []
             elif field == "title" and text == planned.get("approvedOutlineTitle"):
                 claim_type = "approved-outline-framing"
+                supporting = []
+            elif text in set(planned.get("approvedOutlineKeyPoints") or []):
+                # The user explicitly approved these points with the Outline. They are
+                # checked for substantive representation later, not by a Chinese lexical
+                # similarity threshold against a separately generated page contract.
+                claim_type = "approved-outline-content"
                 supporting = []
             elif field == "title" and planned.get("chart"):
                 claim_type = "derived-comparison"
@@ -123,8 +130,7 @@ def build_evidence_map(
                 supporting = _supporting_fragments(text, fragments)
             citations = [_citation(item) for item in supporting]
             cited_core.update(
-                (str(item["sourceArtifactId"]), str(item["fragmentId"]))
-                for item in supporting
+                (str(item["sourceArtifactId"]), str(item["fragmentId"])) for item in supporting
             )
             claim: dict[str, Any] = {
                 "field": field,
@@ -138,9 +144,7 @@ def build_evidence_map(
                 ranked = sorted(values, key=lambda item: item[1], reverse=True)
                 claim["derivation"] = {
                     "formula": "(leader-runnerUp)/runnerUp*100",
-                    "operands": [
-                        {"label": label, "value": value} for label, value in values
-                    ],
+                    "operands": [{"label": label, "value": value} for label, value in values],
                     "result": (
                         (ranked[0][1] - ranked[1][1]) / ranked[1][1] * 100
                         if len(ranked) >= 2 and ranked[1][1]
@@ -153,8 +157,7 @@ def build_evidence_map(
             chart = {
                 "objectKey": planned["chart"]["objectKey"],
                 "values": [
-                    {"label": label, "value": value}
-                    for label, value in planned["chart"]["values"]
+                    {"label": label, "value": value} for label, value in planned["chart"]["values"]
                 ],
                 "unit": planned["chart"]["unit"],
                 "comparisonBaseline": 0,
@@ -192,10 +195,7 @@ def build_evidence_map(
             "sourceArtifactId": item["sourceArtifactId"],
             "fragmentId": item["fragmentId"],
             "textSha256": item["textSha256"],
-            "required": (
-                str(item["sourceArtifactId"]), str(item["fragmentId"])
-            )
-            in cited_core,
+            "required": (str(item["sourceArtifactId"]), str(item["fragmentId"])) in cited_core,
         }
         for item in fragments
     ]
@@ -243,10 +243,7 @@ def evaluate_evidence_map(
                 "excerpt": str(evidence_map.get("sourceManifestSha256", ""))[:16],
             }
         )
-    lookup = {
-        (str(item["sourceArtifactId"]), str(item["fragmentId"])): item
-        for item in fragments
-    }
+    lookup = {(str(item["sourceArtifactId"]), str(item["fragmentId"])): item for item in fragments}
     cited: set[tuple[str, str]] = set()
     for slide in evidence_map.get("slides", []):
         slide_id = str(slide.get("slideId") or "unknown")
@@ -314,17 +311,28 @@ def evaluate_evidence_map(
                     )
         chart = slide.get("chart")
         if chart:
-            source_text = "\n".join(
-                str(lookup[key]["text"])
-                for key in (
-                    (
-                        str(item.get("sourceArtifactId") or ""),
-                        str(item.get("fragmentId") or ""),
-                    )
-                    for item in chart.get("citations", [])
+            resolved_chart: list[dict[str, Any]] = []
+            for citation in chart.get("citations", []):
+                key = (
+                    str(citation.get("sourceArtifactId") or ""),
+                    str(citation.get("fragmentId") or ""),
                 )
-                if key in lookup
-            )
+                fragment = lookup.get(key)
+                if fragment is None or citation.get("textSha256") != fragment["textSha256"]:
+                    findings.append(
+                        {
+                            "code": "CHART_CITATION_NOT_IN_APPROVED_SNAPSHOT",
+                            "severity": "blocking",
+                            "slideId": slide_id,
+                            "field": "chart",
+                            "message": "chart citation is missing or hash-stale",
+                            "excerpt": str(chart.get("objectKey") or "")[:180],
+                        }
+                    )
+                    continue
+                cited.add(key)
+                resolved_chart.append(fragment)
+            source_text = "\n".join(str(item["text"]) for item in resolved_chart)
             chart_supported = (
                 chart.get("comparisonBaseline") == 0
                 and bool(str(chart.get("unit") or ""))
@@ -359,9 +367,9 @@ def evaluate_evidence_map(
                 "slideId": "deck",
                 "field": "sourceCoreFragments",
                 "message": "one or more agreed core source fragments are not used",
-                "excerpt": ",".join(
-                    fragment for _, fragment in sorted(required_core - cited)
-                )[:180],
+                "excerpt": ",".join(fragment for _, fragment in sorted(required_core - cited))[
+                    :180
+                ],
             }
         )
     evidence_slides = list(evidence_map.get("slides", []))

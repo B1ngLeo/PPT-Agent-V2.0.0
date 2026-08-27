@@ -179,6 +179,22 @@ type GenerationSummary = {
   boundary: "generation_not_started";
 };
 
+type PlanningJob = {
+  planningJobId: string;
+  draftId: string;
+  operation: "intent_infer" | "outline_generate";
+  status: "queued" | "running" | "retrying" | "succeeded" | "failed";
+  attempt: number;
+  maxAttempts: number;
+  terminal: boolean;
+  retryable: boolean;
+  errorCode: string | null;
+  resultRevisionId: string | null;
+  provider: string | null;
+  model: string | null;
+  result?: IntentRevision | OutlineRevision | null;
+};
+
 type GenerationImageScope = "none" | "cover_only" | "selective";
 
 type DraftSnapshot = {
@@ -197,6 +213,12 @@ type DraftSnapshot = {
   currentIntent: IntentRevision | null;
   currentOutline: OutlineRevision | null;
   generationSummary: GenerationSummary | null;
+  planningProvider: {
+    provider: string;
+    model: string;
+    purpose: string;
+  } | null;
+  planningJob: PlanningJob | null;
   historyState?: "draft" | "monitor" | "result";
   jobId?: string | null;
   jobStatus?: string | null;
@@ -478,6 +500,51 @@ function saveLabel(state: SaveState): string {
   return "所有修改都会形成版本";
 }
 
+function planningProviderLabel(
+  provider: DraftSnapshot["planningProvider"],
+): string {
+  if (!provider) return "尚未调用";
+  if (provider.provider === "kimi") return `Kimi · ${provider.model}`;
+  if (provider.provider === "fake") return `本地模拟 · ${provider.model}`;
+  return `${provider.provider} · ${provider.model}`;
+}
+
+function planningProgressLabel(job: PlanningJob): string {
+  const operation =
+    job.operation === "intent_infer" ? "识别创作意图" : "生成可编辑大纲";
+  if (job.status === "retrying")
+    return `${operation}暂时失败，正在自动重试（${job.attempt}/${job.maxAttempts}）…`;
+  if (job.status === "queued") return `${operation}已排队…`;
+  return `${operation}中（${job.attempt}/${job.maxAttempts}）…`;
+}
+
+async function waitForPlanningJob(
+  initial: PlanningJob,
+  onProgress: (job: PlanningJob) => void,
+): Promise<PlanningJob> {
+  let current = initial;
+  const deadline = Date.now() + 30 * 60 * 1000;
+  while (!current.terminal) {
+    if (Date.now() >= deadline)
+      throw new Error("规划任务仍在后台运行，请稍后从历史创作恢复。");
+    onProgress(current);
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 1500));
+    current = (
+      await api<PlanningJob>(`/v1/planning-jobs/${current.planningJobId}`)
+    ).data;
+  }
+  onProgress(current);
+  if (current.status === "failed")
+    throw new ApiError(
+      503,
+      current.errorCode ?? "planning_failed",
+      current.retryable
+        ? "AI 规划暂时不可用，后台重试已用尽，可稍后再次发起。"
+        : "AI 规划失败，现有草稿保持不变。",
+    );
+  return current;
+}
+
 function generationStageLabel(stage: GenerationJob["stage"]): string {
   const labels: Record<GenerationJob["stage"], string> = {
     deck_planning: "构建生成计划",
@@ -501,6 +568,30 @@ function generationStatusLabel(status: GenerationJob["status"]): string {
     cancelled: "已取消",
   };
   return labels[status];
+}
+
+function manualInterventionKind(
+  job: GenerationJob,
+): "image" | "visual" | "generic" {
+  if (job.workflow?.errorCode === "IMAGE_RESOURCE_NEEDS_MANUAL") return "image";
+  if (job.workflow?.errorCode === "VISUAL_REVIEW_BLOCKING") return "visual";
+  return "generic";
+}
+
+function generatedPageLabel(job: GenerationJob): string {
+  return job.status === "succeeded" || job.status === "partially_succeeded"
+    ? "页就绪"
+    : "页已生成";
+}
+
+function generationSlideStatusLabel(slide: GenerationJobSlide): string {
+  if (slide.status === "ready") return "已就绪";
+  if (slide.status === "running" && slide.renderSha256) return "已生成";
+  if (slide.status === "running") return "生成中";
+  if (slide.status === "retrying") return "重试中";
+  if (slide.status === "pending") return "等待中";
+  if (slide.status === "failed") return "失败";
+  return "已取消";
 }
 
 async function streamGenerationEvents(
@@ -560,6 +651,8 @@ export function WorkspaceApp() {
   const [outline, setOutline] = useState<OutlineRevision | null>(null);
   const [summary, setSummary] = useState<GenerationSummary | null>(null);
   const [continueLimitedDraft, setContinueLimitedDraft] = useState(false);
+  const [authorizeStrategistDesignLock, setAuthorizeStrategistDesignLock] =
+    useState(false);
   const [generationImageScope, setGenerationImageScope] =
     useState<GenerationImageScope>("none");
   const [selectedImageOutlineIds, setSelectedImageOutlineIds] = useState<
@@ -816,38 +909,73 @@ export function WorkspaceApp() {
 
   const onSourceReady = useCallback((next: SourceState) => setSource(next), []);
 
-  const continuePlanning = async (draftId: string) => {
+  const continuePlanning = useCallback(async (draftId: string) => {
     setError(null);
     try {
       setBusyMessage("正在核对已保存的规划状态…");
       let current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
+      if (current.planningJob && !current.planningJob.terminal) {
+        await waitForPlanningJob(current.planningJob, (progress) =>
+          setBusyMessage(planningProgressLabel(progress)),
+        );
+        current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
+      }
       if (!current.currentIntent) {
-        setBusyMessage("正在推断创作意图…");
-        await api<IntentRevision>(`/v1/drafts/${draftId}/intent:infer`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": planningIdempotencyKey("intent", draftId),
-          },
-          body: mutation({ language: "zh-CN" }),
-        });
+        const active =
+          current.planningJob?.operation === "intent_infer" &&
+          !current.planningJob.terminal
+            ? current.planningJob
+            : null;
+        const job =
+          active ??
+          (
+            await api<PlanningJob>(`/v1/drafts/${draftId}/intent:infer`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Idempotency-Key":
+                  current.planningJob?.operation === "intent_infer" &&
+                  current.planningJob.status === "failed"
+                    ? crypto.randomUUID()
+                    : planningIdempotencyKey("intent", draftId),
+              },
+              body: mutation({ language: "zh-CN" }),
+            })
+          ).data;
+        await waitForPlanningJob(job, (progress) =>
+          setBusyMessage(planningProgressLabel(progress)),
+        );
         current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
       }
       if (!current.currentOutline) {
-        setBusyMessage("正在生成可编辑大纲（通常需 2–4 分钟，请勿重复点击）…");
-        await api<OutlineRevision>(`/v1/drafts/${draftId}/outline:generate`, {
-          method: "POST",
-          signal: AbortSignal.timeout(620_000),
-          headers: {
-            "Content-Type": "application/json",
-            "Idempotency-Key": planningIdempotencyKey(
-              "outline",
-              draftId,
-              current.currentIntentRevisionId,
-            ),
-          },
-          body: mutation({ action: "generate", instruction: "" }),
-        });
+        const active =
+          current.planningJob?.operation === "outline_generate" &&
+          !current.planningJob.terminal
+            ? current.planningJob
+            : null;
+        const job =
+          active ??
+          (
+            await api<PlanningJob>(`/v1/drafts/${draftId}/outline:generate`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Idempotency-Key":
+                  current.planningJob?.operation === "outline_generate" &&
+                  current.planningJob.status === "failed"
+                    ? crypto.randomUUID()
+                    : planningIdempotencyKey(
+                        "outline",
+                        draftId,
+                        current.currentIntentRevisionId,
+                      ),
+              },
+              body: mutation({ action: "generate", instruction: "" }),
+            })
+          ).data;
+        await waitForPlanningJob(job, (progress) =>
+          setBusyMessage(planningProgressLabel(progress)),
+        );
       }
       await refreshHistory();
       await openDraft(draftId, false);
@@ -858,14 +986,14 @@ export function WorkspaceApp() {
         await applyDraftSnapshot(current);
         setError(
           current.currentOutline
-            ? "规划响应曾中断，但已从服务端恢复完整大纲。"
-            : reason instanceof ApiError && reason.code === "provider_unavailable"
-              ? "AI 大纲生成超时，创作意图已保存。可直接点击继续生成大纲，无需重新上传。"
-              : reason instanceof DOMException && reason.name === "TimeoutError"
-                ? "大纲生成等待超时，已恢复操作按钮。请稍后继续，无需重新上传。"
-                : current.currentIntent
-                  ? "创作意图已保存。连接中断，请点击继续生成大纲。"
-                  : "规划连接中断，尚未确认服务端结果，请稍后重新核对。",
+            ? "已从持久化规划任务恢复完整大纲。"
+            : current.planningJob && !current.planningJob.terminal
+              ? "规划任务仍在后台运行，可刷新或稍后从历史创作恢复。"
+              : current.currentIntent
+                ? "创作意图已保存；大纲任务未完成，可继续生成。"
+                : reason instanceof Error
+                  ? reason.message
+                  : "规划任务暂时不可用。",
         );
       } catch {
         setError(
@@ -876,7 +1004,20 @@ export function WorkspaceApp() {
     } finally {
       setBusyMessage(null);
     }
-  };
+  }, [applyDraftSnapshot, openDraft, refreshHistory]);
+
+  useEffect(() => {
+    const job = draft?.planningJob;
+    if (
+      view !== "workspace" ||
+      !draft ||
+      !job ||
+      job.terminal ||
+      busyMessage
+    )
+      return;
+    void continuePlanning(draft.draftId);
+  }, [busyMessage, continuePlanning, draft, view]);
 
   const createWorkspace = async () => {
     if (!topic.trim() && !source?.sourceId) return;
@@ -1095,7 +1236,7 @@ export function WorkspaceApp() {
     setSaveState("saving");
     setAssistantMessage("AI 正在生成一个可比较的新版本…");
     try {
-      const response = await api<OutlineRevision>(
+      const response = await api<PlanningJob>(
         `/v1/drafts/${draft.draftId}/outline:generate`,
         {
           method: "POST",
@@ -1113,23 +1254,38 @@ export function WorkspaceApp() {
           ),
         },
       );
+      const completed = await waitForPlanningJob(response.data, (progress) =>
+        setAssistantMessage(planningProgressLabel(progress)),
+      );
+      const revised = completed.result;
+      if (!revised || !("outlineRevisionId" in revised))
+        throw new Error("规划任务完成但未返回大纲版本。");
       if (serverOutline.current)
         setUndoStack((stack) => [...stack, serverOutline.current!]);
       setRedoStack([]);
-      serverOutline.current = response.data;
-      lastSavedOutline.current = JSON.stringify(outlinePayload(response.data));
-      setOutline(response.data);
+      serverOutline.current = revised;
+      lastSavedOutline.current = JSON.stringify(outlinePayload(revised));
+      setOutline(revised);
       setDraft((current) =>
         current
           ? {
               ...current,
-              currentOutlineRevisionId: response.data.outlineRevisionId,
+              currentOutlineRevisionId: revised.outlineRevisionId,
+              planningJob: completed,
+              planningProvider:
+                completed.provider && completed.model
+                  ? {
+                      provider: completed.provider,
+                      model: completed.model,
+                      purpose: "outline_generate",
+                    }
+                  : current.planningProvider,
             }
           : current,
       );
       setAssistantInput("");
       setAssistantMessage(
-        `已创建 ${response.data.outlineRevisionId.slice(-6)} 版本，可撤销。`,
+        `已创建 ${revised.outlineRevisionId.slice(-6)} 版本，可撤销。`,
       );
       setSaveState("saved");
     } catch (reason) {
@@ -1179,6 +1335,7 @@ export function WorkspaceApp() {
       );
       setSummary(response.data);
       setContinueLimitedDraft(false);
+      setAuthorizeStrategistDesignLock(false);
       setDraft((current) =>
         current
           ? {
@@ -1233,6 +1390,7 @@ export function WorkspaceApp() {
           body: mutation({
             continueLimitedDraft:
               summary.sourceSummary.sourceId === null && continueLimitedDraft,
+            authorizeStrategistDesignLock,
             imagePolicy:
               generationImageScope === "none"
                 ? { scope: "none", usage: ["none"], notes: {} }
@@ -1988,9 +2146,13 @@ export function WorkspaceApp() {
               );
               const packageStage = generationJob.stage === "package_qa";
               const effectiveIndex = packageStage ? 3 : currentIndex;
-              const complete = generationJob.terminal || index < effectiveIndex;
+              const completedSuccessfully = [
+                "succeeded",
+                "partially_succeeded",
+              ].includes(generationJob.status);
+              const complete = completedSuccessfully || index < effectiveIndex;
               const active =
-                !generationJob.terminal && index === effectiveIndex;
+                !completedSuccessfully && index === effectiveIndex;
               return (
                 <li
                   key={stage}
@@ -2021,14 +2183,22 @@ export function WorkspaceApp() {
               </p>
               <h1 id="monitor-title">
                 {generationJob.workflow?.status === "needs_manual"
-                  ? "等待人工补充图片"
+                  ? manualInterventionKind(generationJob) === "image"
+                    ? "等待人工补充图片"
+                    : manualInterventionKind(generationJob) === "visual"
+                      ? "视觉复核需要人工处理"
+                      : "任务需要人工处理"
                   : generationJob.authoringMode === "deterministic-template"
                     ? `模板化受限初稿 · ${generationStatusLabel(generationJob.status)}`
                     : generationStatusLabel(generationJob.status)}
               </h1>
               <p aria-live="polite">
                 {generationJob.workflow?.status === "needs_manual"
-                  ? "必需图片尚未解决；任务已在导出前安全停止，没有静默省略资源。"
+                  ? manualInterventionKind(generationJob) === "image"
+                    ? "必需图片尚未解决；任务已在导出前安全停止，没有静默省略资源。"
+                    : manualInterventionKind(generationJob) === "visual"
+                      ? "页面已生成，但整稿视觉复核仍有阻断项；任务已在导出前安全停止。"
+                      : "工作流需要人工处理；任务已在导出前安全停止。"
                   : generationJob.authoringMode === "deterministic-template"
                     ? "Agent 创作链路未用于本任务；当前结果是显式标识的模板化受限初稿。"
                   : generationJob.terminal
@@ -2044,7 +2214,7 @@ export function WorkspaceApp() {
               <div className="progress-copy">
                 <span>
                   {generationJob.progress.completed} /{" "}
-                  {generationJob.progress.total} 页就绪
+                  {generationJob.progress.total} {generatedPageLabel(generationJob)}
                 </span>
                 <span>任务尝试 {generationJob.attempt}</span>
               </div>
@@ -2108,11 +2278,18 @@ export function WorkspaceApp() {
             >
               <div>
                 <p className="eyebrow">NEEDS MANUAL · NO SILENT OMISSION</p>
-                <h2 id="needs-manual-title">需要人工补充并验证图片资源</h2>
+                <h2 id="needs-manual-title">
+                  {manualInterventionKind(generationJob) === "image"
+                    ? "需要人工补充并验证图片资源"
+                    : manualInterventionKind(generationJob) === "visual"
+                      ? "需要人工检查视觉复核阻断项"
+                      : "需要人工处理工作流阻断项"}
+                </h2>
                 <p>
-                  {generationJob.workflow.errorCode ===
-                  "IMAGE_RESOURCE_NEEDS_MANUAL"
+                  {manualInterventionKind(generationJob) === "image"
                     ? "请按已保存的图片提示与资源计划补充文件，完成图片验证后从当前检查点恢复。"
+                    : manualInterventionKind(generationJob) === "visual"
+                      ? "请检查页面渲染和视觉复核报告；修复阻断项后从视觉复核检查点恢复。"
                     : (generationJob.workflow.recoveryAction ??
                       "请按已保存的资源计划处理后，从当前检查点恢复。")}
                 </p>
@@ -2148,13 +2325,15 @@ export function WorkspaceApp() {
                   <div className="generation-slide-head">
                     <span>{String(slide.position).padStart(2, "0")}</span>
                     <strong>
-                      {slide.status === "ready" ? "已就绪" : slide.status}
+                      {generationSlideStatusLabel(slide)}
                     </strong>
                   </div>
                   <h3>{slide.title}</h3>
                   <p>
                     {slide.status === "running" || slide.status === "retrying"
-                      ? slide.stage === "content_generation"
+                      ? slide.renderSha256
+                        ? `SVG 已生成，等待整稿复核 · ${slide.renderSha256.slice(0, 12)}…`
+                        : slide.stage === "content_generation"
                         ? "生成内容"
                         : slide.stage === "rendering"
                           ? "渲染 SVG"
@@ -2532,6 +2711,20 @@ export function WorkspaceApp() {
                     个来源工件，可追溯生成。
                   </p>
                 )}
+                <label className="limited-draft-choice">
+                  <input
+                    type="checkbox"
+                    checked={authorizeStrategistDesignLock}
+                    onChange={(event) =>
+                      setAuthorizeStrategistDesignLock(event.target.checked)
+                    }
+                  />
+                  <span>
+                    我授权 PPT‑Master Strategist 直接读取已批准的 Intent、Outline
+                    与来源，自主形成 design_spec.md；该方案将被记录为已确认并锁定为
+                    spec_lock.md 后，Executor 才会开始逐页创作。
+                  </span>
+                </label>
                 <fieldset className="image-policy-choice">
                   <legend>图片策略（显式开启）</legend>
                   <label>
@@ -2623,6 +2816,7 @@ export function WorkspaceApp() {
                     draft.currentOutlineRevisionId !==
                       summary.outlineRevisionId ||
                     saveState === "saving" ||
+                    !authorizeStrategistDesignLock ||
                     (summary.sourceSummary.sourceId === null &&
                       !continueLimitedDraft) ||
                     (generationImageScope === "selective" &&
@@ -2638,7 +2832,7 @@ export function WorkspaceApp() {
                   {busyMessage ?? "开始真实生成"}
                 </button>
                 <small>
-                  将创建可恢复的真实 Worker 任务，并锁定精确批准版本。
+                  未授权设计方案确认与锁定时不会启动 Executor；授权会写入不可变生成快照。
                 </small>
               </div>
             </section>
@@ -2954,7 +3148,9 @@ export function WorkspaceApp() {
                     整纲优化并创建版本
                   </button>
                   <div className="assistant-facts">
-                    <span>Provider：deterministic fake</span>
+                    <span>
+                      Provider：{planningProviderLabel(draft.planningProvider)}
+                    </span>
                     <span>
                       图片调用：{usage?.metrics.images ?? 0} /{" "}
                       {entitlement?.monthlyImageLimit ?? 0}

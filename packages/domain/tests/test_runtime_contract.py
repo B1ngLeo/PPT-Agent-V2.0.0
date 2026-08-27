@@ -4,6 +4,7 @@ import pytest
 from instant_ppt_domain.runtime_contract import (
     PROCESS_EXPORT_TASK,
     PROCESS_GENERATION_TASK,
+    PROCESS_PLANNING_TASK,
     RUNTIME_CONTRACT_VERSION,
     RuntimeContractMismatch,
     RuntimeIdentity,
@@ -28,6 +29,7 @@ def test_runtime_identity_binds_build_contract_workflow_and_engine(monkeypatch) 
 def test_runtime_contract_and_task_names_fail_closed(monkeypatch) -> None:
     monkeypatch.setenv("APP_BUILD_REVISION", "dev-test")
     assert PROCESS_GENERATION_TASK == "instant_ppt.v2.process_generation_job"
+    assert PROCESS_PLANNING_TASK == "instant_ppt.v2.process_planning_job"
     assert PROCESS_EXPORT_TASK == "instant_ppt.v2.process_export"
     assert assert_runtime_contract(RUNTIME_CONTRACT_VERSION).build_revision == "dev-test"
 

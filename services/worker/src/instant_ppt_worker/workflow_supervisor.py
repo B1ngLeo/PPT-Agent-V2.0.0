@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -17,6 +18,8 @@ from instant_ppt_worker.errors import RENDER_FAILED, AdapterError
 from instant_ppt_worker.models import AdapterResponse
 from instant_ppt_worker.workflow_models import GeneratePptxDefaultRequest
 
+LOGGER = logging.getLogger(__name__)
+
 
 class WorkflowCancelled(RuntimeError):
     """The user won the race and the supervised process tree was stopped."""
@@ -28,6 +31,15 @@ class SupervisedWorkflowResult:
     project: Path
     stdout: str
     stderr: str
+
+
+def _report_progress_safely(progress: Callable[[Path], None], workspace: Path) -> None:
+    """Keep best-effort observability from terminating the authoring process."""
+
+    try:
+        progress(workspace)
+    except Exception:  # noqa: BLE001 - progress must never become a generation failure mode.
+        LOGGER.warning("live workflow progress refresh failed; it will be retried", exc_info=True)
 
 
 _SAFE_ENVIRONMENT = (
@@ -62,6 +74,7 @@ _SCOPED_IMAGE_ENVIRONMENT = frozenset(
 )
 _SCOPED_TEXT_ENVIRONMENT = frozenset(
     {
+        "TEXT_PROVIDER",
         "MOONSHOT_API_KEY",
         "KIMI_BASE_URL",
         "KIMI_MODEL",
@@ -70,6 +83,17 @@ _SCOPED_TEXT_ENVIRONMENT = frozenset(
         "KIMI_TIMEOUT_SECONDS",
         "KIMI_TRANSPORT_MAX_RETRIES",
         "KIMI_RETRY_BACKOFF_SECONDS",
+        "KIMI_ANTHROPIC_STREAMING",
+        "QWEN_API_KEY",
+        "QWEN_BASE_URL",
+        "QWEN_MODEL",
+        "QWEN_REASONING_EFFORT",
+        "QWEN_ENABLE_THINKING",
+        "QWEN_PRESERVE_THINKING",
+        "QWEN_TIMEOUT_SECONDS",
+        "QWEN_TRANSPORT_MAX_RETRIES",
+        "QWEN_RETRY_BACKOFF_SECONDS",
+        "QWEN_STREAMING",
     }
 )
 
@@ -131,10 +155,12 @@ def run_default_workflow_supervised(
     hard_timeout_seconds: int,
     cancellation_requested: Callable[[], bool],
     heartbeat: Callable[[], None],
+    progress: Callable[[Path], None] | None = None,
     text_environment: dict[str, str] | None = None,
     image_environment: dict[str, str] | None = None,
     poll_seconds: float = 0.25,
     termination_grace_seconds: float = 5.0,
+    progress_interval_seconds: float = 1.0,
 ) -> SupervisedWorkflowResult:
     workspace = root.resolve()
     if not workspace.is_dir():
@@ -193,6 +219,7 @@ def run_default_workflow_supervised(
         )
         deadline = time.monotonic() + hard_timeout_seconds
         next_heartbeat = time.monotonic()
+        next_progress = time.monotonic()
         try:
             while process.poll() is None:
                 now = time.monotonic()
@@ -205,8 +232,13 @@ def run_default_workflow_supervised(
                 if now >= next_heartbeat:
                     heartbeat()
                     next_heartbeat = now + 5.0
+                if progress is not None and now >= next_progress:
+                    _report_progress_safely(progress, workspace)
+                    next_progress = now + progress_interval_seconds
                 time.sleep(poll_seconds)
             process.wait(timeout=5)
+            if progress is not None:
+                _report_progress_safely(progress, workspace)
             out.flush()
             err.flush()
             out.seek(0)
