@@ -19,10 +19,16 @@ from defusedxml import ElementTree as DefusedET
 from pydantic import ValidationError
 
 from instant_ppt_worker.canonical import canonical_sha256
+from instant_ppt_worker.design_spec_contract import (
+    design_spec_contract_payload,
+    rejected_design_spec_sha256,
+    validate_design_spec,
+)
 from instant_ppt_worker.workflow_models import ApprovedOutlineSlide, WorkflowRequestV2
 
 AGENT_TOOL_NAMES = (
     "read_approved_context",
+    "read_design_spec_contract",
     "write_planning_artifact",
     "read_design_catalog",
     "write_or_patch_slide_svg",
@@ -48,17 +54,6 @@ WRITE_STALE_TARGETS = (
 _TOOL_ID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 _PNN = re.compile(r"^P\d{2,3}$")
 _NODE_ID = re.compile(r"^[a-z][a-z0-9-]{1,79}$")
-_DESIGN_SPEC_MARKER = "<!-- ppt-master-schema: design-spec/v1 -->"
-_DESIGN_SPEC_REQUIRED_SECTIONS = (
-    "I. Project Information",
-    "II. Canvas Specification",
-    "III. Visual Theme",
-    "IV. Typography System",
-    "V. Layout Principles",
-    "VI. Icon Usage Specification",
-    "VIII. Image Resource List",
-    "IX. Content Outline",
-)
 _SVG_ALLOWED_TAGS = frozenset(
     {
         "svg",
@@ -90,6 +85,17 @@ _SVG_FORBIDDEN_TEXT = re.compile(
 class ToolPolicyError(ValueError):
     """Raised when an Agent asks for a capability outside its scoped policy."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "AGENT_TOOL_POLICY_DENIED",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.details = details or {}
+
 
 @dataclass(frozen=True)
 class ToolCallbacks:
@@ -111,6 +117,7 @@ class PresentationToolContext:
     prepared_images: tuple[dict[str, Any], ...] = ()
     callbacks: ToolCallbacks = ToolCallbacks()
     required_authoring_mode: Literal["direct-svg"] | None = None
+    visual_repair_target_ids: tuple[str, ...] = ()
 
 
 def design_catalog(*, native_charts_enabled: bool = True) -> dict[str, Any]:
@@ -233,6 +240,103 @@ def validate_direct_svg(svg: str, project: Path) -> None:
         raise ToolPolicyError("direct SVG IDs must be unique")
 
 
+_VISUAL_REPAIR_ALLOWED_ATTRIBUTES = frozenset(
+    {
+        "x",
+        "y",
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+        "width",
+        "height",
+        "rx",
+        "ry",
+        "cx",
+        "cy",
+        "r",
+        "font-size",
+        "letter-spacing",
+        "text-anchor",
+        "dominant-baseline",
+        "dx",
+        "dy",
+        "transform",
+    }
+)
+
+
+def _visual_repair_diff(
+    before_svg: str,
+    after_svg: str,
+    *,
+    allowed_target_ids: frozenset[str],
+) -> list[dict[str, Any]]:
+    before_root = DefusedET.fromstring(before_svg)
+    after_root = DefusedET.fromstring(after_svg)
+
+    def walk(root: Any) -> list[tuple[Any, str | None]]:
+        values: list[tuple[Any, str | None]] = []
+
+        def visit(element: Any, owned_target: str | None) -> None:
+            element_id = element.attrib.get("id")
+            target = element_id if element_id in allowed_target_ids else owned_target
+            values.append((element, target))
+            for child in element:
+                visit(child, target)
+
+        visit(root, None)
+        return values
+
+    before_nodes = walk(before_root)
+    after_nodes = walk(after_root)
+    before_structure = [
+        (node.tag.rsplit("}", 1)[-1], node.attrib.get("id")) for node, _ in before_nodes
+    ]
+    after_structure = [
+        (node.tag.rsplit("}", 1)[-1], node.attrib.get("id")) for node, _ in after_nodes
+    ]
+    if before_structure != after_structure:
+        raise ToolPolicyError(
+            "v3 visual repair cannot add, remove, reorder, or retag SVG elements"
+        )
+    changes: list[dict[str, Any]] = []
+    for (before, before_target), (after, after_target) in zip(
+        before_nodes, after_nodes, strict=True
+    ):
+        if (before.text or "") != (after.text or "") or (before.tail or "") != (
+            after.tail or ""
+        ):
+            raise ToolPolicyError("v3 visual repair cannot change presentation text or metadata")
+        attribute_names = set(before.attrib) | set(after.attrib)
+        for name in sorted(attribute_names):
+            before_value = before.attrib.get(name)
+            after_value = after.attrib.get(name)
+            if before_value == after_value:
+                continue
+            local_name = name.rsplit("}", 1)[-1]
+            target = after_target or before_target
+            if target is None or target not in allowed_target_ids:
+                raise ToolPolicyError(
+                    "v3 visual repair changed an element outside the reviewed stable targets"
+                )
+            if local_name not in _VISUAL_REPAIR_ALLOWED_ATTRIBUTES:
+                raise ToolPolicyError(
+                    f"v3 visual repair cannot change protected attribute: {local_name}"
+                )
+            changes.append(
+                {
+                    "elementId": target,
+                    "attribute": local_name,
+                    "before": before_value,
+                    "after": after_value,
+                }
+            )
+    if not changes:
+        raise ToolPolicyError("v3 visual repair must make at least one permitted attribute change")
+    return changes
+
+
 class PresentationAgentToolRegistry:
     """Execute closed semantic tools and persist immutable observations."""
 
@@ -313,6 +417,10 @@ class PresentationAgentToolRegistry:
     def _dispatch(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name == "read_approved_context":
             return self._read_approved_context(arguments)
+        if name == "read_design_spec_contract":
+            if arguments:
+                raise ToolPolicyError("read_design_spec_contract accepts no arguments")
+            return design_spec_contract_payload(self.context.request.outline)
         if name == "read_design_catalog":
             if arguments:
                 raise ToolPolicyError("read_design_catalog accepts no arguments")
@@ -400,42 +508,37 @@ class PresentationAgentToolRegistry:
         if filename != "design_spec.md":
             raise ToolPolicyError("Strategist may write only the canonical design_spec.md")
         content = str(arguments.get("content") or "").strip()
-        if not content.startswith(_DESIGN_SPEC_MARKER):
-            raise ToolPolicyError("design_spec.md requires the canonical schema marker")
         if len(content.encode("utf-8")) > 500_000:
             raise ToolPolicyError("design_spec.md exceeds the bounded planning payload")
-        section_positions: list[int] = []
-        for section in _DESIGN_SPEC_REQUIRED_SECTIONS:
-            match = re.search(rf"(?m)^## {re.escape(section)}\s*$", content)
-            if match is None:
-                raise ToolPolicyError(f"design_spec.md is missing required section: {section}")
-            section_positions.append(match.start())
-        speaker_notes = re.search(
-            r"(?m)^## X\. Speaker Notes (?:Requirements|Plan|Strategy)\s*$", content
-        )
-        if speaker_notes is None:
-            raise ToolPolicyError("design_spec.md is missing the speaker-notes section")
-        section_positions.append(speaker_notes.start())
-        if section_positions != sorted(section_positions):
-            raise ToolPolicyError("design_spec.md sections must follow the canonical order")
-        for page in self.context.request.outline:
-            if page.pnn not in content or page.title not in content:
-                raise ToolPolicyError(
-                    f"design_spec.md must include approved page identity and title for {page.pnn}"
-                )
-            block = re.search(
-                rf"(?ms)^#### Slide\s+\d+\b[^\n]*\b{re.escape(page.pnn)}\b[^\n]*"
-                rf"\n(?P<body>.*?)(?=^#### Slide\s+\d+\b|^## X\.|\Z)",
-                content,
+        errors = validate_design_spec(content, self.context.request.outline)
+        if errors:
+            rejected_sha256 = rejected_design_spec_sha256(content)
+            rejected_path = (
+                self.project
+                / "agent"
+                / "rejected-design-spec"
+                / f"{rejected_sha256}.md"
             )
-            if (
-                block is None
-                or re.search(r"(?mi)^- (?:\*\*)?Audience move(?:\*\*)?:\s*\S", block.group("body"))
-                is None
-            ):
-                raise ToolPolicyError(
-                    f"design_spec.md requires an Audience move in the slide block for {page.pnn}"
-                )
+            rejected_path.parent.mkdir(parents=True, exist_ok=True)
+            if not rejected_path.exists():
+                rejected_path.write_text(content.rstrip() + "\n", encoding="utf-8")
+            summary = "; ".join(error["message"] for error in errors[:4])
+            if len(errors) > 4:
+                summary += f"; plus {len(errors) - 4} more error(s)"
+            raise ToolPolicyError(
+                f"design_spec.md failed PPT Master validation: {summary}",
+                code="DESIGN_SPEC_SCHEMA_INVALID",
+                details={
+                    "schema": "instant-ppt.design-spec-validation-errors.v1",
+                    "contractVersion": "design-spec/v1",
+                    "rejectedSha256": rejected_sha256,
+                    "errors": errors,
+                    "repairInstruction": (
+                        "Read the complete design-spec contract again and resubmit the whole "
+                        "document. Keep headings and field names in English; values may be Chinese."
+                    ),
+                },
+            )
         path = self.project / filename
         before = _sha_file(path) if path.is_file() else None
         path.write_text(content.rstrip() + "\n", encoding="utf-8")
@@ -470,6 +573,40 @@ class PresentationAgentToolRegistry:
         svg = str(arguments.get("svg") or "")
         validate_direct_svg(svg, self.project)
         self._validate_direct_svg_against_page(svg, page)
+        visual_repair_audit: dict[str, Any] | None = None
+        if self.context.request.authoring.visual_review_policy_version == (
+            "visual-review-opt-in@v3"
+        ) and self.context.stage == "visual-repair":
+            if before is None:
+                raise ToolPolicyError("v3 visual repair requires an existing owned SVG")
+            expected_before = str(arguments.get("expectedBeforeSha256") or "")
+            if expected_before != before:
+                raise ToolPolicyError("v3 visual repair expectedBeforeSha256 is stale")
+            allowed_targets = frozenset(self.context.visual_repair_target_ids)
+            if not allowed_targets:
+                raise ToolPolicyError("v3 visual repair requires reviewed stable target IDs")
+            before_svg = svg_path.read_text(encoding="utf-8")
+            changes = _visual_repair_diff(
+                before_svg,
+                svg,
+                allowed_target_ids=allowed_targets,
+            )
+            backup = (
+                self.project
+                / ".review"
+                / "backup"
+                / f"{page.pnn.lower()}.iter{self.context.author_attempt}.svg"
+            )
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            if not backup.exists():
+                backup.write_text(before_svg, encoding="utf-8")
+            visual_repair_audit = {
+                "schema": "instant-ppt.visual-repair-diff.v1",
+                "expectedBeforeSha256": expected_before,
+                "backupKey": backup.relative_to(self.project).as_posix(),
+                "targetElementIds": sorted(allowed_targets),
+                "changes": changes,
+            }
         svg_path.write_text(svg.rstrip() + "\n", encoding="utf-8")
         validate_direct_svg(svg_path.read_text(encoding="utf-8"), self.project)
         return {
@@ -481,6 +618,7 @@ class PresentationAgentToolRegistry:
             "beforeSha256": before,
             "subjectSha256": _sha_file(svg_path),
             "sizeBytes": svg_path.stat().st_size,
+            **({"visualRepair": visual_repair_audit} if visual_repair_audit else {}),
         }
 
     def _validate_direct_svg_against_page(self, svg: str, page: Any) -> None:

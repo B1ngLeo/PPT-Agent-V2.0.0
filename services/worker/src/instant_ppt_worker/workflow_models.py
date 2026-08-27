@@ -283,6 +283,7 @@ class AgentRuntimePolicy(WorkflowContractModel):
             "provider-image",
             "approved-web",
             "read_approved_context",
+            "read_design_spec_contract",
             "write_planning_artifact",
             "read_design_catalog",
             "write_or_patch_slide_svg",
@@ -353,6 +354,9 @@ class AuthoringPolicy(WorkflowContractModel):
     ]
     visual_review_policy_version: str = Field(min_length=1, max_length=80)
     visual_review_required: bool
+    visual_review_level: Literal["off", "standard", "final"] | None = None
+    authoring_model: str | None = Field(default=None, min_length=1, max_length=160)
+    visual_review_model: str | None = Field(default=None, min_length=1, max_length=160)
     # Optional only for backward compatibility with already-frozen v1 requests.
     # Newly-created requests always persist an explicit value.
     visual_review_max_rounds: int | None = Field(default=None, ge=0, le=5)
@@ -368,6 +372,16 @@ class AuthoringPolicy(WorkflowContractModel):
                 raise ValueError("required visual review needs at least one review round")
             if not self.visual_review_required and self.visual_review_max_rounds not in {None, 0}:
                 raise ValueError("disabled visual review requires zero review rounds")
+            if self.visual_review_policy_version == "visual-review-opt-in@v3":
+                expected = {"off": 0, "standard": 1, "final": 2}
+                if self.visual_review_level is None:
+                    raise ValueError("v3 visual review requires an explicit level")
+                if self.visual_review_max_rounds != expected[self.visual_review_level]:
+                    raise ValueError("v3 visual review level has an invalid review budget")
+                if self.visual_review_required != (self.visual_review_level != "off"):
+                    raise ValueError("v3 visual review required flag must match its level")
+                if self.authoring_model is None or self.visual_review_model is None:
+                    raise ValueError("v3 visual review must freeze authoring and reviewer models")
         else:
             if self.fallback_reason is None:
                 raise ValueError("deterministic template mode requires a fallback reason")

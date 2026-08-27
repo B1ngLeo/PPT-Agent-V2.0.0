@@ -79,6 +79,7 @@ def build_default_workflow_request(
     )
     frozen_visual_review = frozen_authoring.get("visualReview", {})
     visual_review = bool(frozen_visual_review.get("required", False))
+    visual_review_level = frozen_visual_review.get("level")
     if not is_agent_authoring:
         visual_review = False
     visual_review_max_rounds = int(frozen_visual_review.get("maxRounds", 3 if visual_review else 0))
@@ -88,6 +89,10 @@ def build_default_workflow_request(
         raise ValueError("visual review maxRounds must be between zero and five")
     if visual_review and visual_review_max_rounds == 0:
         raise ValueError("required visual review needs at least one review round")
+    is_opt_in_visual_review_v3 = (
+        str(frozen_visual_review.get("policyVersion") or "")
+        == "visual-review-opt-in@v3"
+    )
     native_charts = native_chart_generation_enabled()
     planning_configuration = dict(payload.get("providerConfiguration", {}).get("planning") or {})
     image_policy = dict(
@@ -132,13 +137,26 @@ def build_default_workflow_request(
                 ),
                 "visualReviewRequired": visual_review,
                 "visualReviewMaxRounds": visual_review_max_rounds,
+                "visualReviewLevel": visual_review_level,
+                "authoringModel": str(frozen_visual_review.get("authoringModel") or model),
+                "visualReviewModel": str(
+                    frozen_visual_review.get("visualReviewModel") or model
+                ),
             },
             "versions": {
-                "workflow": "instant-ppt-default@v3.0.0",
+                "workflow": (
+                    "instant-ppt-default@v3.1.0"
+                    if is_opt_in_visual_review_v3
+                    else "instant-ppt-default@v3.0.0"
+                ),
                 "engine": "ppt-master@v4.7.0",
                 "model": model,
                 "prompt": (
-                    "default-agentic@v4-strategist-direct-svg"
+                    (
+                        "default-agentic@v5-visual-review-opt-in"
+                        if is_opt_in_visual_review_v3
+                        else "default-agentic@v4-strategist-direct-svg"
+                    )
                     if is_agent_authoring
                     else "deterministic-template@v1"
                 ),

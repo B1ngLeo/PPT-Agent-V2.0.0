@@ -416,6 +416,9 @@ def test_default_agentic_vertical_slice_exports_native_chart(tmp_path: Path) -> 
     assert '"author": "main-presentation-agent"' in events
     assert "current-main-agent" not in events
     assert "quick-generate" not in events
+    assert '"toolName":"request_visual_review"' not in events
+    assert not (project / "agent" / "visual-reviews").exists()
+    assert not (project / "validation" / "visual-review.json").exists()
 
     evidence_map = json.loads(
         (project / "analysis" / "evidence-map.json").read_text(encoding="utf-8")
@@ -852,10 +855,13 @@ def test_blocking_final_svg_gate_is_repaired_by_the_owned_page_agent(
     )
 
     assert outcome["result"].status == "succeeded"
-    assert checker_calls == 2
+    assert checker_calls == 3
     assert len(repair_writes) == 1
     assert len(repair_gates) == 1
     assert repair_gates[0]["observation"]["report"]["passed"] is True
+    assert repair_gates[0]["observation"]["report"]["methodLevel"][0]["code"] == (
+        "SVG_PAGE_FINAL_VALIDATED"
+    )
     assert repair_writes[0]["authorAttempt"] == 2
     assert repair_writes[0]["observation"]["authoringMode"] == "validated-direct-svg"
     assert receipt["payload"]["blockingCount"] == 0
@@ -925,6 +931,45 @@ class _DirectSvgVisualRepairFixtureProvider(_VisualRepairFixtureProvider):
     def __init__(self, project: Path) -> None:
         del project
         super().__init__()
+
+
+class _V3VisualRepairFixtureProvider(_VisualRepairFixtureProvider):
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+    ) -> TextCompletion:
+        completion = super().complete(
+            messages,
+            response_format=response_format,
+            max_completion_tokens=max_completion_tokens,
+        )
+        if not any(
+            "Visual Review Agent" in str(message.get("content") or "")
+            for message in messages
+            if message.get("role") == "system"
+        ):
+            return completion
+        payload = json.loads(completion.content)
+        if payload.get("issues"):
+            payload["issues"][0].update(
+                {
+                    "category": "alignment-rhythm-balance",
+                    "message": "P01 title overlaps a key element and is clipped.",
+                    "region": "P01 page title",
+                    "suggestedAction": "Move the title one pixel without changing copy.",
+                    "targetElementIds": ["page-title"],
+                }
+            )
+        rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        return TextCompletion(
+            content=rendered,
+            model="v3-visual-repair-fixture@v1",
+            prompt_tokens=completion.prompt_tokens,
+            completion_tokens=max(1, len(rendered) // 4),
+        )
 
 
 class _PostVisualSvgRepairFixtureProvider(_VisualRepairFixtureProvider):
@@ -1228,3 +1273,75 @@ def test_deterministic_template_fallback_is_disclosed_without_agent_evidence(
     assert "main-presentation-agent" not in events
     assert not (project / "agent").exists()
     assert (project / "exports" / "deck.pptx").is_file()
+
+
+@pytest.mark.parametrize(
+    ("level", "max_rounds", "expected_calls"),
+    [("standard", 1, 1), ("final", 2, 2)],
+)
+def test_v3_visual_review_is_opt_in_atomic_and_bounded(
+    tmp_path: Path,
+    level: str,
+    max_rounds: int,
+    expected_calls: int,
+) -> None:
+    workflow = _payload()
+    workflow["authoring"].update(
+        {
+            "visualReviewRequired": True,
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewLevel": level,
+            "visualReviewMaxRounds": max_rounds,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-agent@v1",
+        }
+    )
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    provider = _V3VisualRepairFixtureProvider()
+    project = tmp_path / f"visual-v3-{level}_ppt169_20260827"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    review = json.loads(
+        (project / "validation" / "visual-review.json").read_text(encoding="utf-8")
+    )
+    receipt = json.loads(
+        (project / "validation" / "receipts" / "visual-review.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    repair_call = next(
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if json.loads(path.read_text(encoding="utf-8")).get("stage") == "visual-repair"
+        and json.loads(path.read_text(encoding="utf-8")).get("toolName")
+        == "write_or_patch_slide_svg"
+    )
+
+    assert outcome["result"].status == "succeeded"
+    assert provider.visual_calls == expected_calls
+    assert review["policyVersion"] == "visual-review-opt-in@v3"
+    assert review["reviewLevel"] == level
+    assert review["reviewCallCount"] == expected_calls
+    assert review["fixedPages"] == ["P01"]
+    assert review["rolledBackPages"] == []
+    assert receipt["status"] in {"passed", "passed-with-warnings"}
+    assert (project / "agent" / "visual-reviews" / "baseline-svg" / "slide_01.svg").is_file()
+    assert repair_call["observation"]["visualRepair"]["targetElementIds"] == [
+        "page-title"
+    ]
+    assert {
+        change["attribute"]
+        for change in repair_call["observation"]["visualRepair"]["changes"]
+    } <= {"x", "y", "width", "height", "font-size"}
+    if level == "standard":
+        assert not (project / "validation" / "visual-review-round-2.json").exists()
+    else:
+        assert len(list((project / ".preview" / "round-2").glob("slide_*.png"))) == 1

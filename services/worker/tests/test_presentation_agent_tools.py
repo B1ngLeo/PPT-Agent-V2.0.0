@@ -2,6 +2,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from instant_ppt_worker.agentic_workflow import (
     _spec_lock,
 )
 from instant_ppt_worker.artifacts import sha256_file
+from instant_ppt_worker.design_spec_contract import validate_design_spec
 from instant_ppt_worker.image_resources import empty_image_preparation
 from instant_ppt_worker.presentation_agent_tools import (
     AGENT_TOOL_NAMES,
@@ -199,12 +201,124 @@ def test_registry_returns_only_current_approved_context_and_closed_catalog(
         arguments={},
         input_sha256="d" * 64,
     )["observation"]
+    contract = registry.execute(
+        tool_call_id=_call_id("read-design-spec-contract"),
+        tool_name="read_design_spec_contract",
+        arguments={},
+        input_sha256="e" * 64,
+    )["observation"]
 
     assert {item["fragmentId"] for item in approved["fragments"]} == {"fragment-1"}
     assert all(item["taint"] == "untrusted-source-data" for item in approved["fragments"])
     assert approved["approvedSnapshotSha256"] == context.request.approval.snapshot_sha256
     assert catalog["primitives"][-2:] == ["native-chart", "native-table"]
     assert "shell" not in json.dumps(catalog).casefold()
+    assert contract["sourceSchemaId"] == "ppt-master://schemas/design-spec/v1"
+    assert contract["canonicalSectionHeadings"][4] == "V. Layout Principles"
+    assert contract["canonicalSectionHeadings"][-1] == "X. Speaker Notes Requirements"
+    assert [item["pnn"] for item in contract["approvedRoster"]] == [
+        page.pnn for page in context.request.outline
+    ]
+    assert "Keep headings, subsection headings" in contract["authoringReference"]
+    assert "## V. Layout Principles" in contract["authoringReference"]
+
+
+def test_design_spec_validation_reports_all_structural_and_roster_errors(
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    valid = (context.project / "design_spec.md").read_text(encoding="utf-8")
+    invalid = (
+        valid.replace("## V. Layout Principles", "## V. 布局原则")
+        .replace("- **Audience move**:", "- **受众变化**:", 1)
+        .replace(
+            f"| Page Count | {len(context.request.outline)} |",
+            "| Page Count | 9 |",
+        )
+    )
+
+    errors = validate_design_spec(invalid, context.request.outline)
+    codes = {error["code"] for error in errors}
+
+    assert "missing_section" in codes
+    assert "page_count_mismatch" in codes
+    assert "slide_field_missing" in codes
+    assert len(errors) >= 3
+
+
+def test_design_spec_policy_denial_preserves_rejected_content_and_structured_errors(
+    tmp_path: Path,
+) -> None:
+    context = _context(
+        tmp_path,
+        allowed_tools=frozenset({"write_planning_artifact"}),
+    )
+    valid = (context.project / "design_spec.md").read_text(encoding="utf-8")
+    invalid = valid.replace("## V. Layout Principles", "## V. 布局原则")
+    registry = PresentationAgentToolRegistry(context)
+
+    with pytest.raises(ToolPolicyError) as raised:
+        registry.execute(
+            tool_call_id=_call_id("invalid-design-spec"),
+            tool_name="write_planning_artifact",
+            arguments={"filename": "design_spec.md", "content": invalid},
+            input_sha256="a" * 64,
+        )
+
+    assert raised.value.code == "DESIGN_SPEC_SCHEMA_INVALID"
+    assert any(
+        error["location"] == "layout_principles"
+        for error in raised.value.details["errors"]
+    )
+    rejected = list((context.project / "agent" / "rejected-design-spec").glob("*.md"))
+    assert len(rejected) == 1
+    assert "## V. 布局原则" in rejected[0].read_text(encoding="utf-8")
+
+
+def test_design_spec_ai_resource_requires_ai_image_strategy(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    valid = (context.project / "design_spec.md").read_text(encoding="utf-8")
+    invalid = valid.replace(
+        "## IX. Content Outline",
+        "| hero.png | 1024×1024 | 1:1 | hero | Illustration | focal | adaptive | "
+        "ai | Pending | prompt | none | hero_page |\n\n## IX. Content Outline",
+    )
+
+    errors = validate_design_spec(invalid, context.request.outline)
+
+    assert any(error["code"] == "conditional_subheading_missing" for error in errors)
+
+
+def test_design_spec_rejects_placeholder_image_resource_row(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    valid = (context.project / "design_spec.md").read_text(encoding="utf-8")
+    invalid = valid.replace(
+        "## IX. Content Outline",
+        "| — | — | — | — | — | — | — | none | — | — | — | — |\n\n"
+        "## IX. Content Outline",
+    )
+
+    errors = validate_design_spec(invalid, context.request.outline)
+
+    assert any(error["code"] == "image_resource_placeholder_row" for error in errors)
+
+
+def test_design_spec_rejects_invalid_image_crop_and_acquisition(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    valid = (context.project / "design_spec.md").read_text(encoding="utf-8")
+    invalid = valid.replace(
+        "## IX. Content Outline",
+        "| hero.png | 1024×1024 | 1:1 | hero | Illustration | focal subject | "
+        "center-crop | none | Sourced | source | avoid text | hero_page |\n\n"
+        "## IX. Content Outline",
+    )
+
+    codes = {
+        error["code"] for error in validate_design_spec(invalid, context.request.outline)
+    }
+
+    assert "image_resource_crop_policy_invalid" in codes
+    assert "image_resource_acquire_via_invalid" in codes
 
 
 def test_registry_hides_native_chart_primitive_when_feature_is_disabled(
@@ -471,4 +585,85 @@ def test_direct_svg_escape_cannot_bypass_approved_chart_evidence(tmp_path: Path)
             tool_name="write_or_patch_slide_svg",
             arguments={"pnn": "P02", "mode": "direct-svg", "svg": svg},
             input_sha256="2" * 64,
+        )
+
+
+def test_v3_visual_repair_is_hash_bound_and_attribute_limited(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    request_payload = context.request.model_dump(by_alias=True, mode="json")
+    request_payload["authoring"].update(
+        {
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewRequired": True,
+            "visualReviewLevel": "standard",
+            "visualReviewMaxRounds": 1,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-agent@v1",
+        }
+    )
+    request_payload["production"]["visualReview"] = True
+    request_payload["runtime"]["allowSubagentReview"] = True
+    authoring_context = replace(
+        context,
+        request=WorkflowRequestV2.model_validate(request_payload),
+    )
+    title = authoring_context.request.outline[0].title
+    original_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
+        'viewBox="0 0 1280 720" data-pptx-page-role="cover">'
+        f'<text id="page-title" x="72" y="96" font-size="64">{title}</text>'
+        '<text id="body-copy" x="72" y="220" font-size="24">Approved copy</text>'
+        '<text id="page-number" x="1208" y="680" text-anchor="end">P01</text>'
+        "</svg>"
+    )
+    first = PresentationAgentToolRegistry(authoring_context).execute(
+        tool_call_id=_call_id("v3-visual-original"),
+        tool_name="write_or_patch_slide_svg",
+        arguments={"pnn": "P01", "mode": "direct-svg", "svg": original_svg},
+        input_sha256="1" * 64,
+    )
+    repair_context = replace(
+        authoring_context,
+        stage="visual-repair",
+        author_attempt=2,
+        required_authoring_mode="direct-svg",
+        visual_repair_target_ids=("body-copy",),
+    )
+    repaired_svg = original_svg.replace('id="body-copy" x="72"', 'id="body-copy" x="80"')
+    repaired = PresentationAgentToolRegistry(repair_context).execute(
+        tool_call_id=_call_id("v3-visual-repair"),
+        tool_name="write_or_patch_slide_svg",
+        arguments={
+            "pnn": "P01",
+            "mode": "direct-svg",
+            "expectedBeforeSha256": first["subjectSha256"],
+            "svg": repaired_svg,
+        },
+        input_sha256="2" * 64,
+    )
+
+    assert repaired["observation"]["visualRepair"]["changes"] == [
+        {
+            "elementId": "body-copy",
+            "attribute": "x",
+            "before": "72",
+            "after": "80",
+        }
+    ]
+    assert (
+        authoring_context.project
+        / repaired["observation"]["visualRepair"]["backupKey"]
+    ).is_file()
+
+    with pytest.raises(ToolPolicyError, match="presentation text"):
+        PresentationAgentToolRegistry(repair_context).execute(
+            tool_call_id=_call_id("v3-visual-copy-change"),
+            tool_name="write_or_patch_slide_svg",
+            arguments={
+                "pnn": "P01",
+                "mode": "direct-svg",
+                "expectedBeforeSha256": repaired["subjectSha256"],
+                "svg": repaired_svg.replace("Approved copy", "Changed copy"),
+            },
+            input_sha256="3" * 64,
         )

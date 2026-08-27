@@ -1509,6 +1509,13 @@ function openApiDocument() {
               description:
                 "Explicitly authorizes the Strategist design proposal and spec lock before Executor authoring.",
             },
+            visualReviewLevel: {
+              type: "string",
+              enum: ["off", "standard", "final"],
+              default: "off",
+              description:
+                "Explicit opt-in level for the frozen v3 visual-review policy.",
+            },
             imagePolicy: { $ref: "#/components/schemas/GenerationImagePolicy" },
           },
         },
@@ -1564,6 +1571,7 @@ function endpointFixture(endpoint) {
           ? {
               schemaVersion: 1,
               data: {
+                visualReviewLevel: "off",
                 imagePolicy: {
                   scope: "none",
                   usage: ["none"],

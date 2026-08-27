@@ -98,12 +98,25 @@ def _provider_configuration() -> dict[str, Any]:
         }
     else:
         raise ValueError("TEXT_PROVIDER must be kimi or qwen")
+    visual_review_configuration = {
+        **text_configuration,
+        "model": os.getenv("VISUAL_REVIEW_MODEL", str(text_configuration["model"])).strip(),
+    }
+    if visual_review_configuration["provider"] == "qwen":
+        visual_review_configuration.update(
+            {
+                "reasoningEffort": None,
+                "enableThinking": False,
+                "preserveThinking": False,
+            }
+        )
     return {
         "schemaVersion": 1,
         "planning": {
             "backend": planning_backend,
             **text_configuration,
         },
+        "visualReview": visual_review_configuration,
         "image": {
             "enabled": os.getenv("IMAGE_GENERATION_ENABLED", "false").strip().lower()
             in {"1", "true", "yes", "on"},
@@ -119,7 +132,10 @@ def _provider_configuration() -> dict[str, Any]:
     }
 
 
-def _authoring_policy() -> dict[str, Any]:
+def _authoring_policy(
+    visual_review_level: str = "off",
+    provider_configuration: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     mode = os.getenv("PRESENTATION_AUTHORING_MODE", "agent-authoring").strip().lower()
     if mode not in {"agent-authoring", "deterministic-template"}:
         raise ValueError(
@@ -137,9 +153,17 @@ def _authoring_policy() -> dict[str, Any]:
                 "maxRounds": 0,
             },
         }
-    visual_review_required = os.getenv(
-        "PRESENTATION_VISUAL_REVIEW_REQUIRED", "true"
-    ).strip().lower() in {"1", "true", "yes", "on"}
+    if visual_review_level not in {"off", "standard", "final"}:
+        raise ValueError("visual review level must be off, standard, or final")
+    visual_review_required = visual_review_level != "off"
+    visual_review_max_rounds = {"off": 0, "standard": 1, "final": 2}[
+        visual_review_level
+    ]
+    frozen_providers = provider_configuration or _provider_configuration()
+    authoring_model = str(frozen_providers["planning"]["model"])
+    visual_review_model = str(
+        frozen_providers.get("visualReview", {}).get("model") or authoring_model
+    )
     return {
         "schemaVersion": 1,
         "mode": mode,
@@ -147,12 +171,11 @@ def _authoring_policy() -> dict[str, Any]:
         "fallbackReason": None,
         "visualReview": {
             "required": visual_review_required,
-            "policyVersion": (
-                "visual-review-adaptive@v2"
-                if visual_review_required
-                else "visual-review-operator-disabled@v2"
-            ),
-            "maxRounds": 5 if visual_review_required else 0,
+            "level": visual_review_level,
+            "policyVersion": "visual-review-opt-in@v3",
+            "maxRounds": visual_review_max_rounds,
+            "authoringModel": authoring_model,
+            "visualReviewModel": visual_review_model,
         },
     }
 
@@ -235,6 +258,7 @@ class CreateApprovedJobCommand:
     crash_once_at_position: int | None = None
     continue_limited_draft: bool = False
     authorize_strategist_design_lock: bool = False
+    visual_review_level: str = "off"
     image_policy: dict[str, Any] = field(
         default_factory=lambda: {"scope": "none", "usage": ["none"], "notes": {}}
     )
@@ -488,7 +512,7 @@ def create_approved_generation_job(
             },
         }
         if engineering_quick
-        else _authoring_policy()
+        else _authoring_policy(command.visual_review_level, provider_configuration)
     )
     engine_profile = (
         "quick-engineering"

@@ -41,6 +41,7 @@ class AgentDecision(BaseModel):
     tool_name: (
         Literal[
             "read_approved_context",
+            "read_design_spec_contract",
             "write_planning_artifact",
             "read_design_catalog",
             "write_or_patch_slide_svg",
@@ -263,6 +264,8 @@ class MainPresentationAgent:
                 "requiredTools": sorted(required_tools),
                 "prematureFailureCount": 0,
                 "toolPolicyDenialCount": 0,
+                "designSpecRepairCount": 0,
+                "lastRejectedDesignSpecSha256": None,
                 "startedAt": _now(),
             }
             self.state["messages"].append(
@@ -315,12 +318,65 @@ class MainPresentationAgent:
                 schema_failures = 0
                 if observation.get("status") == "policy-denied":
                     phase = self.state["phases"][phase_id]
-                    denial_count = int(phase.get("toolPolicyDenialCount") or 0) + 1
-                    phase["toolPolicyDenialCount"] = denial_count
-                    self._persist_state("tool-policy-denial-counted")
-                    if denial_count > self.max_schema_repairs:
+                    observation_body = observation.get("observation", {})
+                    observation_code = str(observation_body.get("code") or "")
+                    if observation_code == "DESIGN_SPEC_SCHEMA_INVALID":
+                        repair_count = int(phase.get("designSpecRepairCount") or 0) + 1
+                        phase["designSpecRepairCount"] = repair_count
+                        rejected_sha256 = str(
+                            observation_body.get("details", {}).get("rejectedSha256") or ""
+                        )
+                        duplicate = bool(
+                            rejected_sha256
+                            and rejected_sha256 == phase.get("lastRejectedDesignSpecSha256")
+                        )
+                        phase["lastRejectedDesignSpecSha256"] = rejected_sha256 or None
+                        observation_body.setdefault("details", {})["repairCount"] = repair_count
+                        observation_body["details"]["duplicateSubmission"] = duplicate
+                        self.state["messages"].append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    "<design-spec-repair taint='supervisor-owned'>"
+                                    + json.dumps(
+                                        {
+                                            "repairCount": repair_count,
+                                            "maxRepairs": self.max_schema_repairs,
+                                            "duplicateSubmission": duplicate,
+                                            "instruction": (
+                                                "Call read_design_spec_contract again, then "
+                                                "resubmit one complete corrected design_spec.md."
+                                            ),
+                                        },
+                                        ensure_ascii=False,
+                                        separators=(",", ":"),
+                                    )
+                                    + "</design-spec-repair>"
+                                ),
+                                "locked": False,
+                                "phaseId": phase_id,
+                            }
+                        )
+                        self._persist_state("design-spec-repair-counted")
+                        if repair_count > self.max_schema_repairs:
+                            detail = str(
+                                observation_body.get("message")
+                                or "unknown design spec validation failure"
+                            )
+                            return self._terminate_phase(
+                                phase_id,
+                                role,
+                                "failed",
+                                "design-spec-schema-repair-limit: " + detail[:240],
+                            )
+                    else:
+                        denial_count = int(phase.get("toolPolicyDenialCount") or 0) + 1
+                        phase["toolPolicyDenialCount"] = denial_count
+                        self._persist_state("tool-policy-denial-counted")
+                        if denial_count <= self.max_schema_repairs:
+                            continue
                         detail = str(
-                            observation.get("observation", {}).get("message")
+                            observation_body.get("message")
                             or "unknown tool policy denial"
                         )
                         return self._terminate_phase(
@@ -562,10 +618,34 @@ class MainPresentationAgent:
                 "hrefs; no scripts, foreignObject, external hrefs, or event handlers"
             ),
         }
+        if (
+            tools.context.stage == "visual-repair"
+            and self.request.authoring.visual_review_policy_version
+            == "visual-review-opt-in@v3"
+        ):
+            slide_write_contract = {
+                "argumentsExample": {
+                    **slide_write_contract["argumentsExample"],
+                    "expectedBeforeSha256": "<currentAuthoringAsset.subjectSha256>",
+                },
+                "constraints": (
+                    "v3 atomic visual repair: expectedBeforeSha256 must equal the current SVG; "
+                    "only reviewed targetElementIds may change, and only geometry, font-size, "
+                    "letter-spacing, alignment, or transform attributes may differ; text, brand "
+                    "tokens, font family, IDs, element structure, charts, and images are immutable"
+                ),
+            }
         contracts: dict[str, dict[str, Any]] = {
             "read_approved_context": {
                 "argumentsExample": {"pnn": current_pnn},
                 "constraints": "pnn must equal currentPnn",
+            },
+            "read_design_spec_contract": {
+                "argumentsExample": {},
+                "constraints": (
+                    "empty object only; the Strategist must read this complete PPT Master "
+                    "contract before write_planning_artifact"
+                ),
             },
             "read_design_catalog": {
                 "argumentsExample": {},
@@ -574,14 +654,17 @@ class MainPresentationAgent:
             "write_planning_artifact": {
                 "argumentsExample": {
                     "filename": "design_spec.md",
-                    "content": (
-                        "<!-- ppt-master-schema: design-spec/v1 -->\n# <title> - Design Spec\n..."
-                    ),
+                    "content": "<complete document authored from read_design_spec_contract>",
                 },
                 "constraints": (
-                    "write only design_spec.md; include the canonical marker, overall narrative, "
-                    "visual language, source/image/chart strategy, and every approved PNN/title; "
-                    "do not invent a page contract or modify Outline authority"
+                    "write only design_spec.md; first call read_design_spec_contract and follow "
+                    "its full authoringReference and markdownSchema; submit the complete document "
+                    "in one call without ellipses or placeholders; keep every heading, table "
+                    "field, "
+                    "and slide-block field in canonical English while values may use the deck "
+                    "language; include every approved order/PNN/title exactly; do not invent a "
+                    "page "
+                    "contract or modify Outline authority"
                 ),
             },
             "write_or_patch_slide_svg": slide_write_contract,
@@ -787,6 +870,7 @@ class MainPresentationAgent:
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if record.get("toolName") in {
                     "read_design_catalog",
+                    "read_design_spec_contract",
                     "write_planning_artifact",
                 }:
                     retained_observations.append(
@@ -886,8 +970,9 @@ class MainPresentationAgent:
         except ToolPolicyError as error:
             failed = True
             observation = {
-                "code": "AGENT_TOOL_POLICY_DENIED",
+                "code": error.code,
                 "message": str(error),
+                **({"details": error.details} if error.details else {}),
             }
             output_sha256 = canonical_sha256(observation)
             record = {

@@ -65,6 +65,9 @@ class CreateGenerationJobData(BaseModel):
     authorize_strategist_design_lock: bool = Field(
         default=False, alias="authorizeStrategistDesignLock"
     )
+    visual_review_level: Literal["off", "standard", "final"] = Field(
+        default="off", alias="visualReviewLevel"
+    )
     image_policy: GenerationImagePolicyData = Field(
         default_factory=GenerationImagePolicyData, alias="imagePolicy"
     )

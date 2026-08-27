@@ -1087,6 +1087,12 @@ export interface components {
              * @default false
              */
             authorizeStrategistDesignLock: boolean;
+            /**
+             * @description Explicit opt-in level for the frozen v3 visual-review policy.
+             * @default off
+             * @enum {string}
+             */
+            visualReviewLevel: "off" | "standard" | "final";
             imagePolicy?: components["schemas"]["GenerationImagePolicy"];
         };
         /** CreateGenerationJobRequest */

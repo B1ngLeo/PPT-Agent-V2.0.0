@@ -11,6 +11,7 @@ import html
 import json
 import re
 import unicodedata
+import xml.etree.ElementTree as ET
 from typing import Any
 
 from instant_ppt_worker.providers import TextCompletion
@@ -173,6 +174,12 @@ def _strategist_decision(
             arguments={"pnn": "P01"},
             reason="Read the exact approved context before accepting the page strategy.",
         )
+    if "read_design_spec_contract" not in tools:
+        return _decision(
+            "strategist",
+            tool_name="read_design_spec_contract",
+            reason="Read the complete PPT Master design-spec grammar before authoring.",
+        )
     if "read_design_catalog" not in tools:
         return _decision(
             "strategist",
@@ -188,35 +195,108 @@ def _strategist_decision(
             "",
             "## I. Project Information",
             "",
-            f"- Project: {context['intent']['title']}",
-            f"- Audience: {context['intent']['audience']}",
-            f"- Objective: {context['intent']['objective']}",
+            "| Item | Value |",
+            "| --- | --- |",
+            f"| Project Name | {context['intent']['title']} |",
+            "| Canvas Format | ppt169 / 1280 × 720 |",
+            f"| Page Count | {len(outline)} |",
+            "| Primary Language | zh-CN |",
+            f"| Target Audience | {context['intent']['audience']} |",
+            f"| Communication Intent | {context['intent']['objective']} |",
+            f"| Desired Audience Outcome | {context['intent']['objective']} |",
+            f"| Core Message / Ask / Action | {context['intent']['objective']} |",
+            "| Delivery Context | presenter-led |",
+            "| Artifact Afterlife | review and hand-off |",
+            "| Reading Mode | balanced |",
+            "| Content Strategy | balanced default |",
+            "| Design Style | conclusion-first editorial |",
+            "| AI Image Acquisition Path | not applicable |",
+            "| Generation Mode | continuous |",
+            "| Spec Refinement | disabled |",
+            "| Speaker Notes | enabled — workflow default |",
+            "| Custom Animations | disabled — workflow default |",
+            "| Narration Audio | disabled — workflow default |",
+            "| Created Date | 2026-01-01 |",
             "",
             "## II. Canvas Specification",
             "",
-            "- PPT 16:9, 1280 × 720, 72 px safe margin.",
+            "| Property | Value |",
+            "| --- | --- |",
+            "| Format | ppt169 |",
+            "| Dimensions | 1280 × 720 |",
+            "| viewBox | `0 0 1280 720` |",
+            "| Margins | 72 px |",
+            "| Content Area | 1136 × 576 |",
             "",
             "## III. Visual Theme",
             "",
-            "- Conclusion-first editorial system derived from the approved source corpus.",
-            "- Restrained data-journalism palette with a clear evidence hierarchy.",
+            "### Theme Style",
+            "",
+            "- **Mode**: briefing",
+            "- **Visual style**: editorial",
+            "- **Theme**: conclusion-first evidence hierarchy",
+            "- **Tone**: restrained and authoritative",
+            "",
+            "### Color Scheme",
+            "",
+            "| Role | HEX | Purpose |",
+            "| --- | --- | --- |",
+            "| Background | #F7F8FA | primary field |",
+            "| Secondary background | #E9EEF5 | panels |",
+            "| Primary | #17324D | headings |",
+            "| Accent | #1677FF | emphasis |",
+            "| Secondary accent | #18A999 | secondary emphasis |",
+            "| Body text | #1F2937 | readable copy |",
             "",
             "### AI Image Strategy",
             "",
-            "- Use only explicitly approved resources; keep all factual text as native SVG.",
+            "- **Image Rendering**: editorial illustration",
+            "- **Visual**: use only explicitly approved resources",
+            "- **Mood**: factual and restrained",
             "",
             "## IV. Typography System",
             "",
-            "- Microsoft YaHei / Arial; 64 px cover title, 48 px slide title, 22 px body.",
+            "### Font Plan",
+            "",
+            "| Role | Character (Reference) | Primary | English if non-English | Fallback tail |",
+            "| --- | --- | --- | --- | --- |",
+            "| Title | modern sans | Microsoft YaHei | Arial | sans-serif |",
+            "| Body | neutral sans | Microsoft YaHei | Arial | sans-serif |",
+            "",
+            "- **Title stack**: Microsoft YaHei, Arial, sans-serif",
+            "- **Body stack**: Microsoft YaHei, Arial, sans-serif",
+            "",
+            "### Font Size Hierarchy",
+            "",
+            "| Purpose | Anchor Size (px) |",
+            "| --- | ---: |",
+            "| Body | 22 |",
+            "| Title | 48 |",
+            "| Subtitle | 32 |",
+            "| Annotation | 16 |",
             "",
             "## V. Layout Principles",
             "",
-            "- Preserve stable page identities and use Direct SVG on a 1280 × 720 canvas.",
-            "- Native chart/table metadata is allowed only when approved source values support it.",
+            "### Page Structure",
+            "",
+            "- **Header area**: stable title band",
+            "- **Content area**: one governing assertion with evidence",
+            "- **Footer area**: stable PNN at bottom-right",
+            "",
+            "### Spacing Specification",
+            "",
+            "| Element | Current Project |",
+            "| --- | --- |",
+            "| Safe margin | 72 px |",
+            "| Content block gap | 32 px |",
+            "| Icon-text gap | 12 px |",
             "",
             "## VI. Icon Usage Specification",
             "",
-            "- No generic icon library is required; use simple native geometry when needed.",
+            "- **Primary bundled library**: none",
+            "",
+            "| Icon Path | Suitable Scenarios |",
+            "| --- | --- |",
             "",
             "## VIII. Image Resource List",
             "",
@@ -258,10 +338,11 @@ def _strategist_decision(
             lines.extend(
                 [
                     f"#### Slide {page['order']:02d} / {page['pnn']} - {page['title']}",
-                    f"- Communication goal: {page['audienceQuestion']}",
-                    f"- Audience move: {page['audienceQuestion']}",
-                    f"- Narrative role: {page['role']}",
-                    "- Layout: choose freely within the shared visual system.",
+                    f"- **Audience move**: uncertain → {page['audienceQuestion']}",
+                    "- **Layout**: one governing assertion with supporting evidence.",
+                    f"- **Title**: {page['title']}",
+                    f"- **Core message**: {page['audienceQuestion']}",
+                    f"- **Content**: Complete the approved {page['role']} page from source facts.",
                     "",
                 ]
             )
@@ -269,7 +350,12 @@ def _strategist_decision(
             [
                 "## X. Speaker Notes Requirements",
                 "",
-                "- Follow the approved production policy and keep notes page-local.",
+                "- **Generation**: enabled",
+                "- **Filename**: match each SVG filename under `notes/`",
+                "- **Content**: explain the approved source facts page by page",
+                "- **Total duration**: 6 minutes",
+                "- **Notes style**: formal",
+                "- **Presentation purpose**: inform and explain",
             ]
         )
         return _decision(
@@ -348,17 +434,34 @@ def _executor_decision(phase: dict[str, Any], observations: list[dict[str, Any]]
         and not latest_gate_passed
     )
     if not write_indexes or needs_revision:
+        write_arguments: dict[str, Any] = {
+            "pnn": pnn,
+            "mode": "direct-svg",
+            "svg": _direct_svg(
+                context,
+                revision=max(int(context.get("authorAttempt") or 1), len(write_indexes) + 1),
+            ),
+        }
+        if expected_stage == "visual-repair" and context.get("expectedBeforeSha256"):
+            approved_context = next(
+                value
+                for value in reversed(observations)
+                if value.get("toolName") == "read_approved_context"
+            )
+            current_svg = str(
+                approved_context.get("observation", {})
+                .get("currentAuthoringAsset", {})
+                .get("svg", "")
+            )
+            write_arguments["svg"] = _atomic_fixture_visual_repair(
+                current_svg,
+                list(context.get("allowedVisualRepairTargetIds") or []),
+            )
+            write_arguments["expectedBeforeSha256"] = context["expectedBeforeSha256"]
         return _decision(
             "executor",
             tool_name="write_or_patch_slide_svg",
-            arguments={
-                "pnn": pnn,
-                "mode": "direct-svg",
-                "svg": _direct_svg(
-                    context,
-                    revision=max(int(context.get("authorAttempt") or 1), len(write_indexes) + 1),
-                ),
-            },
+            arguments=write_arguments,
             reason=(
                 "Revise the page using the complete checker observation."
                 if write_indexes
@@ -379,6 +482,27 @@ def _executor_decision(phase: dict[str, Any], observations: list[dict[str, Any]]
         reason="The current page has an Agent-authored SVG and all required gates are satisfied.",
         termination_reason=f"{pnn.lower()}-agent-authoring-complete",
     )
+
+
+def _atomic_fixture_visual_repair(svg: str, target_ids: list[str]) -> str:
+    root = ET.fromstring(svg)
+    for target_id in target_ids:
+        target = next(
+            (element for element in root.iter() if element.attrib.get("id") == target_id),
+            None,
+        )
+        if target is None:
+            continue
+        for attribute in ("x", "y", "width", "height", "font-size"):
+            raw_value = target.attrib.get(attribute)
+            if raw_value is None:
+                continue
+            try:
+                target.attrib[attribute] = f"{float(raw_value) + 1:g}"
+            except ValueError:
+                continue
+            return ET.tostring(root, encoding="unicode")
+    raise RuntimeError("visual repair fixture received no editable stable target")
 
 
 def _wrapped(value: str, width: int) -> str:

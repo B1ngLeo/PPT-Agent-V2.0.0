@@ -1443,9 +1443,18 @@ def _bundle(project: Path, target: Path) -> None:
         "phase-receipts",
         "locked-context",
         "checkpoints",
-        "visual-reviews",
     ):
         included.extend(sorted((project / "agent" / agent_directory).glob("*.json")))
+    included.extend(
+        sorted(
+            path
+            for path in (project / "agent" / "visual-reviews").rglob("*")
+            if path.is_file()
+        )
+    )
+    included.extend(
+        sorted(path for path in (project / ".review").rglob("*") if path.is_file())
+    )
     included.extend(sorted((project / "validation").glob("visual-*.json")))
     included.extend(sorted((project / ".preview").glob("round-*/*.png")))
     included.extend(
@@ -1645,7 +1654,12 @@ def _visual_review_text_provider(
     if request.versions.model == "fake-agent@v1":
         return DeterministicPresentationAgentProvider(), True
     try:
-        return create_visual_review_text_provider(), True
+        return (
+            create_visual_review_text_provider(
+                model_name=request.authoring.visual_review_model
+            ),
+            True,
+        )
     except ProviderConfigurationError as error:
         raise AdapterError(
             RENDER_FAILED,
@@ -1685,6 +1699,7 @@ def _author_design_spec_with_agent(
             allowed_tools=frozenset(
                 {
                     "read_approved_context",
+                    "read_design_spec_contract",
                     "read_design_catalog",
                     "write_planning_artifact",
                 }
@@ -1710,7 +1725,8 @@ def _author_design_spec_with_agent(
             goal=(
                 "Read the approved Intent, Outline, complete source corpus, template choice, and "
                 "production policy. Independently establish the narrative and visual language, "
-                "then directly author the canonical design_spec.md. Do not create a Page "
+                "read the complete PPT Master design-spec contract, then directly author the "
+                "canonical design_spec.md. Do not create a Page "
                 "Blueprint, page contract, support score, or other intermediate page schema."
             ),
             locked_context={
@@ -1732,6 +1748,7 @@ def _author_design_spec_with_agent(
                 },
                 "requiredTools": [
                     "read_approved_context",
+                    "read_design_spec_contract",
                     "read_design_catalog",
                     "write_planning_artifact",
                 ],
@@ -1740,6 +1757,7 @@ def _author_design_spec_with_agent(
             required_tools=frozenset(
                 {
                     "read_approved_context",
+                    "read_design_spec_contract",
                     "read_design_catalog",
                     "write_planning_artifact",
                 }
@@ -1757,6 +1775,7 @@ def _author_design_spec_with_agent(
     }
     if not {
         "read_approved_context",
+        "read_design_spec_contract",
         "read_design_catalog",
         "write_planning_artifact",
     }.issubset(strategist_tool_names):
@@ -1827,6 +1846,11 @@ def _agent_page_author_receipt(
         "toolCallId": latest_write["toolCallId"],
         "subjectSha256": subject_sha256,
         "authoringMode": latest_write["observation"]["authoringMode"],
+        **(
+            {"visualRepair": latest_write["observation"]["visualRepair"]}
+            if latest_write["observation"].get("visualRepair")
+            else {}
+        ),
     }
 
 
@@ -1939,6 +1963,53 @@ def _page_local_agent_gate(
         "pageLocal": [],
         "notExercised": ["multi-page-rhythm", "cross-page-repetition"],
         "failureMessage": None,
+    }
+
+
+def _final_page_agent_gate(
+    workspace_root: Path,
+    project: Path,
+    pnn: str,
+    svg_path: Path,
+    subject_sha256: str,
+    roster: list[dict[str, Any]],
+) -> dict[str, Any]:
+    safe_svg_report = _page_local_agent_gate(project, pnn, svg_path, subject_sha256)
+    if not safe_svg_report.get("passed"):
+        return safe_svg_report
+
+    report = _run_final_svg_checker(workspace_root, project, allow_failure=True)
+    findings = _svg_gate_findings_by_page(report, roster).get(pnn, [])
+    classifications = [
+        {
+            "classification": "page-local-final",
+            "code": finding["code"],
+            "message": finding["message"],
+        }
+        for finding in findings
+    ]
+    return {
+        "passed": not findings,
+        "subjectSha256": subject_sha256,
+        "reportSha256": sha256_file(project / "validation" / "svg_quality_report.json"),
+        "methodLevel": (
+            [
+                {
+                    "classification": "page-local-final",
+                    "code": "SVG_PAGE_FINAL_VALIDATED",
+                    "message": "current page passed the production final SVG quality checker",
+                }
+            ]
+            if not findings
+            else []
+        ),
+        "pageLocal": classifications,
+        "notExercised": ["multi-page-rhythm", "cross-page-repetition"],
+        "failureMessage": (
+            None
+            if not findings
+            else json.dumps(findings, ensure_ascii=False, separators=(",", ":"))
+        ),
     }
 
 
@@ -2462,11 +2533,13 @@ def _repair_final_svg_gate_with_agent(
                         author_attempt=repair_round + 1,
                         callbacks=ToolCallbacks(
                             svg_gate=lambda current_pnn, current_path, current_sha256: (
-                                _page_local_agent_gate(
+                                _final_page_agent_gate(
+                                    workspace_root,
                                     project,
                                     current_pnn,
                                     current_path,
                                     current_sha256,
+                                    plan["roster"],
                                 )
                             )
                         ),
@@ -3110,6 +3183,9 @@ def run_default_workflow(
     )
 
     if request.production.visual_review:
+        is_opt_in_visual_review = (
+            request.authoring.visual_review_policy_version == "visual-review-opt-in@v3"
+        )
         review_provider: TextProvider | None = None
         review_provider_owned = False
         review_agent_provider: TextProvider | None = None
@@ -3121,7 +3197,13 @@ def run_default_workflow(
         best_review: dict[str, Any] | None = None
         best_review_evidence: dict[str, Any] | None = None
         best_snapshot = project / "agent" / "visual-reviews" / "best-svg"
+        baseline_snapshot = project / "agent" / "visual-reviews" / "baseline-svg"
+        baseline_svg_sha256 = final_svg_sha256
+        modified_visual_pages: set[str] = set()
+        rolled_back_visual_pages: set[str] = set()
         terminal_review_decision: dict[str, Any] | None = None
+        if is_opt_in_visual_review:
+            _snapshot_svg_roster(sorted(svg_dir.glob("slide_*.svg")), baseline_snapshot)
         try:
             review_provider, review_provider_owned = _visual_review_text_provider(
                 request, text_provider
@@ -3135,7 +3217,15 @@ def run_default_workflow(
                 provider=review_agent_provider,
             )
             for review_round in range(1, max_review_rounds + 1):
-                render_set = render_visual_assets(project, review_round=review_round)
+                render_set = render_visual_assets(
+                    project,
+                    review_round=review_round,
+                    page_filter=(
+                        modified_visual_pages
+                        if is_opt_in_visual_review and review_round == 2
+                        else None
+                    ),
+                )
                 review_phase_id = f"visual-review-r{review_round}"
 
                 def visual_review_callback(
@@ -3200,16 +3290,55 @@ def run_default_workflow(
                 current_metrics = visual_review_metrics(
                     final_review, [item["pnn"] for item in plan["roster"]]
                 )
-                decision = adaptive_visual_review_decision(
-                    review_round=review_round,
-                    max_rounds=max_review_rounds,
-                    metrics_history=metrics_history,
-                    current_metrics=current_metrics,
-                )
+                if is_opt_in_visual_review:
+                    blocking_findings = [
+                        issue
+                        for issue in final_review["issues"]
+                        if issue["severity"] == "blocking"
+                    ]
+                    eligible_findings = [
+                        issue
+                        for issue in blocking_findings
+                        if issue.get("autoFixEligible") is True
+                    ]
+                    if not blocking_findings:
+                        decision = {
+                            "decision": "pass",
+                            "reason": "zero-hard",
+                            "bestRound": review_round,
+                            "stagnationCount": 0,
+                        }
+                    elif review_round == 1 and len(eligible_findings) == len(
+                        blocking_findings
+                    ):
+                        decision = {
+                            "decision": "repair",
+                            "reason": "eligible-page-hard-findings",
+                            "bestRound": 1,
+                            "stagnationCount": 0,
+                        }
+                    else:
+                        decision = {
+                            "decision": "rollback-needs-manual",
+                            "reason": (
+                                "verification-hard-findings"
+                                if review_round == 2
+                                else "hard-findings-outside-auto-fix-policy"
+                            ),
+                            "bestRound": 1,
+                            "stagnationCount": 0,
+                        }
+                else:
+                    decision = adaptive_visual_review_decision(
+                        review_round=review_round,
+                        max_rounds=max_review_rounds,
+                        metrics_history=metrics_history,
+                        current_metrics=current_metrics,
+                    )
                 is_new_best = not metrics_history or tuple(current_metrics["qualityKey"]) < min(
                     tuple(item["qualityKey"]) for item in metrics_history
                 )
-                if is_new_best:
+                if is_new_best and not is_opt_in_visual_review:
                     _snapshot_svg_roster(sorted(svg_dir.glob("slide_*.svg")), best_snapshot)
                     best_review = dict(final_review)
                     best_review_evidence = dict(final_review_evidence)
@@ -3248,17 +3377,45 @@ def run_default_workflow(
                     break
                 if decision["decision"] != "repair":
                     terminal_review_decision = decision_evidence
-                    svg_paths = _restore_svg_roster(best_snapshot, svg_dir)
+                    if is_opt_in_visual_review:
+                        pages_to_restore = {
+                            str(issue.get("pnn"))
+                            for issue in final_review["issues"]
+                            if issue.get("severity") == "blocking" and issue.get("pnn")
+                        }
+                        for pnn in pages_to_restore:
+                            page_number = int(pnn[1:])
+                            backup = baseline_snapshot / f"slide_{page_number:02d}.svg"
+                            if backup.is_file():
+                                shutil.copy2(backup, svg_dir / backup.name)
+                                rolled_back_visual_pages.add(pnn)
+                        svg_paths = sorted(svg_dir.glob("slide_*.svg"))
+                    else:
+                        svg_paths = _restore_svg_roster(best_snapshot, svg_dir)
                     final_svg_sha256 = _svg_roster_hash(svg_paths)
                     _run_final_svg_checker(workspace_root, project)
-                    if best_review is not None:
+                    if best_review is not None and not is_opt_in_visual_review:
                         final_review = best_review
-                    if best_review_evidence is not None:
+                    if best_review_evidence is not None and not is_opt_in_visual_review:
                         final_review_evidence = best_review_evidence
                     break
                 findings_by_page = blocking_pages(
                     final_review, [item["pnn"] for item in plan["roster"]]
                 )
+                if is_opt_in_visual_review:
+                    findings_by_page = {
+                        pnn: [
+                            finding
+                            for finding in findings
+                            if finding.get("autoFixEligible") is True
+                        ]
+                        for pnn, findings in findings_by_page.items()
+                    }
+                    findings_by_page = {
+                        pnn: findings
+                        for pnn, findings in findings_by_page.items()
+                        if findings
+                    }
                 if not findings_by_page:
                     raise VisualReviewError(
                         "blocking visual review returned no strategist/executor repair owner"
@@ -3296,6 +3453,25 @@ def run_default_workflow(
                             "visualFindings": findings,
                         }
                     )
+                    visual_repair_target_ids: tuple[str, ...] = ()
+                    if is_opt_in_visual_review:
+                        repair_context.update(
+                            {
+                                "expectedBeforeSha256": sha256_file(
+                                    svg_dir / f"slide_{page_index + 1:02d}.svg"
+                                ),
+                                "allowedVisualRepairTargetIds": sorted(
+                                    {
+                                        target_id
+                                        for finding in findings
+                                        for target_id in finding.get("targetElementIds") or []
+                                    }
+                                ),
+                            }
+                        )
+                        visual_repair_target_ids = tuple(
+                            repair_context["allowedVisualRepairTargetIds"]
+                        )
                     repair_tools = PresentationAgentToolRegistry(
                         PresentationToolContext(
                             project=project,
@@ -3312,6 +3488,7 @@ def run_default_workflow(
                             stage="visual-repair",
                             author_attempt=review_round + 1,
                             required_authoring_mode="direct-svg",
+                            visual_repair_target_ids=visual_repair_target_ids,
                         )
                     )
                     repair_phase_id = f"visual-repair-r{review_round}-{pnn.lower()}"
@@ -3319,8 +3496,10 @@ def run_default_workflow(
                         phase_id=repair_phase_id,
                         role="executor",
                         goal=(
-                            f"Repair {pnn} for the complete structured visual review finding "
-                            "set. Preserve approved facts, IDs, chart values, and page ownership."
+                            f"Atomically repair {pnn} only for the eligible Hard findings. "
+                            "Use expectedBeforeSha256 and change only the permitted attributes "
+                            "on allowedVisualRepairTargetIds. Preserve copy, brand, IDs, page "
+                            "structure, chart type, images, and every other page."
                         ),
                         locked_context=repair_context,
                         tools=repair_tools,
@@ -3337,6 +3516,37 @@ def run_default_workflow(
                         svg_path=svg_path,
                         require_svg_gate=False,
                     )
+                    if is_opt_in_visual_review:
+                        page_gate = _final_page_agent_gate(
+                            workspace_root,
+                            project,
+                            pnn,
+                            svg_path,
+                            str(repair_receipt["subjectSha256"]),
+                            plan["roster"],
+                        )
+                        if not page_gate.get("passed"):
+                            backup_key = str(
+                                repair_receipt.get("visualRepair", {}).get("backupKey")
+                                or ""
+                            )
+                            backup_path = project / backup_key
+                            if not backup_key or not backup_path.is_file():
+                                raise VisualReviewError(
+                                    f"{pnn} failed its deterministic page gate without a backup"
+                                )
+                            shutil.copy2(backup_path, svg_path)
+                            rolled_back_visual_pages.add(pnn)
+                            terminal_review_decision = {
+                                "decision": "needs-manual",
+                                "reason": (
+                                    "deterministic-page-gate-failed-after-visual-repair"
+                                ),
+                                "pnn": pnn,
+                                "pageGate": page_gate,
+                            }
+                            break
+                        modified_visual_pages.add(pnn)
                     completed_pages[page_index] = {
                         "pnn": pnn,
                         "slideId": slide.slide_id,
@@ -3353,6 +3563,11 @@ def run_default_workflow(
                         issueIds=[finding["issueId"] for finding in findings],
                         **repair_receipt,
                     )
+                if terminal_review_decision is not None and is_opt_in_visual_review:
+                    svg_paths = sorted(svg_dir.glob("*.svg"))
+                    final_svg_sha256 = _svg_roster_hash(svg_paths)
+                    _run_final_svg_checker(workspace_root, project)
+                    break
                 svg_paths = sorted(svg_dir.glob("*.svg"))
                 final_svg_sha256 = _svg_roster_hash(svg_paths)
                 if final_svg_sha256 == before_review_repair_sha256:
@@ -3365,25 +3580,41 @@ def run_default_workflow(
                     allow_failure=True,
                 )
                 if not _final_svg_report_passed(post_visual_svg_report):
-                    (
-                        completed_pages,
-                        svg_paths,
-                        final_svg_sha256,
-                        post_visual_svg_report,
-                    ) = _repair_final_svg_gate_with_agent(
-                        workspace_root,
-                        project,
-                        request,
-                        fragments,
-                        deck,
-                        plan,
-                        image_preparation,
-                        image_resource_by_slide,
-                        completed_pages,
-                        post_visual_svg_report,
-                        review_agent_provider,
-                        phase_prefix=(f"svg-gate-repair-post-visual-v{review_round}"),
-                    )
+                    if is_opt_in_visual_review:
+                        for pnn in modified_visual_pages:
+                            page_number = int(pnn[1:])
+                            baseline_page = baseline_snapshot / f"slide_{page_number:02d}.svg"
+                            if baseline_page.is_file():
+                                shutil.copy2(baseline_page, svg_dir / baseline_page.name)
+                                rolled_back_visual_pages.add(pnn)
+                        svg_paths = sorted(svg_dir.glob("*.svg"))
+                        final_svg_sha256 = _svg_roster_hash(svg_paths)
+                        _run_final_svg_checker(workspace_root, project)
+                        terminal_review_decision = {
+                            "decision": "needs-manual",
+                            "reason": "deterministic-final-gate-failed-after-visual-repair",
+                        }
+                        break
+                    else:
+                        (
+                            completed_pages,
+                            svg_paths,
+                            final_svg_sha256,
+                            post_visual_svg_report,
+                        ) = _repair_final_svg_gate_with_agent(
+                            workspace_root,
+                            project,
+                            request,
+                            fragments,
+                            deck,
+                            plan,
+                            image_preparation,
+                            image_resource_by_slide,
+                            completed_pages,
+                            post_visual_svg_report,
+                            review_agent_provider,
+                            phase_prefix=(f"svg-gate-repair-post-visual-v{review_round}"),
+                        )
                 _receipt(
                     project,
                     request,
@@ -3398,6 +3629,24 @@ def run_default_workflow(
                         "stalePreviousSubjectSha256": before_review_repair_sha256,
                     },
                 )
+                if is_opt_in_visual_review and max_review_rounds == 1:
+                    final_review = {
+                        **final_review,
+                        "passed": True,
+                        "issues": [
+                            issue
+                            for issue in final_review["issues"]
+                            if issue["severity"] == "advisory"
+                        ],
+                        "summary": (
+                            "Standard opt-in review completed one atomic repair pass; "
+                            "deterministic gates passed and Soft findings are warnings."
+                        ),
+                        "status": "passed-with-warnings",
+                        "fixedPages": sorted(modified_visual_pages),
+                        "rolledBackPages": sorted(rolled_back_visual_pages),
+                    }
+                    break
         except (AgentRuntimeError, ProviderRequestError, VisualReviewError) as error:
             raise AdapterError(RENDER_FAILED, f"bounded visual review failed: {error}") from error
         finally:
@@ -3412,6 +3661,56 @@ def run_default_workflow(
             raise AdapterError(RENDER_FAILED, "visual review produced no structured report")
         if final_review_evidence is None:
             raise AdapterError(RENDER_FAILED, "visual review produced no audit evidence")
+        if is_opt_in_visual_review:
+            review_evidence_files = sorted(
+                (project / "agent" / "visual-reviews").glob("round-*.json")
+            )
+            review_evidence_payloads = [
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in review_evidence_files
+            ]
+            review_usage = [
+                dict(payload.get("usage") or {}) for payload in review_evidence_payloads
+            ]
+            final_review = {
+                **final_review,
+                "policyVersion": request.authoring.visual_review_policy_version,
+                "reviewLevel": request.authoring.visual_review_level,
+                "authoringModel": request.authoring.authoring_model
+                or request.versions.model,
+                "visualReviewModel": request.authoring.visual_review_model
+                or request.versions.model,
+                "reviewRoundCount": len(review_evidence_files),
+                "reviewCallCount": sum(
+                    int(payload.get("batchCount") or 0)
+                    + int(payload.get("schemaRepairCount") or 0)
+                    for payload in review_evidence_payloads
+                ),
+                "providerUsage": {
+                    "inputTokens": sum(int(item.get("inputTokens") or 0) for item in review_usage),
+                    "outputTokens": sum(
+                        int(item.get("outputTokens") or 0) for item in review_usage
+                    ),
+                    "costMicrounits": sum(
+                        int(item.get("costMicrounits") or 0) for item in review_usage
+                    ),
+                    "elapsedSeconds": sum(
+                        float(item.get("elapsedSeconds") or 0) for item in review_usage
+                    ),
+                },
+                "baselineSvgRosterSha256": baseline_svg_sha256,
+                "finalSvgRosterSha256": final_svg_sha256,
+                "fixedPages": sorted(modified_visual_pages - rolled_back_visual_pages),
+                "rolledBackPages": sorted(rolled_back_visual_pages),
+                "needsHumanItems": [
+                    {
+                        **issue,
+                        "suggestedFixSummary": issue.get("suggestedAction"),
+                    }
+                    for issue in final_review["issues"]
+                    if issue.get("severity") == "blocking"
+                ],
+            }
         _write_json(project / "validation" / "visual-review.json", final_review)
         if not final_review["passed"]:
             result = _workflow_result(
@@ -3424,9 +3723,17 @@ def run_default_workflow(
                 checkpoint_id=checkpoint_id,
                 errors=[
                     WorkflowError(
-                        code="VISUAL_REVIEW_BLOCKING",
+                        code=(
+                            "VISUAL_REVIEW_NEEDS_HUMAN"
+                            if is_opt_in_visual_review
+                            else "VISUAL_REVIEW_BLOCKING"
+                        ),
                         message=(
-                            "blocking visual findings remain after adaptive review: "
+                            (
+                                "visual Hard findings require a user decision: "
+                                if is_opt_in_visual_review
+                                else "blocking visual findings remain after adaptive review: "
+                            )
                             + str(
                                 (terminal_review_decision or {}).get("reason", "bounded-loop-ended")
                             )
@@ -3456,7 +3763,7 @@ def run_default_workflow(
             request,
             receipts,
             kind="visual-review",
-            status="passed",
+            status=str(final_review.get("status") or "passed"),
             subject_sha256=final_svg_sha256,
             payload={
                 "reviewRound": final_review["reviewRound"],
@@ -3465,6 +3772,13 @@ def run_default_workflow(
                 "contactSheetSha256": final_review["contactSheetSha256"],
                 "evidenceSha256": final_review_evidence["evidenceSha256"],
                 "blockingCount": 0,
+                "policyVersion": request.authoring.visual_review_policy_version,
+                "reviewLevel": request.authoring.visual_review_level,
+                "reviewCallCount": final_review.get("reviewCallCount", 1),
+                "baselineSvgRosterSha256": baseline_svg_sha256,
+                "finalSvgRosterSha256": final_svg_sha256,
+                "fixedPages": sorted(modified_visual_pages - rolled_back_visual_pages),
+                "rolledBackPages": sorted(rolled_back_visual_pages),
             },
         )
 

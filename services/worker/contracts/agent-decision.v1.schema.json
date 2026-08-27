@@ -31,6 +31,7 @@
         {
           "enum": [
             "read_approved_context",
+            "read_design_spec_contract",
             "write_planning_artifact",
             "read_design_catalog",
             "write_or_patch_slide_svg",

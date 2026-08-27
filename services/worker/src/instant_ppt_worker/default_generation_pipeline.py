@@ -412,8 +412,13 @@ def _authoring_summary(
         "toolFailureCount": sum(value.get("status") != "succeeded" for value in tools),
         "repairCount": sum(int(value.get("authorAttempt") or 1) > 1 for value in tools),
         "visualReviewPolicyVersion": request.authoring.visual_review_policy_version,
+        "visualReviewLevel": request.authoring.visual_review_level,
+        "authoringModel": request.authoring.authoring_model or request.versions.model,
+        "visualReviewModel": request.authoring.visual_review_model or request.versions.model,
         "visualReviewRound": int(review.get("reviewRound") or 0) if review else 0,
         "visualReviewPassed": bool(review.get("passed")) if review else None,
+        "visualReviewCallCount": int(review.get("reviewCallCount") or 0) if review else 0,
+        "visualReviewUsage": dict(review.get("providerUsage") or {}) if review else None,
         "usage": result.usage.model_dump(by_alias=True, mode="json"),
     }
 

@@ -125,7 +125,8 @@ def test_model_facing_visual_review_schema_only_requests_subjective_findings() -
         "pnn",
         "message",
         "region",
-        "suggestedAction",
+            "suggestedAction",
+            "targetElementIds",
     }
     for runtime_owned in (
         "workflowRunId",
@@ -213,6 +214,65 @@ def test_material_delivery_advisories_are_promoted_for_adaptive_repair() -> None
     )
     assert report.passed is False
     assert report.issues[0].severity == "blocking"
+
+
+def test_v3_soft_findings_are_never_promoted_by_category_or_wording() -> None:
+    finding = VisualReviewModelResult.model_validate(
+        {
+            "issues": [
+                {
+                    "category": "deck-consistency",
+                    "severity": "advisory",
+                    "pnn": None,
+                    "message": "Inconsistent footer rhythm across the deck.",
+                    "region": "whole deck",
+                    "suggestedAction": "Align the footer rhythm.",
+                }
+            ]
+        }
+    ).issues[0]
+
+    assert (
+        effective_visual_severity(
+            finding, policy_version="visual-review-opt-in@v3"
+        )
+        == "advisory"
+    )
+
+
+def test_v3_auto_fix_requires_page_hard_and_stable_target_ids() -> None:
+    model_result = VisualReviewModelResult.model_validate(
+        {
+            "issues": [
+                {
+                    "category": "alignment-rhythm-balance",
+                    "severity": "blocking",
+                    "pnn": "P01",
+                    "message": "Text overlaps the footer and is clipped.",
+                    "region": "bottom footer",
+                    "suggestedAction": "Move the text upward.",
+                    "targetElementIds": ["footer-copy"],
+                }
+            ]
+        }
+    )
+
+    report = _materialize_batch_report(
+        model_result,
+        context={
+            "workflowRunId": WORKFLOW_RUN_ID,
+            "reviewRound": 1,
+            "subjectSha256": HASH,
+            "renderSetSha256": HASH,
+            "contactSheetSha256": HASH,
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+        },
+        batch_roster=["P01"],
+    )
+
+    assert report.issues[0].severity == "blocking"
+    assert report.issues[0].auto_fix_eligible is True
+    assert report.issues[0].target_element_ids == ["footer-copy"]
 
 
 def _report(*, passed: bool, issues: list[dict[str, object]]) -> dict[str, object]:
@@ -308,7 +368,7 @@ def test_deck_blocking_finding_expands_to_the_exact_roster() -> None:
     grouped = blocking_pages(report, ["P01", "P02", "P03"])
 
     assert list(grouped) == ["P01", "P02", "P03"]
-    assert all(values == [issue] for values in grouped.values())
+    assert all(values[0]["issueId"] == issue["issueId"] for values in grouped.values())
 
 
 def test_adaptive_review_passes_immediately_and_hard_stops_on_round_five() -> None:

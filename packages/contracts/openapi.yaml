@@ -2929,6 +2929,14 @@ components:
           type: boolean
           default: false
           description: Explicitly authorizes the Strategist design proposal and spec lock before Executor authoring.
+        visualReviewLevel:
+          type: string
+          enum:
+            - off
+            - standard
+            - final
+          default: off
+          description: Explicit opt-in level for the frozen v3 visual-review policy.
         imagePolicy:
           $ref: "#/components/schemas/GenerationImagePolicy"
     CreateGenerationJobRequest:

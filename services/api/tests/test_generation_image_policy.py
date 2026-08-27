@@ -30,6 +30,17 @@ def test_generation_api_accepts_explicit_selective_ai_policy() -> None:
     assert parsed.data.image_policy.scope == "selective"
     assert parsed.data.image_policy.ai_path_chain == ["api", "manual"]
     assert parsed.data.authorize_strategist_design_lock is True
+    assert parsed.data.visual_review_level == "off"
+
+
+@pytest.mark.parametrize("level", ["off", "standard", "final"])
+def test_generation_api_accepts_explicit_visual_review_level(level: str) -> None:
+    payload = _request({"scope": "none", "usage": ["none"], "notes": {}})
+    payload["data"]["visualReviewLevel"] = level  # type: ignore[index]
+
+    parsed = CreateGenerationJobRequest.model_validate(payload)
+
+    assert parsed.data.visual_review_level == level
 
 
 @pytest.mark.parametrize(

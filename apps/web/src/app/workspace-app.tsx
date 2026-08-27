@@ -196,6 +196,7 @@ type PlanningJob = {
 };
 
 type GenerationImageScope = "none" | "cover_only" | "selective";
+type VisualReviewLevel = "off" | "standard" | "final";
 
 type DraftSnapshot = {
   draftId: string;
@@ -334,6 +335,14 @@ type GenerationJob = {
     | "agent-authored-editable-draft"
     | "template-limited-editable-draft";
   fallbackReason: string | null;
+  visualReview: {
+    required?: boolean;
+    level?: VisualReviewLevel;
+    policyVersion?: string;
+    maxRounds?: number;
+    authoringModel?: string;
+    visualReviewModel?: string;
+  };
   status:
     | "queued"
     | "running"
@@ -655,6 +664,8 @@ export function WorkspaceApp() {
     useState(false);
   const [generationImageScope, setGenerationImageScope] =
     useState<GenerationImageScope>("none");
+  const [visualReviewLevel, setVisualReviewLevel] =
+    useState<VisualReviewLevel>("off");
   const [selectedImageOutlineIds, setSelectedImageOutlineIds] = useState<
     string[]
   >([]);
@@ -1336,6 +1347,7 @@ export function WorkspaceApp() {
       setSummary(response.data);
       setContinueLimitedDraft(false);
       setAuthorizeStrategistDesignLock(false);
+      setVisualReviewLevel("off");
       setDraft((current) =>
         current
           ? {
@@ -1391,6 +1403,7 @@ export function WorkspaceApp() {
             continueLimitedDraft:
               summary.sourceSummary.sourceId === null && continueLimitedDraft,
             authorizeStrategistDesignLock,
+            visualReviewLevel,
             imagePolicy:
               generationImageScope === "none"
                 ? { scope: "none", usage: ["none"], notes: {} }
@@ -2253,6 +2266,16 @@ export function WorkspaceApp() {
                     : "模板化受限初稿"}
                 </dd>
               </div>
+              <div>
+                <dt>视觉复核</dt>
+                <dd>
+                  {generationJob.visualReview?.level === "standard"
+                    ? "标准"
+                    : generationJob.visualReview?.level === "final"
+                      ? "终稿"
+                      : "关闭"}
+                </dd>
+              </div>
             </dl>
           </section>
 
@@ -2807,6 +2830,29 @@ export function WorkspaceApp() {
                     图片只作非证据型视觉表达；未配置受控 Provider
                     或额度时，任务会停在 Needs‑Manual，不会静默省略资源。
                     当前单份演示上限为 {entitlement?.maxImagesPerDeck ?? 0} 张。
+                  </small>
+                </fieldset>
+                <fieldset className="image-policy-choice">
+                  <legend>视觉复核（可选，默认关闭）</legend>
+                  <label>
+                    <span>复核级别</span>
+                    <select
+                      value={visualReviewLevel}
+                      onChange={(event) =>
+                        setVisualReviewLevel(
+                          event.target.value as VisualReviewLevel,
+                        )
+                      }
+                    >
+                      <option value="off">关闭（推荐，零视觉模型调用）</option>
+                      <option value="standard">
+                        标准：一次审核与最多一次原子修复
+                      </option>
+                      <option value="final">终稿：修复后再验证改动页</option>
+                    </select>
+                  </label>
+                  <small>
+                    确定性 SVG、内容、图表与包检始终执行。视觉复核只处理明确的裁切、溢出、碰撞、不可读或资源损坏，不会自由重画整页。
                   </small>
                 </fieldset>
                 <button

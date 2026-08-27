@@ -13,6 +13,7 @@
     "body": {
       "schemaVersion": 1,
       "data": {
+        "visualReviewLevel": "off",
         "imagePolicy": {
           "scope": "none",
           "usage": [

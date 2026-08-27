@@ -883,6 +883,7 @@ def create_text_provider(
 def create_visual_review_text_provider(
     provider_name: str | None = None,
     *,
+    model_name: str | None = None,
     transport_max_retries: int | None = None,
 ) -> TextProvider:
     """Build the multimodal reviewer with deterministic structured output defaults."""
@@ -892,12 +893,18 @@ def create_visual_review_text_provider(
         planning_backend = os.getenv("PLANNING_BACKEND", "").strip().lower()
         selected = planning_backend if planning_backend in {"kimi", "qwen"} else "qwen"
     if selected != "qwen":
-        return create_text_provider(
-            selected,
-            transport_max_retries=transport_max_retries,
-        )
+        if selected == "kimi":
+            settings = KimiProviderSettings.from_env()
+            if model_name:
+                settings = replace(settings, model=model_name)
+            if transport_max_retries is not None:
+                settings = replace(settings, transport_max_retries=transport_max_retries)
+            return KimiProvider(settings)
+        return create_text_provider(selected, transport_max_retries=transport_max_retries)
+    base_settings = QwenProviderSettings.from_env()
     settings = replace(
-        QwenProviderSettings.from_env(),
+        base_settings,
+        model=model_name or base_settings.model,
         reasoning_effort=None,
         enable_thinking=False,
         preserve_thinking=False,

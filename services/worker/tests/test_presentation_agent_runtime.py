@@ -698,6 +698,85 @@ def test_repeated_identical_tool_policy_denials_stop_at_the_repair_limit(
     assert len(provider.calls) == 5
 
 
+def test_design_spec_schema_repair_uses_its_own_counter_and_complete_contract(
+    tmp_path: Path,
+) -> None:
+    context = replace(
+        _context(
+            tmp_path,
+            allowed_tools=frozenset(
+                {"read_design_spec_contract", "write_planning_artifact"}
+            ),
+        ),
+        stage="strategist",
+    )
+    context = replace(
+        context,
+        request=context.request.model_copy(
+            update={
+                "runtime": context.request.runtime.model_copy(update={"max_tokens": 2_000_000})
+            }
+        ),
+    )
+    valid = (context.project / "design_spec.md").read_text(encoding="utf-8")
+    invalid = valid.replace("## V. Layout Principles", "## V. 布局原则")
+    provider = DeterministicFakeProvider(
+        [
+            _decision(
+                action="tool",
+                tool="write_planning_artifact",
+                arguments={"filename": "design_spec.md", "content": invalid},
+                role="strategist",
+            ),
+            _decision(
+                action="tool",
+                tool="read_design_spec_contract",
+                role="strategist",
+            ),
+            _decision(
+                action="tool",
+                tool="write_planning_artifact",
+                arguments={"filename": "design_spec.md", "content": valid},
+                role="strategist",
+            ),
+            _decision(
+                action="complete",
+                termination="design spec repaired",
+                role="strategist",
+            ),
+        ]
+    )
+    agent = MainPresentationAgent(
+        project=context.project,
+        request=context.request,
+        provider=provider,
+    )
+
+    result = agent.run_phase(
+        phase_id="strategist",
+        role="strategist",
+        goal="author the canonical design spec",
+        locked_context=_locked(context),
+        tools=PresentationAgentToolRegistry(context),
+        required_tools=frozenset(
+            {"read_design_spec_contract", "write_planning_artifact"}
+        ),
+    )
+
+    assert result.status == "completed", result
+    state = json.loads(
+        (context.project / "agent" / "runtime-state.json").read_text(encoding="utf-8")
+    )
+    assert state["phases"]["strategist"]["designSpecRepairCount"] == 1
+    assert state["phases"]["strategist"]["toolPolicyDenialCount"] == 0
+    assert "DESIGN_SPEC_SCHEMA_INVALID" in json.dumps(
+        provider.calls[1]["messages"], ensure_ascii=False
+    )
+    assert "V. Layout Principles" in json.dumps(
+        provider.calls[2]["messages"], ensure_ascii=False
+    )
+
+
 def test_visual_review_contract_exposes_direct_svg_as_the_only_authoring_mode(
     tmp_path: Path,
 ) -> None:

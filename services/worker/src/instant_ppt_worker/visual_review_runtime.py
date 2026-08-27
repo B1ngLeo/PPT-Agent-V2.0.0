@@ -81,6 +81,8 @@ class VisualReviewFinding(VisualReviewContract):
     message: str = Field(min_length=1, max_length=1000)
     region: str = Field(min_length=1, max_length=300)
     suggested_action: str = Field(min_length=1, max_length=1000)
+    target_element_ids: list[str] = Field(default_factory=list, max_length=32)
+    auto_fix_eligible: bool = False
 
     @model_validator(mode="after")
     def validate_scope(self) -> VisualReviewFinding:
@@ -88,6 +90,11 @@ class VisualReviewFinding(VisualReviewContract):
             raise ValueError("page visual findings require pnn")
         if self.scope == "deck" and self.pnn is not None:
             raise ValueError("deck visual findings cannot claim one pnn")
+        if any(
+            re.fullmatch(r"[a-z][a-z0-9-]{1,79}", value) is None
+            for value in self.target_element_ids
+        ):
+            raise ValueError("visual finding target IDs must be stable kebab-case values")
         return self
 
 
@@ -108,6 +115,7 @@ class VisualReviewModelFinding(VisualReviewContract):
     message: str = Field(min_length=1, max_length=1000)
     region: str = Field(min_length=1, max_length=300)
     suggested_action: str = Field(min_length=1, max_length=1000)
+    target_element_ids: list[str] = Field(default_factory=list, max_length=32)
 
 
 class VisualReviewModelResult(VisualReviewContract):
@@ -116,8 +124,33 @@ class VisualReviewModelResult(VisualReviewContract):
     issues: list[VisualReviewModelFinding] = Field(default_factory=list, max_length=80)
 
 
+_V3_REVIEW_RULES = {
+    "hard": [
+        "page clipping or overflow",
+        "text or key-element overlap/collision",
+        "clearly unreadable content",
+        "broken, missing, or severely distorted images",
+        "a declared title, page number, or key element that is visibly missing",
+    ],
+    "soft": [
+        "whitespace and rhythm",
+        "minor alignment or spacing",
+        "visual hierarchy",
+        "image/text relationship",
+        "deck style consistency",
+    ],
+    "dontTouch": [
+        "body facts or wording",
+        "brand colors or font family",
+        "stable element IDs or page structure",
+        "chart type or image resource",
+        "any page outside the finding's PNN",
+    ],
+}
+
+
 VISUAL_REVIEW_HARD_MAX_ROUNDS = 5
-_MATERIAL_ADVISORY_MARKERS = (
+_LEGACY_MATERIAL_ADVISORY_MARKERS = (
     "excessive",
     "unbalanced",
     "inconsistent footer",
@@ -136,16 +169,59 @@ _MATERIAL_ADVISORY_MARKERS = (
     "重叠",
 )
 
+_V3_HARD_DELIVERY_MARKERS = (
+    "crop",
+    "cropped",
+    "clipped",
+    "truncated",
+    "overflow",
+    "overlap",
+    "collision",
+    "unreadable",
+    "illegible",
+    "broken image",
+    "missing image",
+    "distorted image",
+    "missing title",
+    "missing page number",
+    "missing key element",
+    "裁切",
+    "截断",
+    "溢出",
+    "重叠",
+    "碰撞",
+    "不可读",
+    "图片损坏",
+    "图片缺失",
+    "严重变形",
+    "标题缺失",
+    "页码缺失",
+    "关键元素缺失",
+)
 
-def effective_visual_severity(finding: VisualReviewModelFinding) -> str:
-    """Promote delivery-impacting advisories so the adaptive loop repairs them."""
+
+def effective_visual_severity(
+    finding: VisualReviewModelFinding,
+    *,
+    policy_version: str = "visual-review-adaptive@v2",
+) -> str:
+    """Apply the frozen policy's Hard/Soft semantics without trusting model labels alone."""
+
+    message = f"{finding.message} {finding.region} {finding.suggested_action}".casefold()
+    if policy_version == "visual-review-opt-in@v3":
+        if finding.pnn is None or finding.severity != "blocking":
+            return "advisory"
+        return (
+            "blocking"
+            if any(marker in message for marker in _V3_HARD_DELIVERY_MARKERS)
+            else "advisory"
+        )
 
     if finding.severity == "blocking":
         return "blocking"
-    message = f"{finding.message} {finding.region} {finding.suggested_action}".casefold()
     if finding.category == "deck-consistency":
         return "blocking"
-    if any(marker in message for marker in _MATERIAL_ADVISORY_MARKERS):
+    if any(marker in message for marker in _LEGACY_MATERIAL_ADVISORY_MARKERS):
         return "blocking"
     return "advisory"
 
@@ -300,18 +376,35 @@ def _materialize_batch_report(
             pnn=finding.pnn,
             region=finding.region,
         )
+        severity = effective_visual_severity(
+            finding,
+            policy_version=str(
+                context.get("visualReviewPolicyVersion") or "visual-review-adaptive@v2"
+            ),
+        )
+        target_element_ids = list(dict.fromkeys(finding.target_element_ids))
         findings.append(
             {
                 "issueId": f"VR{index:03d}",
                 "fingerprint": fingerprint,
                 "category": finding.category,
-                "severity": effective_visual_severity(finding),
+                "severity": severity,
                 "scope": scope,
                 "pnn": finding.pnn,
                 "owner": "strategist" if scope == "deck" else "executor",
                 "message": finding.message,
                 "region": finding.region,
                 "suggestedAction": finding.suggested_action,
+                "targetElementIds": target_element_ids,
+                "autoFixEligible": bool(
+                    severity == "blocking"
+                    and scope == "page"
+                    and (
+                        target_element_ids
+                        or context.get("visualReviewPolicyVersion")
+                        != "visual-review-opt-in@v3"
+                    )
+                ),
             }
         )
     blocking = any(finding["severity"] == "blocking" for finding in findings)
@@ -458,7 +551,12 @@ def _render_svg(svg_path: Path, target: Path) -> None:
         raise VisualReviewError(f"unable to render {svg_path.name}: {error}") from error
 
 
-def render_visual_assets(project: Path, *, review_round: int) -> dict[str, Any]:
+def render_visual_assets(
+    project: Path,
+    *,
+    review_round: int,
+    page_filter: set[str] | None = None,
+) -> dict[str, Any]:
     preview = project / ".preview" / f"round-{review_round}"
     preview.mkdir(parents=True, exist_ok=True)
     svg_paths = sorted((project / "svg_output").glob("slide_*.svg"))
@@ -467,6 +565,8 @@ def render_visual_assets(project: Path, *, review_round: int) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     for index, svg_path in enumerate(svg_paths, start=1):
         pnn = f"P{index:02d}"
+        if page_filter is not None and pnn not in page_filter:
+            continue
         target = preview / f"slide_{index:02d}.png"
         _render_svg(svg_path, target)
         records.append(
@@ -481,6 +581,8 @@ def render_visual_assets(project: Path, *, review_round: int) -> dict[str, Any]:
                 "height": 720,
             }
         )
+    if not records:
+        raise VisualReviewError("visual review page filter selected no authored pages")
     contact = _contact_sheet(project, records, preview / "contact-sheet.png")
     render_set_sha256 = canonical_sha256(records)
     payload = {
@@ -547,6 +649,15 @@ def _cost(tokens: int, rate: int) -> int:
     return (tokens * rate + 999) // 1000 if tokens and rate else 0
 
 
+def _design_requirement_for_page(design_spec: str, pnn: str) -> str:
+    match = re.search(
+        rf"(?ms)^####[ \t]+Slide[ \t]+\d{{2}}[ \t]+/[ \t]+{re.escape(pnn)}[ \t]+-[^\n]*\n"
+        rf"(?P<body>.*?)(?=^####[ \t]+Slide[ \t]+\d{{2}}[ \t]+/[ \t]+P\d{{2,3}}[ \t]+-|\Z)",
+        design_spec,
+    )
+    return (match.group(0).strip() if match else "")[:20_000]
+
+
 def review_visual_assets(
     provider: TextProvider,
     request: WorkflowRequestV2,
@@ -567,6 +678,10 @@ def review_visual_assets(
         "renderSetSha256": render_set["renderSetSha256"],
         "contactSheetSha256": render_set["contactSheetSha256"],
         "roster": roster,
+        "visualReviewPolicyVersion": request.authoring.visual_review_policy_version,
+        "visualReviewLevel": request.authoring.visual_review_level,
+        "authoringModel": request.authoring.authoring_model or request.versions.model,
+        "visualReviewModel": request.authoring.visual_review_model or request.versions.model,
         "rubric": [
             "hierarchy",
             "density-whitespace",
@@ -592,12 +707,36 @@ def review_visual_assets(
     schema_repair_count = 0
     for batch_index, batch_pages in enumerate(page_batches, start=1):
         batch_roster = [page["pnn"] for page in batch_pages]
+        design_spec_path = project / "design_spec.md"
+        spec_lock_path = project / "spec_lock.md"
+        design_spec = (
+            design_spec_path.read_text(encoding="utf-8") if design_spec_path.is_file() else ""
+        )
+        spec_lock = (
+            spec_lock_path.read_text(encoding="utf-8") if spec_lock_path.is_file() else ""
+        )
+        outline_by_pnn = {page.pnn: page for page in request.outline}
         batch_context = {
             "batchIndex": batch_index,
             "batchCount": len(page_batches),
             "batchRoster": batch_roster,
             "deckRoster": roster,
             "rubric": context["rubric"],
+            "policyVersion": request.authoring.visual_review_policy_version,
+            "reviewLevel": request.authoring.visual_review_level,
+            "fixedRules": _V3_REVIEW_RULES,
+            "pages": [
+                {
+                    "pnn": page["pnn"],
+                    "role": outline_by_pnn[page["pnn"]].role,
+                    "title": outline_by_pnn[page["pnn"]].title,
+                    "designRequirement": _design_requirement_for_page(
+                        design_spec, page["pnn"]
+                    ),
+                }
+                for page in batch_pages
+            ],
+            "specLock": spec_lock[:80_000],
         }
         batch_context_json = json.dumps(
             batch_context, ensure_ascii=False, separators=(",", ":")
@@ -610,17 +749,27 @@ def review_visual_assets(
                     "batch page image in detail. Return only strict JSON. Do not edit slides. "
                     "Set pnn to one of batchRoster for page findings and to null only for "
                     "deck-wide findings. Return an empty issues array when no issue is visible. "
-                    "Treat material delivery defects as blocking, including excessive or "
-                    "unbalanced whitespace, clipped/overlapping text, unreadable hierarchy, "
-                    "inconsistent footers or pagination, and incomplete audience-facing copy. "
+                    "Use the fixed Hard/Soft/Don't-touch rules literally. Soft findings never "
+                    "block delivery. For every claimed Hard page finding, return the exact stable "
+                    "SVG targetElementIds visible in the supplied SVG; without a stable target ID "
+                    "the runtime will not auto-fix it. Do not report merely subjective polish. "
                     f"reviewContext={batch_context_json}; schema={schema_json}"
                 ),
             },
             _review_image_part(project / render_set["contactSheetKey"]),
         ]
-        content.extend(
-            _review_image_part(project / page["pngKey"]) for page in batch_pages
-        )
+        for page in batch_pages:
+            svg_path = project / "svg_output" / f"slide_{int(page['pnn'][1:]):02d}.svg"
+            content.append(
+                {
+                    "type": "text",
+                    "text": (
+                        f"SVG source for {page['pnn']} (read-only):\n"
+                        + svg_path.read_text(encoding="utf-8")
+                    ),
+                }
+            )
+            content.append(_review_image_part(project / page["pngKey"]))
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
@@ -715,6 +864,8 @@ def review_visual_assets(
         "promptSha256": prompt_sha256,
         "provider": provider.provider_name,
         "providerModel": completion_model,
+        "authoringModel": request.authoring.authoring_model or request.versions.model,
+        "visualReviewModel": request.authoring.visual_review_model or completion_model,
         "modelVersion": request.versions.model,
         "promptVersion": request.versions.prompt,
         "referenceVersion": request.versions.reference,

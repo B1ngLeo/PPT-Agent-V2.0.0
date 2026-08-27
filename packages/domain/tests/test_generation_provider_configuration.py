@@ -74,32 +74,46 @@ def test_generation_snapshot_defaults_to_qwen37_plus(monkeypatch) -> None:
     assert planning["model"] == "qwen3.7-plus"
 
 
-def test_agent_authoring_visual_review_is_required_by_default(monkeypatch) -> None:
-    monkeypatch.delenv("PRESENTATION_VISUAL_REVIEW_REQUIRED", raising=False)
+def test_agent_authoring_visual_review_is_disabled_by_default(monkeypatch) -> None:
     monkeypatch.setenv("PRESENTATION_AUTHORING_MODE", "agent-authoring")
 
     policy = _authoring_policy()
 
     assert policy["mode"] == "agent-authoring"
     assert policy["visualReview"] == {
-        "required": True,
-        "policyVersion": "visual-review-adaptive@v2",
-        "maxRounds": 5,
+        "required": False,
+        "level": "off",
+        "policyVersion": "visual-review-opt-in@v3",
+        "maxRounds": 0,
+        "authoringModel": "qwen3.7-plus",
+        "visualReviewModel": "qwen3.7-plus",
     }
 
 
-def test_operator_can_disable_visual_review_without_disabling_agent_authoring(
+def test_user_can_opt_into_standard_visual_review_without_disabling_agent_authoring(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("PRESENTATION_AUTHORING_MODE", "agent-authoring")
-    monkeypatch.setenv("PRESENTATION_VISUAL_REVIEW_REQUIRED", "false")
-
-    policy = _authoring_policy()
+    policy = _authoring_policy("standard")
 
     assert policy["mode"] == "agent-authoring"
     assert policy["fallbackReason"] is None
     assert policy["visualReview"] == {
-        "required": False,
-        "policyVersion": "visual-review-operator-disabled@v2",
-        "maxRounds": 0,
+        "required": True,
+        "level": "standard",
+        "policyVersion": "visual-review-opt-in@v3",
+        "maxRounds": 1,
+        "authoringModel": "qwen3.7-plus",
+        "visualReviewModel": "qwen3.7-plus",
     }
+
+
+def test_user_can_freeze_a_distinct_final_review_model(monkeypatch) -> None:
+    monkeypatch.setenv("PRESENTATION_AUTHORING_MODE", "agent-authoring")
+    monkeypatch.setenv("VISUAL_REVIEW_MODEL", "qwen3.8-max")
+
+    policy = _authoring_policy("final")
+
+    assert policy["visualReview"]["maxRounds"] == 2
+    assert policy["visualReview"]["authoringModel"] == "qwen3.7-plus"
+    assert policy["visualReview"]["visualReviewModel"] == "qwen3.8-max"

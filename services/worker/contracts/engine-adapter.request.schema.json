@@ -14,6 +14,7 @@
               "provider-image",
               "approved-web",
               "read_approved_context",
+              "read_design_spec_contract",
               "write_planning_artifact",
               "read_design_catalog",
               "write_or_patch_slide_svg",
@@ -418,6 +419,51 @@
         "visualReviewRequired": {
           "title": "Visualreviewrequired",
           "type": "boolean"
+        },
+        "visualReviewLevel": {
+          "anyOf": [
+            {
+              "enum": [
+                "off",
+                "standard",
+                "final"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visualreviewlevel"
+        },
+        "authoringModel": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authoringmodel"
+        },
+        "visualReviewModel": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visualreviewmodel"
         },
         "visualReviewMaxRounds": {
           "anyOf": [

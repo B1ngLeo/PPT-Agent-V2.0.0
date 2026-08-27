@@ -248,6 +248,9 @@ def serialize_job_snapshot(session: Session, job: GenerationJob) -> dict[str, An
         "fallbackReason": (snapshot_payload.get("authoringPolicy") or {}).get(
             "fallbackReason", "legacy-snapshot-without-authoring-policy"
         ),
+        "visualReview": dict(
+            (snapshot_payload.get("authoringPolicy") or {}).get("visualReview") or {}
+        ),
         "templateVersionId": snapshot_payload.get("templateVersionId"),
         "approvalId": snapshot_payload.get("approvalId"),
         "publicationVersion": job.publication_version,

@@ -80,6 +80,19 @@
           "minLength": 1,
           "title": "Suggestedaction",
           "type": "string"
+        },
+        "targetElementIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Targetelementids",
+          "type": "array"
+        },
+        "autoFixEligible": {
+          "default": false,
+          "title": "Autofixeligible",
+          "type": "boolean"
         }
       },
       "required": [

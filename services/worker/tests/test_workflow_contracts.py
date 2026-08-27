@@ -140,6 +140,7 @@ def _payload() -> dict[str, object]:
                 "start-live-preview",
                 "provider-text",
                 "read_approved_context",
+                "read_design_spec_contract",
                 "write_planning_artifact",
                 "read_design_catalog",
                 "write_or_patch_slide_svg",
@@ -391,6 +392,51 @@ def test_visual_review_round_limit_is_frozen_and_legacy_requests_resolve_to_thre
     invalid["runtime"]["allowSubagentReview"] = True
     with pytest.raises(ValidationError, match="less than or equal to 5"):
         WorkflowRequestV2.model_validate(invalid)
+
+
+@pytest.mark.parametrize(
+    ("level", "required", "max_rounds"),
+    [("off", False, 0), ("standard", True, 1), ("final", True, 2)],
+)
+def test_v3_visual_review_levels_freeze_exact_budgets(
+    level: str, required: bool, max_rounds: int
+) -> None:
+    payload = _payload()
+    payload["authoring"].update(
+        {
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewRequired": required,
+            "visualReviewLevel": level,
+            "visualReviewMaxRounds": max_rounds,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-reviewer@v1",
+        }
+    )
+    payload["production"]["visualReview"] = required
+    payload["runtime"]["allowSubagentReview"] = required
+
+    request = WorkflowRequestV2.model_validate(payload)
+
+    assert request.authoring.resolved_visual_review_max_rounds() == max_rounds
+
+
+def test_v3_visual_review_rejects_level_budget_drift() -> None:
+    payload = _payload()
+    payload["authoring"].update(
+        {
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewRequired": True,
+            "visualReviewLevel": "standard",
+            "visualReviewMaxRounds": 2,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-reviewer@v1",
+        }
+    )
+    payload["production"]["visualReview"] = True
+    payload["runtime"]["allowSubagentReview"] = True
+
+    with pytest.raises(ValidationError, match="invalid review budget"):
+        WorkflowRequestV2.model_validate(payload)
 
 
 def test_materialized_v2_schema_matches_pydantic_source() -> None:
