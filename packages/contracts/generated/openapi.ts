@@ -1088,11 +1088,11 @@ export interface components {
              */
             authorizeStrategistDesignLock: boolean;
             /**
-             * @description Explicit opt-in level for the frozen v3 visual-review policy.
+             * @description Explicit opt-in level for the frozen v3 visual-review policy; standard runs one review and at most one bounded repair.
              * @default off
              * @enum {string}
              */
-            visualReviewLevel: "off" | "standard" | "final";
+            visualReviewLevel: "off" | "standard";
             imagePolicy?: components["schemas"]["GenerationImagePolicy"];
         };
         /** CreateGenerationJobRequest */

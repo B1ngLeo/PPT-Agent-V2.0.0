@@ -153,12 +153,10 @@ def _authoring_policy(
                 "maxRounds": 0,
             },
         }
-    if visual_review_level not in {"off", "standard", "final"}:
-        raise ValueError("visual review level must be off, standard, or final")
+    if visual_review_level not in {"off", "standard"}:
+        raise ValueError("visual review level must be off or standard")
     visual_review_required = visual_review_level != "off"
-    visual_review_max_rounds = {"off": 0, "standard": 1, "final": 2}[
-        visual_review_level
-    ]
+    visual_review_max_rounds = {"off": 0, "standard": 1}[visual_review_level]
     frozen_providers = provider_configuration or _provider_configuration()
     authoring_model = str(frozen_providers["planning"]["model"])
     visual_review_model = str(

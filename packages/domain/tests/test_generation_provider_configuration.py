@@ -1,3 +1,4 @@
+import pytest
 from instant_ppt_domain.generation import _authoring_policy, _provider_configuration
 
 
@@ -108,12 +109,19 @@ def test_user_can_opt_into_standard_visual_review_without_disabling_agent_author
     }
 
 
-def test_user_can_freeze_a_distinct_final_review_model(monkeypatch) -> None:
+def test_user_can_freeze_a_distinct_standard_review_model(monkeypatch) -> None:
     monkeypatch.setenv("PRESENTATION_AUTHORING_MODE", "agent-authoring")
     monkeypatch.setenv("VISUAL_REVIEW_MODEL", "qwen3.8-max")
 
-    policy = _authoring_policy("final")
+    policy = _authoring_policy("standard")
 
-    assert policy["visualReview"]["maxRounds"] == 2
+    assert policy["visualReview"]["maxRounds"] == 1
     assert policy["visualReview"]["authoringModel"] == "qwen3.7-plus"
     assert policy["visualReview"]["visualReviewModel"] == "qwen3.8-max"
+
+
+def test_removed_final_visual_review_level_is_rejected(monkeypatch) -> None:
+    monkeypatch.setenv("PRESENTATION_AUTHORING_MODE", "agent-authoring")
+
+    with pytest.raises(ValueError, match="off or standard"):
+        _authoring_policy("final")

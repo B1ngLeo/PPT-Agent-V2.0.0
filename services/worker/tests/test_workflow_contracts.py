@@ -396,7 +396,7 @@ def test_visual_review_round_limit_is_frozen_and_legacy_requests_resolve_to_thre
 
 @pytest.mark.parametrize(
     ("level", "required", "max_rounds"),
-    [("off", False, 0), ("standard", True, 1), ("final", True, 2)],
+    [("off", False, 0), ("standard", True, 1)],
 )
 def test_v3_visual_review_levels_freeze_exact_budgets(
     level: str, required: bool, max_rounds: int
@@ -436,6 +436,25 @@ def test_v3_visual_review_rejects_level_budget_drift() -> None:
     payload["runtime"]["allowSubagentReview"] = True
 
     with pytest.raises(ValidationError, match="invalid review budget"):
+        WorkflowRequestV2.model_validate(payload)
+
+
+def test_v3_visual_review_rejects_removed_final_level() -> None:
+    payload = _payload()
+    payload["authoring"].update(
+        {
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewRequired": True,
+            "visualReviewLevel": "final",
+            "visualReviewMaxRounds": 2,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-reviewer@v1",
+        }
+    )
+    payload["production"]["visualReview"] = True
+    payload["runtime"]["allowSubagentReview"] = True
+
+    with pytest.raises(ValidationError, match="off.*standard"):
         WorkflowRequestV2.model_validate(payload)
 
 

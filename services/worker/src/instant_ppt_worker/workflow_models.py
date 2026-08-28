@@ -354,7 +354,7 @@ class AuthoringPolicy(WorkflowContractModel):
     ]
     visual_review_policy_version: str = Field(min_length=1, max_length=80)
     visual_review_required: bool
-    visual_review_level: Literal["off", "standard", "final"] | None = None
+    visual_review_level: Literal["off", "standard"] | None = None
     authoring_model: str | None = Field(default=None, min_length=1, max_length=160)
     visual_review_model: str | None = Field(default=None, min_length=1, max_length=160)
     # Optional only for backward compatibility with already-frozen v1 requests.
@@ -373,7 +373,7 @@ class AuthoringPolicy(WorkflowContractModel):
             if not self.visual_review_required and self.visual_review_max_rounds not in {None, 0}:
                 raise ValueError("disabled visual review requires zero review rounds")
             if self.visual_review_policy_version == "visual-review-opt-in@v3":
-                expected = {"off": 0, "standard": 1, "final": 2}
+                expected = {"off": 0, "standard": 1}
                 if self.visual_review_level is None:
                     raise ValueError("v3 visual review requires an explicit level")
                 if self.visual_review_max_rounds != expected[self.visual_review_level]:

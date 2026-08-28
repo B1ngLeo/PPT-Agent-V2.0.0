@@ -33,7 +33,7 @@ def test_generation_api_accepts_explicit_selective_ai_policy() -> None:
     assert parsed.data.visual_review_level == "off"
 
 
-@pytest.mark.parametrize("level", ["off", "standard", "final"])
+@pytest.mark.parametrize("level", ["off", "standard"])
 def test_generation_api_accepts_explicit_visual_review_level(level: str) -> None:
     payload = _request({"scope": "none", "usage": ["none"], "notes": {}})
     payload["data"]["visualReviewLevel"] = level  # type: ignore[index]
@@ -41,6 +41,14 @@ def test_generation_api_accepts_explicit_visual_review_level(level: str) -> None
     parsed = CreateGenerationJobRequest.model_validate(payload)
 
     assert parsed.data.visual_review_level == level
+
+
+def test_generation_api_rejects_removed_final_visual_review_level() -> None:
+    payload = _request({"scope": "none", "usage": ["none"], "notes": {}})
+    payload["data"]["visualReviewLevel"] = "final"  # type: ignore[index]
+
+    with pytest.raises(ValidationError):
+        CreateGenerationJobRequest.model_validate(payload)
 
 
 @pytest.mark.parametrize(

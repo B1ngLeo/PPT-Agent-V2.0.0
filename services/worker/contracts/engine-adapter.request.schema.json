@@ -425,8 +425,7 @@
             {
               "enum": [
                 "off",
-                "standard",
-                "final"
+                "standard"
               ],
               "type": "string"
             },

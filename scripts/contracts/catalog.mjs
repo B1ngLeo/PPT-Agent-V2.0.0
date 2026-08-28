@@ -1511,10 +1511,10 @@ function openApiDocument() {
             },
             visualReviewLevel: {
               type: "string",
-              enum: ["off", "standard", "final"],
+              enum: ["off", "standard"],
               default: "off",
               description:
-                "Explicit opt-in level for the frozen v3 visual-review policy.",
+                "Explicit opt-in level for the frozen v3 visual-review policy; standard runs one review and at most one bounded repair.",
             },
             imagePolicy: { $ref: "#/components/schemas/GenerationImagePolicy" },
           },

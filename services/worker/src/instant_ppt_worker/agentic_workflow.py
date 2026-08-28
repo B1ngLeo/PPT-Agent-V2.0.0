@@ -1860,6 +1860,8 @@ def _first_page_agent_gate(
     pnn: str,
     svg_path: Path,
     subject_sha256: str,
+    *,
+    quality_is_advisory: bool = False,
 ) -> dict[str, Any]:
     if pnn != "P01" or svg_path.name != "slide_01.svg":
         return {
@@ -1906,8 +1908,11 @@ def _first_page_agent_gate(
         for issue in blocking
         if isinstance(issue, dict)
     ]
+    quality_passed = command_passed and not blocking
     return {
-        "passed": command_passed and not blocking,
+        "passed": quality_passed or quality_is_advisory,
+        "qualityPassed": quality_passed,
+        "status": "passed" if quality_passed else "passed-with-warnings",
         "subjectSha256": subject_sha256,
         "reportSha256": sha256_file(report_path) if report_path.is_file() else None,
         "methodLevel": [],
@@ -2309,6 +2314,10 @@ def _author_slides_with_agent(
                             current_pnn,
                             current_path,
                             current_sha256,
+                            quality_is_advisory=(
+                                request.authoring.visual_review_policy_version
+                                == "visual-review-opt-in@v3"
+                            ),
                         )
                     )
                 )
@@ -2413,7 +2422,9 @@ def _author_slides_with_agent(
                     request,
                     receipts,
                     kind="first-page-gate",
-                    status="passed",
+                    status=str(
+                        gate_record["observation"]["report"].get("status") or "passed"
+                    ),
                     subject_sha256=str(author_receipt["subjectSha256"]),
                     payload={
                         **author_receipt,
@@ -2644,6 +2655,9 @@ def run_default_workflow(
         )
 
     request_sha256 = _request_hash(request)
+    advisory_validation = (
+        request.authoring.visual_review_policy_version == "visual-review-opt-in@v3"
+    )
     project_name = project.name
     scaffold_name = (
         project_name
@@ -2906,14 +2920,14 @@ def run_default_workflow(
         {key: value for key, value in design_content.items() if key != "reportSha256"}
     )
     _write_json(project / "validation" / "content-design-spec.json", design_content)
-    if not design_content["passed"]:
+    if not design_content["passed"] and not advisory_validation:
         raise AdapterError(CONTENT_QA_FAILED, json.dumps(design_content, ensure_ascii=False))
     _receipt(
         project,
         request,
         receipts,
         kind="design-spec-gate1",
-        status="passed",
+        status="passed" if design_content["passed"] else "passed-with-warnings",
         subject_sha256=design_spec_sha256,
         payload={
             "contentReportSha256": sha256_file(project / "validation" / "content-design-spec.json"),
@@ -3143,35 +3157,47 @@ def run_default_workflow(
     final_svg_report = _run_final_svg_checker(
         workspace_root,
         project,
-        allow_failure=request.authoring.mode == "agent-authoring",
+        allow_failure=request.authoring.mode == "agent-authoring" or advisory_validation,
     )
     if not _final_svg_report_passed(final_svg_report):
-        if request.authoring.mode != "agent-authoring":
+        if advisory_validation:
+            _event(
+                project,
+                "final_svg_gate",
+                "warnings-disclosed",
+                warning=_final_svg_failure_message(final_svg_report),
+            )
+        elif request.authoring.mode != "agent-authoring":
             raise AdapterError(
                 RENDER_FAILED,
                 _final_svg_failure_message(final_svg_report),
             )
-        completed_pages, svg_paths, final_svg_sha256, final_svg_report = (
-            _repair_final_svg_gate_with_agent(
-                workspace_root,
-                project,
-                request,
-                fragments,
-                deck,
-                plan,
-                image_preparation,
-                image_resource_by_slide,
-                completed_pages,
-                final_svg_report,
-                text_provider,
+        else:
+            completed_pages, svg_paths, final_svg_sha256, final_svg_report = (
+                _repair_final_svg_gate_with_agent(
+                    workspace_root,
+                    project,
+                    request,
+                    fragments,
+                    deck,
+                    plan,
+                    image_preparation,
+                    image_resource_by_slide,
+                    completed_pages,
+                    final_svg_report,
+                    text_provider,
+                )
             )
-        )
     _receipt(
         project,
         request,
         receipts,
         kind="final-svg-gate",
-        status="passed",
+        status=(
+            "passed"
+            if _final_svg_report_passed(final_svg_report)
+            else "passed-with-warnings"
+        ),
         subject_sha256=final_svg_sha256,
         payload={
             "pageCount": len(svg_paths),
@@ -3308,23 +3334,17 @@ def run_default_workflow(
                             "bestRound": review_round,
                             "stagnationCount": 0,
                         }
-                    elif review_round == 1 and len(eligible_findings) == len(
-                        blocking_findings
-                    ):
+                    elif review_round == 1 and eligible_findings:
                         decision = {
                             "decision": "repair",
-                            "reason": "eligible-page-hard-findings",
+                            "reason": "eligible-page-hard-findings; others-are-disclosed",
                             "bestRound": 1,
                             "stagnationCount": 0,
                         }
                     else:
                         decision = {
-                            "decision": "rollback-needs-manual",
-                            "reason": (
-                                "verification-hard-findings"
-                                if review_round == 2
-                                else "hard-findings-outside-auto-fix-policy"
-                            ),
+                            "decision": "pass",
+                            "reason": "hard-findings-outside-auto-fix-policy-are-disclosed",
                             "bestRound": 1,
                             "stagnationCount": 0,
                         }
@@ -3537,15 +3557,15 @@ def run_default_workflow(
                                 )
                             shutil.copy2(backup_path, svg_path)
                             rolled_back_visual_pages.add(pnn)
-                            terminal_review_decision = {
-                                "decision": "needs-manual",
-                                "reason": (
-                                    "deterministic-page-gate-failed-after-visual-repair"
-                                ),
-                                "pnn": pnn,
-                                "pageGate": page_gate,
-                            }
-                            break
+                            _event(
+                                project,
+                                "visual_repair",
+                                "rolled-back-with-warning",
+                                pnn=pnn,
+                                reason="deterministic-page-gate-failed-after-visual-repair",
+                                pageGate=page_gate,
+                            )
+                            continue
                         modified_visual_pages.add(pnn)
                     completed_pages[page_index] = {
                         "pnn": pnn,
@@ -3563,14 +3583,25 @@ def run_default_workflow(
                         issueIds=[finding["issueId"] for finding in findings],
                         **repair_receipt,
                     )
-                if terminal_review_decision is not None and is_opt_in_visual_review:
-                    svg_paths = sorted(svg_dir.glob("*.svg"))
-                    final_svg_sha256 = _svg_roster_hash(svg_paths)
-                    _run_final_svg_checker(workspace_root, project)
-                    break
                 svg_paths = sorted(svg_dir.glob("*.svg"))
                 final_svg_sha256 = _svg_roster_hash(svg_paths)
                 if final_svg_sha256 == before_review_repair_sha256:
+                    if is_opt_in_visual_review:
+                        final_svg_report = _run_final_svg_checker(
+                            workspace_root,
+                            project,
+                            allow_failure=True,
+                        )
+                        final_review = {
+                            **final_review,
+                            "passed": True,
+                            "status": "passed-with-warnings",
+                            "summary": (
+                                "Standard review completed without a retained SVG change; "
+                                "all findings are disclosed for user inspection."
+                            ),
+                        }
+                        break
                     raise VisualReviewError(
                         "visual repair completed without changing the owned SVG roster hash"
                     )
@@ -3581,7 +3612,15 @@ def run_default_workflow(
                 )
                 if not _final_svg_report_passed(post_visual_svg_report):
                     if is_opt_in_visual_review:
-                        for pnn in modified_visual_pages:
+                        affected_pages = set(
+                            _svg_gate_findings_by_page(
+                                post_visual_svg_report,
+                                plan["roster"],
+                            )
+                        ) & modified_visual_pages
+                        if not affected_pages and post_visual_svg_report.get("_commandError"):
+                            affected_pages = set(modified_visual_pages)
+                        for pnn in affected_pages:
                             page_number = int(pnn[1:])
                             baseline_page = baseline_snapshot / f"slide_{page_number:02d}.svg"
                             if baseline_page.is_file():
@@ -3589,12 +3628,18 @@ def run_default_workflow(
                                 rolled_back_visual_pages.add(pnn)
                         svg_paths = sorted(svg_dir.glob("*.svg"))
                         final_svg_sha256 = _svg_roster_hash(svg_paths)
-                        _run_final_svg_checker(workspace_root, project)
-                        terminal_review_decision = {
-                            "decision": "needs-manual",
-                            "reason": "deterministic-final-gate-failed-after-visual-repair",
-                        }
-                        break
+                        post_visual_svg_report = _run_final_svg_checker(
+                            workspace_root,
+                            project,
+                            allow_failure=True,
+                        )
+                        _event(
+                            project,
+                            "visual_repair",
+                            "rolled-back-with-warning",
+                            pages=sorted(rolled_back_visual_pages),
+                            reason="deterministic-final-gate-failed-after-visual-repair",
+                        )
                     else:
                         (
                             completed_pages,
@@ -3615,12 +3660,17 @@ def run_default_workflow(
                             review_agent_provider,
                             phase_prefix=(f"svg-gate-repair-post-visual-v{review_round}"),
                         )
+                final_svg_report = post_visual_svg_report
                 _receipt(
                     project,
                     request,
                     receipts,
                     kind="final-svg-gate",
-                    status="passed",
+                    status=(
+                        "passed"
+                        if _final_svg_report_passed(post_visual_svg_report)
+                        else "passed-with-warnings"
+                    ),
                     subject_sha256=final_svg_sha256,
                     payload={
                         "pageCount": len(svg_paths),
@@ -3629,18 +3679,13 @@ def run_default_workflow(
                         "stalePreviousSubjectSha256": before_review_repair_sha256,
                     },
                 )
-                if is_opt_in_visual_review and max_review_rounds == 1:
+                if is_opt_in_visual_review:
                     final_review = {
                         **final_review,
                         "passed": True,
-                        "issues": [
-                            issue
-                            for issue in final_review["issues"]
-                            if issue["severity"] == "advisory"
-                        ],
                         "summary": (
                             "Standard opt-in review completed one atomic repair pass; "
-                            "deterministic gates passed and Soft findings are warnings."
+                            "remaining findings and deterministic checks are disclosed as warnings."
                         ),
                         "status": "passed-with-warnings",
                         "fixedPages": sorted(modified_visual_pages),
@@ -3672,8 +3717,15 @@ def run_default_workflow(
             review_usage = [
                 dict(payload.get("usage") or {}) for payload in review_evidence_payloads
             ]
+            deferred_findings = [dict(issue) for issue in final_review["issues"]]
             final_review = {
                 **final_review,
+                "passed": True,
+                "status": (
+                    "passed-with-warnings"
+                    if deferred_findings or rolled_back_visual_pages
+                    else "passed"
+                ),
                 "policyVersion": request.authoring.visual_review_policy_version,
                 "reviewLevel": request.authoring.visual_review_level,
                 "authoringModel": request.authoring.authoring_model
@@ -3702,17 +3754,16 @@ def run_default_workflow(
                 "finalSvgRosterSha256": final_svg_sha256,
                 "fixedPages": sorted(modified_visual_pages - rolled_back_visual_pages),
                 "rolledBackPages": sorted(rolled_back_visual_pages),
-                "needsHumanItems": [
+                "deferredFindings": [
                     {
                         **issue,
                         "suggestedFixSummary": issue.get("suggestedAction"),
                     }
-                    for issue in final_review["issues"]
-                    if issue.get("severity") == "blocking"
+                    for issue in deferred_findings
                 ],
             }
         _write_json(project / "validation" / "visual-review.json", final_review)
-        if not final_review["passed"]:
+        if not final_review["passed"] and not is_opt_in_visual_review:
             result = _workflow_result(
                 project,
                 request,
@@ -3723,17 +3774,9 @@ def run_default_workflow(
                 checkpoint_id=checkpoint_id,
                 errors=[
                     WorkflowError(
-                        code=(
-                            "VISUAL_REVIEW_NEEDS_HUMAN"
-                            if is_opt_in_visual_review
-                            else "VISUAL_REVIEW_BLOCKING"
-                        ),
+                        code="VISUAL_REVIEW_BLOCKING",
                         message=(
-                            (
-                                "visual Hard findings require a user decision: "
-                                if is_opt_in_visual_review
-                                else "blocking visual findings remain after adaptive review: "
-                            )
+                            "blocking visual findings remain after adaptive review: "
                             + str(
                                 (terminal_review_decision or {}).get("reason", "bounded-loop-ended")
                             )
@@ -3771,7 +3814,12 @@ def run_default_workflow(
                 "renderSetSha256": final_review["renderSetSha256"],
                 "contactSheetSha256": final_review["contactSheetSha256"],
                 "evidenceSha256": final_review_evidence["evidenceSha256"],
-                "blockingCount": 0,
+                "blockingCount": sum(
+                    1
+                    for issue in final_review["issues"]
+                    if issue.get("severity") == "blocking"
+                ),
+                "deferredFindingCount": len(final_review.get("deferredFindings") or []),
                 "policyVersion": request.authoring.visual_review_policy_version,
                 "reviewLevel": request.authoring.visual_review_level,
                 "reviewCallCount": final_review.get("reviewCallCount", 1),
@@ -3862,14 +3910,14 @@ def run_default_workflow(
         {key: value for key, value in final_content.items() if key != "reportSha256"}
     )
     _write_json(project / "validation" / "content-final-svg.json", final_content)
-    if not final_content["passed"]:
+    if not final_content["passed"] and not advisory_validation:
         raise AdapterError(CONTENT_QA_FAILED, json.dumps(final_content, ensure_ascii=False))
     _receipt(
         project,
         request,
         receipts,
         kind="final-svg-content-gate",
-        status="passed",
+        status="passed" if final_content["passed"] else "passed-with-warnings",
         subject_sha256=final_svg_sha256,
         payload={
             "reportSha256": sha256_file(project / "validation" / "content-final-svg.json"),
@@ -4060,6 +4108,8 @@ def run_default_workflow(
     ]
     if not notes_enabled:
         export_command.append("--no-notes")
+    if advisory_validation and not _final_svg_report_passed(final_svg_report):
+        export_command.append("--allow-quality-warnings")
     export_command.append("--native-charts-and-tables")
     _run(
         export_command,
@@ -4101,16 +4151,24 @@ def run_default_workflow(
     postflight.setdefault("output", {})["bytes"] = pptx_path.stat().st_size
     _write_json(postflights[-1], postflight)
     postflight_status = str(postflight.get("status", ""))
-    if postflight_status not in {"passed", "passed-with-warnings"}:
+    if (
+        postflight_status not in {"passed", "passed-with-warnings"}
+        and not advisory_validation
+    ):
         raise AdapterError(
             RENDER_FAILED, f"Default exporter postflight failed: {postflight_status}"
         )
+    effective_postflight_status = (
+        postflight_status
+        if postflight_status in {"passed", "passed-with-warnings"}
+        else "passed-with-warnings"
+    )
     _receipt(
         project,
         request,
         receipts,
         kind="postflight",
-        status=postflight_status,
+        status=effective_postflight_status,
         subject_sha256=pptx_sha256,
         payload={"reportSha256": sha256_file(postflights[-1]), "qualityGate": "current-final"},
     )
@@ -4129,7 +4187,7 @@ def run_default_workflow(
     )
     package_report_path = project / "validation" / "pptx-package-qa.json"
     write_package_report(package_report_path, package_report)
-    if not package_report["passed"]:
+    if not package_report["passed"] and not advisory_validation:
         raise AdapterError(
             RENDER_FAILED, json.dumps(package_report["findings"], ensure_ascii=False)
         )
@@ -4152,7 +4210,11 @@ def run_default_workflow(
         request,
         receipts,
         kind="pptx-content-gate",
-        status="passed",
+        status=(
+            "passed"
+            if package_report["passed"] and pptx_content["passed"]
+            else "passed-with-warnings"
+        ),
         subject_sha256=pptx_sha256,
         payload={
             "reportSha256": sha256_file(project / "validation" / "content-pptx.json"),
@@ -4187,19 +4249,20 @@ def run_default_workflow(
             }
             for page, roster in zip(request.outline, plan["roster"], strict=True)
         ],
-        "passed": bool(
+        "validationPassed": bool(
             design_content["passed"]
             and final_content["passed"]
             and pptx_content["passed"]
             and package_report["passed"]
         ),
+        "passed": True,
     }
     release_trace["reportSha256"] = _sha(release_trace)
     _write_json(
         project / "validation" / "release-trace.json",
         release_trace,
     )
-    if not release_trace["passed"]:
+    if not release_trace["validationPassed"] and not advisory_validation:
         raise AdapterError(CONTENT_QA_FAILED, json.dumps(release_trace, ensure_ascii=False))
 
     if request.production.effective_narration_audio == "enabled":
@@ -4275,7 +4338,9 @@ def run_default_workflow(
         request,
         receipts,
         kind="publication",
-        status="passed",
+        status=(
+            "passed" if release_trace["validationPassed"] else "passed-with-warnings"
+        ),
         subject_sha256=pptx_sha256,
         payload={
             "route": "generate_pptx",

@@ -909,6 +909,15 @@ Recorded narration:
             'and support normal export capabilities.'
         ),
     )
+    parser.add_argument(
+        '--allow-quality-warnings',
+        action='store_true',
+        help=(
+            'Allow a current, final, hash-matched SVG quality report with blocking '
+            'findings to export as a user-inspectable PPTX. Missing, unreadable, '
+            'unsupported, non-final, stale, or unverified reports still fail.'
+        ),
+    )
 
     text_flow_group = parser.add_mutually_exclusive_group()
     text_flow_group.add_argument(
@@ -1334,7 +1343,10 @@ Recorded narration:
         source_fingerprint = _svg_source_fingerprint(native_files)
         quality = _quality_report_context(project_path, source_fingerprint)
         quality_gate, _ = _quality_gate_status(quality)
-        if quality_gate != 'passed':
+        quality_warning_override = (
+            args.allow_quality_warnings and quality_gate == 'failed'
+        )
+        if quality_gate != 'passed' and not quality_warning_override:
             export_mode = (
                 '--quick-generate'
                 if args.quick_generate
@@ -1353,6 +1365,12 @@ Recorded narration:
                 file=sys.stderr,
             )
             return 1
+        if quality_warning_override and not args.quiet:
+            print(
+                '[QUALITY] blocking findings retained as user-inspection warnings; '
+                'export continues by explicit policy.',
+                file=sys.stderr,
+            )
 
     # Compatibility kwargs remain until the builder's old baseline-specific
     # parameters are removed. Structured export never activates either path.

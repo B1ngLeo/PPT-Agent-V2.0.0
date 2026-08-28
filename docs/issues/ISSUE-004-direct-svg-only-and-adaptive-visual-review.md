@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | In Progress：Direct SVG-only、自适应视觉返修、无 Blueprint 工作流及视觉复核 opt-in v3 核心链路已实现并通过自动化验证（2026-08-27）；人工接受基线恢复链路与真实 Qwen 对照回归待完成 |
+| 状态 | In Progress：Direct SVG-only、无 Blueprint 工作流及视觉复核 opt-in v3 核心链路已实现；2026-08-28 决策收敛为仅 `off`/`standard` 且确定性检查只披露警告，真实 Qwen 对照回归待完成 |
 | 严重级别 | Sev-2 |
 | 优先级 | P1 |
 | 首次确认日期 | 2026-08-26 |
@@ -38,11 +38,11 @@
 ### 2026-08-27 视觉复核 opt-in v3 修订决策（已批准，核心链路已实施）
 
 11. 新任务冻结 `visual-review-opt-in@v3`；视觉复核默认 `required=false`、`maxRounds=0`，只有用户在网站或请求中明确启用时才进入视觉复核阶段。
-12. 默认生成链路依赖 final SVG、内容、图表和 package 等确定性门禁完成发布，不调用视觉审核模型；关闭视觉复核不得削弱任何确定性门禁。
-13. 标准视觉复核只运行一轮审核和最多一次逐页原子修复；只有用户明确选择“终稿复核”或等价高要求模式时，才允许修复后再执行一轮视觉验证。
+12. 默认生成链路不调用视觉审核模型；final SVG、内容、图表和 package 等确定性检查始终运行并披露，但在 PPTX 已成功生成时只形成警告，不阻止用户下载检查。
+13. 新任务只保留 `off` 和 `standard`。标准视觉复核只运行一轮审核和最多一次逐页原子修复，不提供终稿二次验证模式。
 14. 视觉 Hard/Soft 规则采用 PPT-Master 语义：裁切、溢出、重叠、不可读、图片损坏和明确关键元素缺失属于 Hard；留白、节奏、轻微对齐、层级和风格一致性默认属于 Soft。Soft 不得通过关键词或类别自动升级为 blocking。
 15. 视觉修复不得重写页面内容、品牌决策或布局结构；每次修复必须有页级备份、受限差异和前置哈希，修复引入新 Hard 时只回滚受影响页面。
-16. `needs_human` 是用户决策点而非自动整稿失败：用户可选择继续修复，或恢复复核前基线、复跑确定性门禁并接受当前版本导出；延后的视觉问题必须在报告和网站中明确披露。
+16. v3 不设置视觉 `needs_human` 决策点。超出自动修复权限、修复后仍存在或无法稳定判断的问题统一写入 `passed-with-warnings`；修复引入确定性退化时自动按页回退，并继续导出供用户检查。
 17. 历史 `visual-review-adaptive@v1/v2` 快照继续按冻结轮数和旧决策解释；新 v3 策略不得改写历史证据、恢复语义或已发布 Revision。
 
 ## 目标链路
@@ -76,7 +76,7 @@ Approved Snapshot
 Approved Snapshot
 → PPT-Master Strategist / design confirmation / spec_lock
 → Executor Direct SVG P01…Pn
-→ final SVG / content / chart gates
+→ final SVG / content / chart checks (warnings disclosed)
 → SVG→DrawingML/PPTX
 → package QA
 → published
@@ -85,16 +85,15 @@ Approved Snapshot
 用户明确启用标准视觉复核：
 
 ```text
-final SVG / content / chart gates passed
+final SVG / content / chart checks recorded
 → save visual-review baseline SVG roster
 → render PNG/contact sheet
 → one multimodal visual review
 → atomic page-scoped fixes only
-→ page gate + final SVG gate rerun
-→ export | needs_human user decision
+→ page check + final SVG check rerun
+→ retain repair or automatically roll back affected pages
+→ export with disclosed warnings
 ```
-
-用户明确启用终稿复核时，允许在原子修复后重新渲染修改页并执行一次验证；第二轮只验证改动和新增 Hard，不重新启动整稿自由优化。
 
 ## 实施范围
 
@@ -180,9 +179,9 @@ outline_approved
 
 #### D1. 用户触发与策略冻结
 
-- 网站生成设置增加“启用视觉复核”开关，默认不勾选；同时提供可选的“标准视觉复核”和“终稿视觉复核”级别。
+- 网站生成设置只提供 `off` 和 `standard`，默认 `off`。
 - 用户选择必须写入不可变 Snapshot，并投影为 `visualReviewRequired`、`visualReviewMaxRounds` 和策略版本；Worker 不得根据页数、模型能力或内容自动启用。
-- 新任务默认冻结 `visual-review-opt-in@v3`、`required=false`、`maxRounds=0`。标准复核冻结一次审核/一次修复预算；终稿复核才冻结第二次验证预算。
+- 新任务默认冻结 `visual-review-opt-in@v3`、`required=false`、`maxRounds=0`；标准复核冻结一次审核/一次修复预算。
 - 作者模型和视觉审核模型分别记录为 `authoringModel` 与 `visualReviewModel`；未启用视觉复核时不得初始化或调用视觉审核 Provider。
 
 #### D2. 审核输入与固定规则
@@ -201,37 +200,37 @@ outline_approved
 - 每次修改携带 `expectedBeforeSha256`，并在首次编辑前保存 `.review/backup/<page>.iter<N>.svg`；证据记录修改元素、属性、前后哈希、解决/新增指纹和回滚原因。
 - 修复后先运行当前页 SVG gate，再运行 final SVG gate；新增 Hard 或确定性 gate 失败时只恢复对应页备份，不恢复整套 SVG。
 
-#### D4. 决策、导出与人工处理
+#### D4. 决策、警告与导出
 
 - 新 v3 请求不使用 `[blockingCount, affectedPageCount, advisoryCount]` 总分、`quality-regressed` 或 `stalled-two-rounds` 驱动多轮自由返修；旧 v2 请求保留原实现。
 - 标准复核完成一次安全修复并复跑确定性门禁后即结束；advisory 或单次不稳定主观 finding 写入 `passed-with-warnings` 收据并允许导出。
-- 超出修复权限的视觉 Hard 写入 `needs_human_items[].suggested_fix_summary`。网站提供“继续修复”和“接受当前版本并导出”两个明确选择。
-- 用户接受当前版本时恢复视觉复核前基线或已验证最佳页，重新通过 final SVG/content/chart/package 门禁后导出，并在最终报告中披露延后的视觉 finding。
-- 渲染失败、确定性 SVG gate 失败、内容事实错误、图表错误或 package QA 失败不可通过用户跳过。
+- 超出修复权限、修复后仍存在或未能稳定判断的 finding 写入 `deferredFindings[]`，任务以 `passed-with-warnings` 继续导出，不增加人工恢复分支。
+- 修复版触发页级或整稿确定性退化时自动恢复对应页的审查前基线；未受影响页面保持不变。
+- SVG、内容、图表、postflight 与 package QA 报告始终保留；只要 PPTX 已成功编译并写入，这些检查失败就作为警告交给用户检查。无法生成 PPTX、文件缺失或写入失败仍属于机械性交付失败。
 
 #### D5. 网站、预览与证据
 
 - 视觉复核前保存 `agent/visual-reviews/baseline-svg/`，并在网站中始终提供基线预览；修复版与基线版使用明确标签，禁止静默替换。
-- 网站按页展示 `ok`、`fixed`、`rolled_back`、`warning`、`needs_human`，同时展示轮次、修复属性、回滚页和剩余 Hard/Soft 数量。
-- `passed-with-warnings` 提供正常下载；`needs_human` 在用户未作决定前暂停，并保留可恢复检查点和基线/最佳版本证据。
+- 网站按页展示 `ok`、`fixed`、`rolled_back`、`warning`，同时展示修复属性、回滚页和剩余 Hard/Soft 数量。
+- `passed-with-warnings` 始终提供正常下载；基线、修复备份和检查报告保留为用户核查证据。
 - `validation/visual-review.json` 和视觉收据记录策略版本、用户选择、作者/审核模型、审核次数、Provider 用量、耗时、基线哈希、最终哈希和延后 finding。
 
 #### D6. 主要实现位置
 
 - `packages/domain/src/instant_ppt_domain/generation.py`：默认关闭视觉复核，冻结 opt-in v3 策略及模型配置。
 - `services/worker/src/instant_ppt_worker/default_workflow_request.py`、`workflow_models.py`：解析用户选择、级别、轮次和历史兼容。
-- `services/worker/src/instant_ppt_worker/visual_review_runtime.py`：固定规则、完整页面上下文、取消关键词升级、单轮/验证轮决策和新报告证据。
-- `services/worker/src/instant_ppt_worker/agentic_workflow.py`：条件进入视觉阶段、保存基线、页级修复/回滚、确定性复检和用户决定后的导出。
+- `services/worker/src/instant_ppt_worker/visual_review_runtime.py`：固定规则、完整页面上下文、取消关键词升级、单轮决策和新报告证据。
+- `services/worker/src/instant_ppt_worker/agentic_workflow.py`：条件进入视觉阶段、保存基线、页级修复/自动回滚、确定性检查披露和导出。
 - `services/worker/src/instant_ppt_worker/presentation_agent_tools.py`、`presentation_agent_runtime.py`：受限视觉差异合同和 Don't-touch 强制校验。
-- `apps/web/src/app/workspace-app.tsx` 及对应 API/Snapshot 合同：用户开关、复核级别、基线预览、警告和人工决定入口。
+- `apps/web/src/app/workspace-app.tsx` 及对应 API/Snapshot 合同：`off`/`standard` 用户开关、基线预览和警告展示。
 
 ## 不变量
 
 - 不改变批准 Outline、稳定 slide ID、来源事实、图表值或图片授权；稳定 ID 只承担持久化身份，不构成页面合同。
-- 不削弱 P01 gate、final SVG gate、内容 QA、图表 QA、package QA 和 exact export。
+- P01、final SVG、内容、图表、postflight 与 package QA 检查不得省略；v3 将其结果完整披露为警告，而不是成功导出的前置阻断条件。
 - 不允许任意 Shell、外部 SVG 资源、脚本、事件处理器或跨租户路径。
 - 崩溃恢复不得重复已确认的 Provider 调用或重复计费。
-- v1/v2 历史任务继续遵守“未通过视觉 blocking 门时不得发布完整成功成品”；v3 新任务的视觉复核为用户主动启用的辅助阶段，用户可显式延后其 finding，但任何确定性 SVG、内容、图表或 package blocking 均不得跳过。
+- v1/v2 历史任务继续遵守其冻结的 blocking 语义；v3 新任务的视觉复核和确定性质量检查均为辅助检查，只要机械性导出成功就允许下载，并在报告中完整披露 finding。
 - 未启用视觉复核时不得调用视觉审核 Provider；启用后也不得借视觉修复修改批准 Outline、来源事实、品牌锁或页面结构。
 
 ## 验收标准
@@ -258,17 +257,17 @@ outline_approved
 ### opt-in v3 新增验收标准
 
 - [x] 新任务默认冻结 `visual-review-opt-in@v3`、`required=false`、`maxRounds=0`；网站默认不勾选视觉复核。
-- [x] 默认模式完成生成和导出时，视觉审核 Provider 调用次数严格为 0，final SVG/content/chart/package 门禁保持不变。
+- [x] 默认模式完成生成和导出时，视觉审核 Provider 调用次数严格为 0；final SVG/content/chart/package 检查仍运行并生成报告。
 - [x] 用户启用标准视觉复核时，只运行一轮审核和最多一次逐页原子修复，不出现 `quality-regressed` 或自动多轮整稿重画。
-- [x] 用户明确启用终稿视觉复核时，第二轮只验证修改页和新增 Hard；不得重新发起不受限的整稿优化。
+- [x] API、网站和新 v3 Worker 合同只接受 `off`/`standard`，拒绝已移除的 `final`。
 - [x] Reviewer 输入包含 PNG/SVG、页面角色、`design_spec.md §IX` 页面要求、`spec_lock.md` 和固定 Don't-touch 规则。
 - [x] 留白、节奏、层级和风格一致性等 Soft finding 不会因关键词或类别被升级为 blocking，也不参与最佳版本评分。
 - [x] 视觉修复仅允许受限属性/局部操作；正文、品牌 token、字体家族、稳定 ID、页面结构、图表类型和其他页面变化均被拒绝。
 - [x] 修复导致新 Hard 或确定性 gate 失败时，只回滚受影响页面，未修改页面和已验证改善页保持不变。
-- [ ] `needs_human` 时用户可以继续修复，或接受复核前基线并在重新通过全部确定性门禁后导出；延后 finding 在网站和最终报告中明确披露。
+- [x] v3 不产生视觉 `needs_human`；未修复 finding 与确定性检查问题写入 warning/报告，修复退化自动按页回退后继续导出。
 - [x] 作者模型与视觉审核模型、调用次数、用量及分阶段耗时分别记录；未启用视觉复核时不存在视觉模型费用。
 - [ ] 使用 Qwen 官方 API、`qwen3.7-plus`、指定 GPT-5.6 DOCX 和提示词“根据GPT5.6的官方公告做一份6页的PPT”完成默认模式真实网站回归，生成 6 个 SVG 和 6 页 PPTX，并记录总耗时。
-- [ ] 对同一输入启用标准视觉复核完成对照回归，保存基线/复核逐页截图、修改/回滚证据、视觉耗时和最终 PPTX；复核结果不得因单次主观评分恶化阻止用户接受基线版本。
+- [ ] 对同一输入启用标准视觉复核完成对照回归，保存基线/复核逐页截图、修改/回滚证据、视觉耗时和最终 PPTX；复核或确定性检查结果不得阻止已成功生成的 PPTX 下载。
 
 ## 发布策略
 
@@ -278,7 +277,7 @@ outline_approved
 4. 灰度只影响新快照；失败时停止接纳 v2，新旧已发布 Revision 均不改写。
 5. Page Blueprint 移除使用新工作流版本灰度；旧 v2 运行排空后，新任务只进入无 Blueprint 的 Strategist → Spec → Executor 链路。
 6. opt-in v3 只影响新 Snapshot；先上线可同时解释历史 adaptive v1/v2 和新 opt-in v3 的兼容 Worker，再切换网站默认值。
-7. 灰度期间对比默认无视觉复核与用户启用标准复核的成功率、总耗时、Provider 成本、人工介入率和页面回滚率。
+7. 灰度期间对比默认无视觉复核与用户启用标准复核的成功率、总耗时、Provider 成本、警告率和页面回滚率。
 8. v3 回滚时停止创建新 opt-in v3 Snapshot，恢复网站开关策略；历史运行、证据和已发布 Revision 均保持不可变。
 
 ## 完成记录
@@ -291,10 +290,12 @@ outline_approved
 
 最终验证覆盖 Worker `192/192`、Domain/API `46/46`、G06 真实 PostgreSQL/Redis/MinIO 集成 `14/14`、G07 `5/5`、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web lint/typecheck/production build、Ruff、冻结 Golden `10/10 source + 10/10 render + 40/40 artifacts`。真实六页中文 Agent 回归生成 6 个 Direct SVG 与 6 页 PPTX，P02“模型家族概览”和 P04“设计判断力”保留，包含 1 个原生可编辑图表；PowerPoint 16 与 WPS 12 均完成 6/6 打开、导出和逐页视觉检查，统计为 34 个可编辑文本形状、1 个原生图表、58 个 shape nodes，未发现裁切或结构破坏。
 
-2026-08-27 已批准视觉复核 opt-in v3 修订计划：基于真实 Qwen 回归中“初始版本整体可接受、仅一页存在较明显问题，而后续主观复核使效果退化并阻止导出”的观察，新任务将默认关闭视觉复核，仅在用户明确要求时启用。该修订采用 PPT-Master 的固定 Hard/Soft 规则、逐页原子修复、页级备份/回滚和 `needs_human` 用户决策语义，并将作者模型与视觉审核模型解耦。该段记录批准时点的计划，后续实施状态以下方完成记录为准。
+2026-08-27 已批准视觉复核 opt-in v3 初始修订计划：基于真实 Qwen 回归中“初始版本整体可接受、仅一页存在较明显问题，而后续主观复核使效果退化并阻止导出”的观察，新任务默认关闭视觉复核，仅在用户明确要求时启用。初始计划中的 `final` 与视觉 `needs_human` 语义已被 2026-08-28 决策替代。
 
-2026-08-27 已完成 opt-in v3 核心实现：网站/API 默认 `off`，用户可显式选择 `standard` 或 `final`；新 Snapshot 冻结 `visual-review-opt-in@v3`、精确轮次预算及独立作者/审核模型。Worker 默认链路不创建 Reviewer；标准模式只执行一次审核和最多一次页级原子修复，终稿模式第二轮只重新渲染和验证改动页。Reviewer 同时读取 PNG、SVG、页面角色/标题、`design_spec.md §IX` 页面要求、`spec_lock.md` 及固定 Hard/Soft/Don't-touch 规则，Soft 不再由关键词或 `deck-consistency` 类别升级。
+2026-08-27 已完成 opt-in v3 核心实现：网站/API 默认 `off`；新 Snapshot 冻结 `visual-review-opt-in@v3`、精确轮次预算及独立作者/审核模型。Reviewer 同时读取 PNG、SVG、页面角色/标题、`design_spec.md §IX` 页面要求、`spec_lock.md` 及固定 Hard/Soft/Don't-touch 规则，Soft 不再由关键词或 `deck-consistency` 类别升级。2026-08-28 进一步收敛为只接受 `off`/`standard`，标准模式只执行一次审核和最多一次页级原子修复。
 
-视觉修复现在强制 `expectedBeforeSha256`、稳定目标元素、页级备份和 DOM 差异审计，仅允许几何、字号、字距、对齐与局部 transform 属性变化；正文、品牌属性、字体家族、稳定 ID、元素结构、图表和图片变化均 fail closed。修复后先跑页级生产 SVG gate，再跑 final SVG gate；失败或终稿验证出现新 Hard 时只恢复受影响页。视觉报告记录基线/最终 roster hash、修复/回滚页、作者/审核模型、真实 Provider 调用次数、Token/成本与耗时，并在 `needs_manual` 结果中提供 `needsHumanItems[].suggestedFixSummary`。
+视觉修复强制 `expectedBeforeSha256`、稳定目标元素、页级备份和 DOM 差异审计，仅允许几何、字号、字距、对齐与局部 transform 属性变化；正文、品牌属性、字体家族、稳定 ID、元素结构、图表和图片变化均 fail closed。修复后运行页级及 final SVG 检查；退化时只恢复受影响页。视觉报告记录基线/最终 roster hash、修复/回滚页、作者/审核模型、真实 Provider 调用次数、Token/成本与耗时，未处理问题写入 `deferredFindings[]`。
 
-自动化验证：Worker `209/209`、Domain/API `50/50`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过。尚未实现网站上的“接受复核前基线并导出”恢复动作，也尚未执行本节最后两项真实 Qwen 网站对照回归；因此 opt-in v3 仍不得宣称完整发布。
+2026-08-27 自动化验证：Worker `209/209`、Domain/API `50/50`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过。2026-08-28 的语义收敛移除了“接受复核前基线并导出”恢复动作需求；真实 Qwen 网站对照回归仍待执行，因此 opt-in v3 仍不得宣称完整发布。
+
+2026-08-28 已按产品决策完成 v3 收敛：新任务只接受 `off`/`standard`，默认 `off`；标准模式仅一次 Reviewer 调用和最多一次受限修复，不再产生视觉 `needs_human`。未修复视觉 finding 及 final SVG、内容、postflight、package QA 的确定性检查问题均写入 `passed-with-warnings`/报告，只要 PPTX 已实际生成就继续发布；修复退化自动按页恢复基线。底层导出器新增显式警告覆盖，但只接受当前、final、哈希匹配的质量报告，缺失、损坏、过期或不可验证报告仍拒绝导出。验证结果为已跟踪 Worker `210/210`、Domain/API `51/51`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过；真实 Qwen A/B 网站回归仍待执行。

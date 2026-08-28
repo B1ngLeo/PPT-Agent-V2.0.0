@@ -196,7 +196,7 @@ type PlanningJob = {
 };
 
 type GenerationImageScope = "none" | "cover_only" | "selective";
-type VisualReviewLevel = "off" | "standard" | "final";
+type VisualReviewLevel = "off" | "standard";
 
 type DraftSnapshot = {
   draftId: string;
@@ -2271,9 +2271,7 @@ export function WorkspaceApp() {
                 <dd>
                   {generationJob.visualReview?.level === "standard"
                     ? "标准"
-                    : generationJob.visualReview?.level === "final"
-                      ? "终稿"
-                      : "关闭"}
+                    : "关闭"}
                 </dd>
               </div>
             </dl>
@@ -2416,7 +2414,7 @@ export function WorkspaceApp() {
                   ))}
               </div>
               <small>
-                生成基线已固定；进入编辑器后的修改会创建独立修订，不会覆盖原始发布。
+                生成基线已固定；随附的 final SVG、内容和 package QA 报告用于人工检查，报告中的警告不会阻止已有 PPTX 下载。进入编辑器后的修改会创建独立修订，不会覆盖原始发布。
               </small>
               <button
                 className="primary-button"
@@ -2848,11 +2846,10 @@ export function WorkspaceApp() {
                       <option value="standard">
                         标准：一次审核与最多一次原子修复
                       </option>
-                      <option value="final">终稿：修复后再验证改动页</option>
                     </select>
                   </label>
                   <small>
-                    确定性 SVG、内容、图表与包检始终执行。视觉复核只处理明确的裁切、溢出、碰撞、不可读或资源损坏，不会自由重画整页。
+                    确定性 SVG、内容、图表与包检始终执行并披露为检查报告，但不会阻止已有 PPTX 导出。标准视觉复核只运行一次审核与最多一次受限修复，不会自由重画整页。
                   </small>
                 </fieldset>
                 <button

@@ -868,6 +868,148 @@ def test_blocking_final_svg_gate_is_repaired_by_the_owned_page_agent(
     assert (project / "agent" / "phase-receipts" / "svg-gate-repair-r1-p02.json").is_file()
 
 
+def test_v3_deterministic_svg_findings_are_disclosed_without_blocking_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = _payload()
+    workflow["authoring"].update(
+        {
+            "visualReviewRequired": False,
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewLevel": "off",
+            "visualReviewMaxRounds": 0,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-agent@v1",
+        }
+    )
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    original_checker = workflow_module._run_final_svg_checker
+    injected = False
+
+    def injected_checker(
+        workspace_root: Path,
+        project: Path,
+        *,
+        allow_failure: bool = False,
+    ) -> dict[str, Any]:
+        nonlocal injected
+        if not injected:
+            injected = True
+            assert allow_failure is True
+            report = original_checker(
+                workspace_root,
+                project,
+                allow_failure=True,
+            )
+            report["summary"]["errors"] = 1
+            report["categories"]["blocking"] = {
+                "count": 1,
+                "issues": [
+                    {
+                        "file": "slide_02.svg",
+                        "code": "TEXT_OVERFLOW",
+                        "message": "P02 body may overflow its content bounds.",
+                    }
+                ],
+            }
+            workflow_module._write_json(
+                project / "validation" / "svg_quality_report.json",
+                report,
+            )
+            return report
+        return original_checker(
+            workspace_root,
+            project,
+            allow_failure=allow_failure,
+        )
+
+    monkeypatch.setattr(workflow_module, "_run_final_svg_checker", injected_checker)
+    project = tmp_path / "v3-svg-warning_ppt169_20260828"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+    )
+
+    receipt = json.loads(
+        (project / "validation" / "receipts" / "final-svg-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    repair_writes = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if json.loads(path.read_text(encoding="utf-8")).get("stage")
+        == "svg-gate-repair"
+    ]
+
+    assert outcome["result"].status == "succeeded"
+    assert receipt["status"] == "passed-with-warnings"
+    assert receipt["payload"]["blockingCount"] == 1
+    assert repair_writes == []
+    assert (project / "exports" / "deck.pptx").is_file()
+
+
+def test_v3_package_findings_are_disclosed_without_blocking_existing_pptx(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = _payload()
+    workflow["authoring"].update(
+        {
+            "visualReviewRequired": False,
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewLevel": "off",
+            "visualReviewMaxRounds": 0,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-agent@v1",
+        }
+    )
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    original_inspect = workflow_module.inspect_pptx
+
+    def injected_inspect(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        report = original_inspect(*args, **kwargs)
+        report["passed"] = False
+        report.setdefault("findings", []).append(
+            {
+                "code": "FIXTURE_PACKAGE_WARNING",
+                "message": "The generated PPTX requires user inspection.",
+            }
+        )
+        return report
+
+    monkeypatch.setattr(workflow_module, "inspect_pptx", injected_inspect)
+    project = tmp_path / "v3-package-warning_ppt169_20260828"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+    )
+
+    package_report = json.loads(
+        (project / "validation" / "pptx-package-qa.json").read_text(encoding="utf-8")
+    )
+    content_receipt = json.loads(
+        (project / "validation" / "receipts" / "pptx-content-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    release_trace = json.loads(
+        (project / "validation" / "release-trace.json").read_text(encoding="utf-8")
+    )
+
+    assert outcome["result"].status == "succeeded"
+    assert package_report["passed"] is False
+    assert content_receipt["status"] == "passed-with-warnings"
+    assert release_trace["passed"] is True
+    assert release_trace["validationPassed"] is False
+    assert (project / "exports" / "deck.pptx").is_file()
+
+
 class _VisualRepairFixtureProvider:
     provider_name = "visual-repair-fixture"
 
@@ -967,6 +1109,37 @@ class _V3VisualRepairFixtureProvider(_VisualRepairFixtureProvider):
         return TextCompletion(
             content=rendered,
             model="v3-visual-repair-fixture@v1",
+            prompt_tokens=completion.prompt_tokens,
+            completion_tokens=max(1, len(rendered) // 4),
+        )
+
+
+class _V3UnfixableVisualFindingProvider(_V3VisualRepairFixtureProvider):
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        response_format: dict[str, Any] | None = None,
+        max_completion_tokens: int | None = None,
+    ) -> TextCompletion:
+        completion = super().complete(
+            messages,
+            response_format=response_format,
+            max_completion_tokens=max_completion_tokens,
+        )
+        if not any(
+            "Visual Review Agent" in str(message.get("content") or "")
+            for message in messages
+            if message.get("role") == "system"
+        ):
+            return completion
+        payload = json.loads(completion.content)
+        if payload.get("issues"):
+            payload["issues"][0]["targetElementIds"] = []
+        rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        return TextCompletion(
+            content=rendered,
+            model="v3-unfixable-visual-fixture@v1",
             prompt_tokens=completion.prompt_tokens,
             completion_tokens=max(1, len(rendered) // 4),
         )
@@ -1275,16 +1448,12 @@ def test_deterministic_template_fallback_is_disclosed_without_agent_evidence(
     assert (project / "exports" / "deck.pptx").is_file()
 
 
-@pytest.mark.parametrize(
-    ("level", "max_rounds", "expected_calls"),
-    [("standard", 1, 1), ("final", 2, 2)],
-)
 def test_v3_visual_review_is_opt_in_atomic_and_bounded(
     tmp_path: Path,
-    level: str,
-    max_rounds: int,
-    expected_calls: int,
 ) -> None:
+    level = "standard"
+    max_rounds = 1
+    expected_calls = 1
     workflow = _payload()
     workflow["authoring"].update(
         {
@@ -1341,7 +1510,122 @@ def test_v3_visual_review_is_opt_in_atomic_and_bounded(
         change["attribute"]
         for change in repair_call["observation"]["visualRepair"]["changes"]
     } <= {"x", "y", "width", "height", "font-size"}
-    if level == "standard":
-        assert not (project / "validation" / "visual-review-round-2.json").exists()
-    else:
-        assert len(list((project / ".preview" / "round-2").glob("slide_*.png"))) == 1
+    assert not (project / "validation" / "visual-review-round-2.json").exists()
+
+
+def test_v3_visual_repair_regression_rolls_back_and_exports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = _payload()
+    workflow["authoring"].update(
+        {
+            "visualReviewRequired": True,
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewLevel": "standard",
+            "visualReviewMaxRounds": 1,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-agent@v1",
+        }
+    )
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    provider = _V3VisualRepairFixtureProvider()
+
+    def regressed_page_gate(
+        workspace_root: Path,
+        project: Path,
+        pnn: str,
+        svg_path: Path,
+        subject_sha256: str,
+        roster: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        del workspace_root, project, svg_path, roster
+        return {
+            "passed": False,
+            "subjectSha256": subject_sha256,
+            "pageLocal": [
+                {
+                    "classification": "page-local-final",
+                    "code": "FIXTURE_VISUAL_REPAIR_REGRESSION",
+                    "message": f"{pnn} regressed after visual repair.",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(workflow_module, "_final_page_agent_gate", regressed_page_gate)
+    project = tmp_path / "visual-v3-rollback_ppt169_20260828"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    review = json.loads(
+        (project / "validation" / "visual-review.json").read_text(encoding="utf-8")
+    )
+    receipt = json.loads(
+        (project / "validation" / "receipts" / "visual-review.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert outcome["result"].status == "succeeded"
+    assert review["rolledBackPages"] == ["P01"]
+    assert review["fixedPages"] == []
+    assert review["status"] == "passed-with-warnings"
+    assert receipt["status"] == "passed-with-warnings"
+    assert (project / "exports" / "deck.pptx").is_file()
+
+
+def test_v3_unfixable_visual_finding_is_disclosed_and_exported(tmp_path: Path) -> None:
+    workflow = _payload()
+    workflow["authoring"].update(
+        {
+            "visualReviewRequired": True,
+            "visualReviewPolicyVersion": "visual-review-opt-in@v3",
+            "visualReviewLevel": "standard",
+            "visualReviewMaxRounds": 1,
+            "authoringModel": "fake-agent@v1",
+            "visualReviewModel": "fake-agent@v1",
+        }
+    )
+    workflow["production"]["visualReview"] = True
+    workflow["runtime"]["allowSubagentReview"] = True
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    provider = _V3UnfixableVisualFindingProvider()
+    project = tmp_path / "visual-v3-unfixable_ppt169_20260828"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+        text_provider=provider,
+    )
+
+    review = json.loads(
+        (project / "validation" / "visual-review.json").read_text(encoding="utf-8")
+    )
+    receipt = json.loads(
+        (project / "validation" / "receipts" / "visual-review.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    repair_writes = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if json.loads(path.read_text(encoding="utf-8")).get("stage") == "visual-repair"
+    ]
+
+    assert outcome["result"].status == "succeeded"
+    assert provider.visual_calls == 1
+    assert review["passed"] is True
+    assert review["status"] == "passed-with-warnings"
+    assert len(review["deferredFindings"]) == 1
+    assert receipt["status"] == "passed-with-warnings"
+    assert receipt["payload"]["deferredFindingCount"] == 1
+    assert repair_writes == []
+    assert (project / "exports" / "deck.pptx").is_file()
