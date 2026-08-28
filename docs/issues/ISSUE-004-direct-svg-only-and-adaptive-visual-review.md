@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | In Progress：Direct SVG-only、无 Blueprint 工作流、视觉复核 opt-in v3 及 PPT-Master 页面契约对齐代码已实现；真实 Qwen A/B、structured 模板和 PowerPoint/WPS 发布回归待完成 |
+| 状态 | In Progress：Direct SVG-only、无 Blueprint 工作流、视觉复核 opt-in v3、PPT-Master 页面契约对齐、三层 SVG 限制与无硬轮次上限的确定性修复循环均已实现并通过自动化验证；真实 Qwen A/B、structured 模板和 PowerPoint/WPS 发布回归待完成 |
 | 严重级别 | Sev-2 |
 | 优先级 | P1 |
 | 首次确认日期 | 2026-08-26 |
@@ -22,6 +22,8 @@
 
 同日的真实 Qwen 生成回归还显示：通过全部确定性 SVG 门禁的初始版本已经具备可接受质量，仅一页存在较明显的视觉问题；后续多轮主观复核反而使页面效果变差，并因 `quality-regressed` 阻止 PPTX 导出。考虑到当前使用 `qwen3.7-plus`，未来更强作者模型可能进一步提高一次生成质量，本 Issue 再增加 opt-in v3 修订：视觉复核对新任务默认关闭，仅在用户明确要求时启用，并按 PPT-Master 的逐页、原子、可回滚策略运行，不再作为所有任务的默认发布门。
 
+2026-08-28 的进一步审计确认：可选的多模态视觉复核与 PPT-Master 自带的确定性 SVG 质量门不是同一循环。视觉复核仍可按产品策略保持 `off` / `standard` 和一次受限修复；但 P01/final SVG checker 的 blocking error 必须按 PPT-Master 原生节奏持续执行“完整问题集 → 集中修复 → 单次复检”，不得设置固定修复轮次上限，也不得在轮次、停滞或预算耗尽后把 error 降级为 warning 并绕过导出门禁。
+
 ## 决策
 
 1. 新的 `agent-authoring` 页面只允许 `validated-direct-svg`，不再生成或消费 `SlideSceneGraph`。
@@ -38,14 +40,14 @@
 ### 2026-08-27 视觉复核 opt-in v3 修订决策（已批准，核心链路已实施）
 
 11. 新任务冻结 `visual-review-opt-in@v3`；视觉复核默认 `required=false`、`maxRounds=0`，只有用户在网站或请求中明确启用时才进入视觉复核阶段。
-12. 默认生成链路不调用视觉审核模型；final SVG、内容、图表和 package 等确定性检查始终运行并披露，但在 PPTX 已成功生成时只形成警告，不阻止用户下载检查。
+12. 默认生成链路不调用视觉审核模型；final SVG、内容、图表和 package 等确定性检查始终运行并披露。其中 PPT-Master SVG checker 的 `error` 必须阻断并进入确定性修复循环，`warning` 才可在披露后继续；其他质量门按各自明确的 blocking/advisory 分类执行。
 13. 新任务只保留 `off` 和 `standard`。标准视觉复核只运行一轮审核和最多一次逐页原子修复，不提供终稿二次验证模式。
 14. 视觉 Hard/Soft 规则采用 PPT-Master 语义：裁切、溢出、重叠、不可读、图片损坏和明确关键元素缺失属于 Hard；留白、节奏、轻微对齐、层级和风格一致性默认属于 Soft。Soft 不得通过关键词或类别自动升级为 blocking。
 15. 视觉修复不得重写页面内容、品牌决策或布局结构；每次修复必须有页级备份、受限差异和前置哈希，修复引入新 Hard 时只回滚受影响页面。
-16. v3 不设置视觉 `needs_human` 决策点。超出自动修复权限、修复后仍存在或无法稳定判断的问题统一写入 `passed-with-warnings`；修复引入确定性退化时自动按页回退，并继续导出供用户检查。
+16. v3 不设置视觉 `needs_human` 决策点。超出自动修复权限、修复后仍存在或无法稳定判断的主观视觉问题统一写入 `passed-with-warnings`；修复引入确定性退化时自动按页回退，并在重新取得零 SVG error 的 final 报告后继续导出供用户检查。
 17. 历史 `visual-review-adaptive@v1/v2` 快照继续按冻结轮数和旧决策解释；新 v3 策略不得改写历史证据、恢复语义或已发布 Revision。
 
-### 2026-08-28 PPT-Master 页面契约对齐修订决策（已批准，待实施）
+### 2026-08-28 PPT-Master 页面契约对齐修订决策（已实施，外部回归待完成）
 
 18. Vendored PPT-Master 是页面策划、跨页锁定、SVG 语义和质量检查的唯一权威；本项目不得复制、改写或另行发明标题、页码、角色、字号等页面语义合同。
 19. “照搬 PPT-Master”指复用其 Default Generate 阶段边界和原始参考文件，不编辑 `vendor/ppt-master`，也不重新引入 Page Blueprint、Approved Page Contract 或其他等价逐页中间工件。
@@ -53,8 +55,18 @@
 21. 新 Agent 任务先对齐项目已固定的 PPT-Master `v4.7.0`；升级到其他版本必须作为独立 vendor 升级执行，不与页面契约迁移混合。
 22. Executor 必须通过只读、路径白名单和哈希留痕读取 vendored Executor/shared/semantic 参考，不再依赖 Runtime 对上游规范的局部转述。
 23. 本项目的 SVG 写入前校验只负责机械可解析性、当前页写入权限、资源路径和主动内容安全。标题标记、标题精确文本、统一字号下限、固定页码位置和页面布局不得作为应用自定义的写入前阻断条件。
-24. PPT-Master 的原始检查报告必须完整保留；v3 编排层可将确定性质量问题映射为 `passed-with-warnings`。只要 SVG/PPTX 能机械生成并安全写入，就允许发布；畸形 XML、危险引用、文件缺失或实际编译/写入失败仍属于任务失败。
+24. PPT-Master 的原始检查报告必须完整保留。v3 编排层只能将上游 `warning` 映射为 `passed-with-warnings`，不得把 SVG checker 的 `error` 重分类、忽略或覆盖；Step 7 只接受当前 SVG roster 对应、哈希可验证且 `errorCount=0` 的 final 报告。畸形 XML、危险引用、文件缺失或实际编译/写入失败仍属于任务失败。
 25. 视觉复核继续只提供 `off` 和 `standard`，默认 `off`；该产品策略独立于 PPT-Master 页面契约，不得通过视觉复核重新建立页面合同或人工接受基线步骤。
+
+### 2026-08-28 PPT-Master 三层 SVG 限制与修复循环补充决策（已实施，外部回归待完成）
+
+26. 三层限制按 PPT-Master 原生职责划分：第一层是 Executor 作者合同与 semantic SVG/text/CSS 兼容约束；第二层是 P01 首屏门禁和整稿 final 门禁；第三层是 `svg_to_pptx.py` 在导出前独立校验当前、final、哈希匹配且无 blocking error 的报告。
+27. Vendored PPT-Master checker/converter 是唯一规则权威。Worker 可以增加路径、安全、状态编排和结构化诊断 adapter，但不得复制一份会独立演化的 SVG 标签/属性/文本样式 allow-list，也不得让本地摘要覆盖 vendored 结果。
+28. P01 和 final 的确定性修复循环均不设置硬轮次上限：每次失败读取同一次未截断检查产生的完整 blocking 集合及 advisory warnings，选择需要处理的 warning，与全部 error 在一次集中编辑中修复，然后只执行一次统一复检；若仍失败，以该次完整结果开始下一轮，直至通过或出现需要用户/外部资源介入的真实 blocker。
+29. 不得因达到固定轮数、连续无改善、Token/耗时预算或单页修复次数而将 SVG checker error 自动降级、返回 `passed-with-warnings` 或继续导出。任务取消、Provider/基础设施不可用、缺失必需资源等仍按所属恢复规则处理，但不得伪装为质量门通过。
+30. P01 通过后必须连续生成 P02…Pn，不插入逐页 checker 或中途整稿 checker。写入前轻量预检如保留，只能复用同一兼容性实现检查当前 payload 的机械/安全问题，不能运行完整质量门或改变 P01 → 连续生成 → final 的节奏。
+31. `warning` 始终是 advisory，不能触发强制修改；`error` 始终 blocking。默认 Generate 不得通过 `--allow-quality-warnings` 或应用层 receipt 绕过 error；只有一个当前、final、源哈希匹配、可验证且零 error 的报告才能进入 native PPTX export。
+32. 上述无硬上限仅适用于确定性 SVG checker 修复循环，不改变 opt-in v3 的视觉 Reviewer 预算，也不取消结构化 Provider 输出、网络重试或基础设施层已有的独立保护边界。
 
 ## 目标链路
 
@@ -87,7 +99,7 @@ Approved Snapshot
 Approved Snapshot
 → PPT-Master Strategist / design confirmation / spec_lock
 → Executor Direct SVG P01…Pn
-→ final SVG / content / chart checks (warnings disclosed)
+→ final SVG gate (0 errors; warnings disclosed) / content / chart checks
 → SVG→DrawingML/PPTX
 → package QA
 → published
@@ -101,7 +113,7 @@ final SVG / content / chart checks recorded
 → render PNG/contact sheet
 → one multimodal visual review
 → atomic page-scoped fixes only
-→ page check + final SVG check rerun
+→ page check + final SVG checker 无硬上限集中修复循环，直至 0 errors
 → retain repair or automatically roll back affected pages
 → export with disclosed warnings
 ```
@@ -214,16 +226,16 @@ outline_approved
 #### D4. 决策、警告与导出
 
 - 新 v3 请求不使用 `[blockingCount, affectedPageCount, advisoryCount]` 总分、`quality-regressed` 或 `stalled-two-rounds` 驱动多轮自由返修；旧 v2 请求保留原实现。
-- 标准复核完成一次安全修复并复跑确定性门禁后即结束；advisory 或单次不稳定主观 finding 写入 `passed-with-warnings` 收据并允许导出。
+- 标准复核完成一次安全修复后即结束视觉 Reviewer 循环；advisory 或单次不稳定主观 finding 写入 `passed-with-warnings` 收据。随后确定性 SVG 门禁必须独立达到 0 errors 才允许导出。
 - 超出修复权限、修复后仍存在或未能稳定判断的 finding 写入 `deferredFindings[]`，任务以 `passed-with-warnings` 继续导出，不增加人工恢复分支。
 - 修复版触发页级或整稿确定性退化时自动恢复对应页的审查前基线；未受影响页面保持不变。
-- SVG、内容、图表、postflight 与 package QA 报告始终保留；只要 PPTX 已成功编译并写入，这些检查失败就作为警告交给用户检查。无法生成 PPTX、文件缺失或写入失败仍属于机械性交付失败。
+- SVG、内容、图表、postflight 与 package QA 报告始终保留；SVG checker error 必须进入无硬轮次上限的集中修复循环，不能作为警告导出。其他检查只在其所属合同明确分类为 advisory 时允许随成功产物披露；无法生成 PPTX、文件缺失或写入失败仍属于机械性交付失败。
 
 #### D5. 网站、预览与证据
 
 - 视觉复核前保存 `agent/visual-reviews/baseline-svg/`，并在网站中始终提供基线预览；修复版与基线版使用明确标签，禁止静默替换。
 - 网站按页展示 `ok`、`fixed`、`rolled_back`、`warning`，同时展示修复属性、回滚页和剩余 Hard/Soft 数量。
-- `passed-with-warnings` 始终提供正常下载；基线、修复备份和检查报告保留为用户核查证据。
+- `passed-with-warnings` 在 final SVG 报告零 error 时始终提供正常下载；基线、修复备份和检查报告保留为用户核查证据。
 - `validation/visual-review.json` 和视觉收据记录策略版本、用户选择、作者/审核模型、审核次数、Provider 用量、耗时、基线哈希、最终哈希和延后 finding。
 
 #### D6. 主要实现位置
@@ -265,6 +277,9 @@ outline_approved
 - 删除以下本地阻断：必须存在 `id="title"` 或 `data-pptx-role="title"`、标题与 Outline 逐字相等、封面 64px/普通页 48px 下限、固定右下角 PNN、Outline 业务角色必须等于根 `data-pptx-page-role`。
 - 应用安全层采用主动内容 deny-list 和 URI/路径限制，不再用一个比 PPT-Master 更窄的展示标签 allow-list 代替上游兼容性检查；`use`、`symbol`、链接等能力按上游参考和转换器实际支持处理。
 - 来源、数字、图表和表格事实在 SVG 完成后由其所属内容/图表质量门检查并披露，不在写文件之前以标题或词面相似度触发工具失败。
+- 作者合同明确采用 vendored `shared-standards-core.md` 的封闭 visual-property grammar：inline style 仅允许其声明的 paint/line、text、alpha/definition paint、literal geometry 和 preview-only 属性；条件属性必须使用上游规定的直接 XML 形式，未知或未映射声明由 checker/native export 阻断。
+- 文本样式遵循上游精确语义和值域：`font-family`、`font-size`、`font-weight`、`font-style`、`text-anchor`、`letter-spacing`、`text-decoration`；`text-anchor` 不得用于 `<tspan>`，普通上下标只允许 `<tspan baseline-shift="super|sub">`。从视觉修复许可属性中删除未受支持的 `dominant-baseline`，避免修复器生成作者合同外语法。
+- 新增的 `ppt_master_svg_contract.py`（或等价 adapter）只负责调用/归一化 vendored 规则并返回稳定诊断，例如 `SVG_TEXT_PROPERTY_UNSUPPORTED`、`SVG_NATIVE_PREFLIGHT_ESCAPE`；诊断码属于应用观测接口，不构成另一份语义规则表。
 
 #### E5. 对齐 flat / structured SVG 语义
 
@@ -275,15 +290,22 @@ outline_approved
 
 #### E6. 对齐生成节奏、检查与发布语义
 
-- 采用 PPT-Master Default Generate 节奏：P01 写入后运行首屏门禁并一次性返回完整问题集；P01 完成后连续生成 P02…Pn；整稿完成后运行 final SVG、内容、图表和 package 检查。
-- 删除因单一标题契约触发的逐页写入失败/反复工具修复循环。确定性问题可执行一次有边界的集中修复；修复预算耗尽但仍可机械导出时，写入 `passed-with-warnings` 并继续交付。
-- 原始 PPT-Master 报告不可篡改或丢弃。应用的 advisory export bridge 必须绑定当前 final 报告和 SVG roster 哈希，明确区分“上游检查发现问题”和“产品允许用户下载检查”。
+- 采用 PPT-Master Default Generate 节奏：P01 写入后运行一次未截断的首屏门禁；门禁通过后连续生成 P02…Pn，期间不运行逐页或中途整稿 checker；整稿完成后运行一次未截断的 final SVG gate，再按顺序运行内容、图表和 package 检查。
+- 实现三层限制：作者层直接读取并遵守 vendored Executor/shared/semantic/text-CSS 规范；门禁层复用 vendored `svg_quality_checker.py` 的 P01/final 报告；导出层由 vendored `svg_to_pptx.py` 独立验证当前 final 报告、SVG roster 哈希和零 blocking error。
+- 删除 `FINAL_SVG_REPAIR_HARD_MAX_ROUNDS` 及所有“达到固定轮数即失败/警告导出”的确定性 SVG gate 分支。`repairRound` 可以继续作为单调递增的审计字段，但不得成为终止条件。
+- 每轮修复严格执行：读取该次检查的完整 blocking issue set 和 advisory warnings → 决定需处理的 warning → 一次集中修改全部 error 与所选 warning → 一次统一复检。复检仍失败时使用新报告进入下一轮；不得在单个问题修复之间反复运行 checker，也不得按“下一条错误”逐个发现。
+- 修复循环不以固定轮数、停滞分数或质量评分退出。只有 final report `errorCount=0` 才通过；若必需资源缺失、Provider/基础设施不可用或用户取消，则按 owning-source recovery 暂停/失败，并保留最近完整报告，不得伪造通过。
+- 写入前预检如保留，应集中到 `ppt_master_svg_contract.py`（或等价 adapter），并复用 vendored 解析/兼容规则。该预检只处理当前页 XML、资源、安全及可确定的转换兼容错误，不能复制本地页面语义 allow-list，也不能替代或额外触发完整 checker。
+- 原始 PPT-Master 报告不可篡改或丢弃。`workflow_state.py` 和 export receipt 必须明确区分 `passed`、`passed-with-warnings` 与 `blocking`；其中 `passed-with-warnings` 只能包含 advisory warning，不能包含任何 SVG checker error。
+- Production Worker 移除默认 `--allow-quality-warnings` 绕过路径。导出前若报告缺失、损坏、非 final、与当前 SVG 哈希不匹配、过期、不可验证或包含 blocking error，返回 SVG final gate 修复循环；转换本身失败时修复 owning source 后只重跑受影响的 gate 与 Step 7 下游步骤。
 - `off` 模式不调用视觉 Reviewer；`standard` 仅执行一次审核和最多一次页级原子修复。修复退化时自动按页恢复复核前基线，不新增人工接受基线、手动恢复或额外导出分支。
 
 #### E7. 测试、真实回归与迁移
 
 - 单元测试覆盖：上游原生 Design Spec 标题、Spec Lock 生成与校验、标题无需固定 ID、非固定标题字号/页码、canonical page-role、flat/structured 分支和主动内容安全阻断。
-- 集成测试覆盖：确定性质量错误可警告导出；畸形 XML、危险外链和实际 PPTX 编译/写入失败必须失败；页数、页序、PNN/`slideId`、数据库映射和恢复检查点保持稳定。
+- 单元测试新增：P01/final 完整问题集集中修复、warning 非阻断、error 必阻断、`repairRound` 不参与终止判定、过期/错哈希/非 final 报告拒绝导出，以及写入前 adapter 与 vendored validator 不产生第二份规则表。
+- 集成测试覆盖：构造超过旧四轮上限后才通过的 SVG repair fixture，证明第五轮及后续轮次仍可继续并最终导出；构造持续 blocking 的可取消 fixture，证明系统不会因轮数自动降级或导出；畸形 XML、危险外链和实际 PPTX 编译/写入失败必须失败。
+- 回归测试确认 P01 通过后 P02…Pn 之间没有 checker 调用，final 每个失败批次仅有一次检查和一次集中修复，最后一次通过报告与导出输入 SVG roster 哈希一致；页数、页序、PNN/`slideId`、数据库映射和恢复检查点保持稳定。
 - 使用官方 Qwen API、同一模型、同一 GPT-5.6 DOCX 和提示词执行迁移前后 A/B。计时从文档上传开始，分别记录总耗时、各阶段耗时、输入/输出/总 Token、工具失败/修复次数、检查警告、6 个 SVG、6 页 PPTX 和 PowerPoint/WPS 打开结果。
 - 回归必须证明此前 P05 的标题契约错误不再出现，生成能够继续进入 P06 和导出阶段；不得通过放宽主动内容安全或伪造通过报告达成。
 - 建议按以下提交拆分：`docs: define ppt-master as page contract authority`、`refactor(worker): adopt upstream design spec and spec lock`、`refactor(worker): remove local svg page semantics`、`feat(worker): expose vendored executor references`、`test(worker): add contract and real-qwen regression coverage`。
@@ -291,10 +313,10 @@ outline_approved
 ## 不变量
 
 - 不改变批准 Outline、稳定 slide ID、来源事实、图表值或图片授权；稳定 ID 只承担持久化身份，不构成页面合同。
-- P01、final SVG、内容、图表、postflight 与 package QA 检查不得省略；v3 将其结果完整披露为警告，而不是成功导出的前置阻断条件。
+- P01、final SVG、内容、图表、postflight 与 package QA 检查不得省略；PPT-Master SVG checker 的 error 是成功导出的前置阻断条件，warning 才可随产物披露。其他检查严格遵守各自合同声明的 blocking/advisory 分类。
 - 不允许任意 Shell、外部 SVG 资源、脚本、事件处理器或跨租户路径。
 - 崩溃恢复不得重复已确认的 Provider 调用或重复计费。
-- v1/v2 历史任务继续遵守其冻结的 blocking 语义；v3 新任务的视觉复核和确定性质量检查均为辅助检查，只要机械性导出成功就允许下载，并在报告中完整披露 finding。
+- v1/v2 历史任务继续遵守其冻结的 blocking 语义；v3 新任务的可选视觉复核是辅助检查，但不得弱化 PPT-Master 确定性 SVG error 的 blocking 语义。只有 final SVG 报告零 error 且 native export 成功时才允许下载，并完整披露 advisory finding。
 - 未启用视觉复核时不得调用视觉审核 Provider；启用后也不得借视觉修复修改批准 Outline、来源事实、品牌锁或页面结构。
 
 ## 验收标准
@@ -328,10 +350,10 @@ outline_approved
 - [x] 留白、节奏、层级和风格一致性等 Soft finding 不会因关键词或类别被升级为 blocking，也不参与最佳版本评分。
 - [x] 视觉修复仅允许受限属性/局部操作；正文、品牌 token、字体家族、稳定 ID、页面结构、图表类型和其他页面变化均被拒绝。
 - [x] 修复导致新 Hard 或确定性 gate 失败时，只回滚受影响页面，未修改页面和已验证改善页保持不变。
-- [x] v3 不产生视觉 `needs_human`；未修复 finding 与确定性检查问题写入 warning/报告，修复退化自动按页回退后继续导出。
+- [x] v3 不产生视觉 `needs_human`；未修复的主观视觉 finding 写入 warning/报告，修复退化自动按页回退。确定性 SVG error 返回无硬轮次上限的修复循环，不得降级后导出。
 - [x] 作者模型与视觉审核模型、调用次数、用量及分阶段耗时分别记录；未启用视觉复核时不存在视觉模型费用。
 - [ ] 使用 Qwen 官方 API、`qwen3.7-plus`、指定 GPT-5.6 DOCX 和提示词“根据GPT5.6的官方公告做一份6页的PPT”完成默认模式真实网站回归，生成 6 个 SVG 和 6 页 PPTX，并记录总耗时。
-- [ ] 对同一输入启用标准视觉复核完成对照回归，保存基线/复核逐页截图、修改/回滚证据、视觉耗时和最终 PPTX；复核或确定性检查结果不得阻止已成功生成的 PPTX 下载。
+- [ ] 对同一输入启用标准视觉复核完成对照回归，保存基线/复核逐页截图、修改/回滚证据、视觉耗时和最终 PPTX；主观视觉 warning 不阻止下载，确定性 SVG error 必须修复至零后才可生成最终 PPTX。
 
 ### PPT-Master 页面契约对齐新增验收标准
 
@@ -340,7 +362,11 @@ outline_approved
 - [x] Executor 的必读证据包含 vendored 执行/共享/语义参考及 SHA-256；Runtime 不再维护标题、页码、字号和页面角色的第二份摘要合同。
 - [x] Direct SVG 写入前校验不要求标题固定 ID、精确 Outline 标题、统一字号下限或右下角 PNN，同时继续拒绝畸形 XML、主动内容、危险引用和跨租户路径。
 - [ ] flat 根角色和 structured Master/Layout 语义均通过原始 PPT-Master checker；普通标题不使用未定义的 `data-pptx-role="title"`。
-- [x] 原始质量报告完整保留；确定性问题在机械导出成功时形成 `passed-with-warnings`，实际编译、文件写入或安全失败仍使任务失败。
+- [x] 原始质量报告完整保留；`passed-with-warnings` 只包含 advisory warning，任何 SVG checker error 都阻止导出并进入无硬轮次上限的集中修复循环；实际编译、文件写入或安全失败仍使任务失败。
+- [x] 已删除 `FINAL_SVG_REPAIR_HARD_MAX_ROUNDS` 及等价固定终止条件；超过旧四轮阈值后仍能继续修复，直至 final SVG report 为零 error。
+- [x] 每个失败批次只执行一次完整 checker、一次集中修复和一次统一复检；P01 通过后至 final gate 前无中途 checker 调用。
+- [x] 导出器只接受当前、final、SVG roster 哈希匹配、可验证且零 blocking error 的质量报告；Production Worker 不使用覆盖参数绕过错误。
+- [x] 可选视觉 Reviewer 仍保持 `off`/`standard` 和一次受限修复，其预算与确定性 SVG gate 的无硬上限循环相互独立。
 - [ ] 官方 Qwen 六页真实回归从文档上传开始记录时间与 Token；P05 不再因标题契约失败，任务完成 P06、PPTX 导出和 PowerPoint/WPS 打开验证。
 
 ## 发布策略
@@ -372,8 +398,14 @@ outline_approved
 
 2026-08-27 自动化验证：Worker `209/209`、Domain/API `50/50`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过。2026-08-28 的语义收敛移除了“接受复核前基线并导出”恢复动作需求；真实 Qwen 网站对照回归仍待执行，因此 opt-in v3 仍不得宣称完整发布。
 
-2026-08-28 已按产品决策完成 v3 收敛：新任务只接受 `off`/`standard`，默认 `off`；标准模式仅一次 Reviewer 调用和最多一次受限修复，不再产生视觉 `needs_human`。未修复视觉 finding 及 final SVG、内容、postflight、package QA 的确定性检查问题均写入 `passed-with-warnings`/报告，只要 PPTX 已实际生成就继续发布；修复退化自动按页恢复基线。底层导出器新增显式警告覆盖，但只接受当前、final、哈希匹配的质量报告，缺失、损坏、过期或不可验证报告仍拒绝导出。验证结果为已跟踪 Worker `210/210`、Domain/API `51/51`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过；真实 Qwen A/B 网站回归仍待执行。
+2026-08-28 已按当时产品决策完成 v3 收敛：新任务只接受 `off`/`standard`，默认 `off`；标准模式仅一次 Reviewer 调用和最多一次受限修复，不再产生视觉 `needs_human`。该版本曾将未修复视觉 finding 及 final SVG、内容、postflight、package QA 的确定性检查问题统一写入 `passed-with-warnings` 并在 PPTX 可生成时继续发布；底层导出器仅验证报告为当前、final 且哈希匹配。验证结果为已跟踪 Worker `210/210`、Domain/API `51/51`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过。此处作为历史实现记录保留，其中“SVG checker error 可警告导出”的语义已被后续三层 SVG 限制与无硬上限修复循环决策废止；真实 Qwen A/B 网站回归仍待执行。
 
 2026-08-28 已完成 PPT-Master 页面契约对齐代码：新 Snapshot 冻结 `presentation-authoring@v3-ppt-master-authority`，默认工作流升级为 `instant-ppt-default@v3.2.0`。Strategist 使用 vendored 原生 Design Spec 格式并在同一 Agent 会话中生成 `spec_lock.md`，写入前调用未修改的 `project_manager.py validate`；Executor 按锁定分支读取 PPT-Master 原始参考并保存版本、路径和 SHA-256 回执。Direct SVG 写入前只保留 XML、主动内容、引用边界、画布及稳定 ID 等机械/安全检查，标题措辞、字号、页码和页面角色语义交还上游 checker；旧策略快照继续按历史合同解释。
 
 自动化验证覆盖 Worker、Domain 与 API 全量测试、PPT-Master authority 端到端、Ruff 和 Python Schema 生成一致性。当前 Windows 工作区的 pnpm junction 无法读取已安装包，供应商树校验也因非受保护文件树摘要与清单不一致而未完成；受保护的上游文件哈希均匹配。真实 Qwen A/B、structured 模板原始 checker 以及 PowerPoint/WPS 打开验证仍作为发布证据保持开放，不将其误记为本地自动化通过。
+
+2026-08-28 已批准并补充 PPT-Master 三层 SVG 限制与确定性修复循环计划：作者合同、P01/final checker 和导出器独立报告验证分别构成三层门禁；确定性 SVG repair 不设固定轮次上限，按完整问题集集中修复并单次复检，直至零 error 或出现真实外部 blocker。
+
+2026-08-28 已完成三层 SVG 限制与确定性修复循环实现：P01/final error 始终 blocking，`passed-with-warnings` 只承载 advisory；每次失败批次把完整 page-owned error 与 advisory 交给集中修复，页内只运行机械/安全预检，所有受影响页完成后才统一复检。删除 `FINAL_SVG_REPAIR_HARD_MAX_ROUNDS` 及 `maxStageAttempts` 对该循环的等价终止，保留 `repairRound` 单调审计；无变化、超过旧四轮、Provider 取消等路径都不会把 error 降级或继续导出。每次 vendored 原始报告按内容哈希留存，新增薄适配器只验证 report schema、final stage、SVG roster fingerprint、error/blocking count，不复制 SVG 标签、属性或 CSS 规则。
+
+生产导出已移除 `--allow-quality-warnings`，Worker 在 Step 7 前重新验证当前报告，vendored `svg_to_pptx.py` 仍独立执行 final/hash/zero-blocking 校验。自动化验证结果为 Worker `231/231`、Domain/API `51/51`、Ruff 通过；覆盖 P01 blocking、两页完整问题集单批集中修复、warning 非阻断、第五轮后继续修复并导出、持续 blocking 后取消不导出、报告缺失/非 final/错哈希拒绝及视觉 `off`/`standard` 预算独立。Contracts 校验仍被当前 Windows `node_modules` junction 的既有读取错误阻断；真实 Qwen A/B、structured 模板和 PowerPoint/WPS 发布回归继续保持开放，不记为已通过。

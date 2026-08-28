@@ -33,6 +33,16 @@ from instant_ppt_worker.models import DeckPlan
 from instant_ppt_worker.package_qa import inspect_pptx, write_package_report
 from instant_ppt_worker.paths import ENGINE_SCRIPTS
 from instant_ppt_worker.ppt_master_references import executor_reference_manifest
+from instant_ppt_worker.ppt_master_svg_quality import (
+    advisory_count as svg_quality_advisory_count,
+)
+from instant_ppt_worker.ppt_master_svg_quality import (
+    final_report_diagnostics,
+    final_report_passed,
+)
+from instant_ppt_worker.ppt_master_svg_quality import (
+    receipt_status as svg_quality_receipt_status,
+)
 from instant_ppt_worker.presentation_agent_fixture_provider import (
     DeterministicPresentationAgentProvider,
 )
@@ -80,9 +90,6 @@ from instant_ppt_worker.workflow_models import (
 from instant_ppt_worker.workflow_state import validate_stage_entry
 
 PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-# One initial authoring pass plus four deterministic-gate repair passes keeps
-# page author attempts within the runtime hard maximum of five.
-FINAL_SVG_REPAIR_HARD_MAX_ROUNDS = 4
 PROMPT_INJECTION_PATTERNS = (
     re.compile(r"ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions", re.IGNORECASE),
     re.compile(r"(?:system|developer)\s*(?:prompt|message)\s*[:：]", re.IGNORECASE),
@@ -1939,8 +1946,6 @@ def _first_page_agent_gate(
     pnn: str,
     svg_path: Path,
     subject_sha256: str,
-    *,
-    quality_is_advisory: bool = False,
 ) -> dict[str, Any]:
     if pnn != "P01" or svg_path.name != "slide_01.svg":
         return {
@@ -1950,6 +1955,7 @@ def _first_page_agent_gate(
             "subjectSha256": subject_sha256,
         }
     report_path = project / "validation" / "svg_quality_first_page_report.json"
+    report_path.unlink(missing_ok=True)
     command_passed = True
     failure_message: str | None = None
     try:
@@ -1974,8 +1980,11 @@ def _first_page_agent_gate(
         failure_message = error.message
     report: dict[str, Any] = {}
     if report_path.is_file():
+        history_key = _archive_native_quality_report(project, report_path, "first-page")
         _normalize_project_paths(report_path, project)
         report = json.loads(report_path.read_text(encoding="utf-8"))
+    else:
+        history_key = None
     blocking = report.get("categories", {}).get("blocking", {}).get("issues", [])
     blocking = blocking if isinstance(blocking, list) else []
     classifications = [
@@ -1988,12 +1997,19 @@ def _first_page_agent_gate(
         if isinstance(issue, dict)
     ]
     quality_passed = command_passed and not blocking
+    warnings = report.get("categories", {}).get("introduced", {}).get("count", 0)
+    warning_count = warnings if isinstance(warnings, int) and not isinstance(warnings, bool) else 0
     return {
-        "passed": quality_passed or quality_is_advisory,
+        "passed": quality_passed,
         "qualityPassed": quality_passed,
-        "status": "passed" if quality_passed else "passed-with-warnings",
+        "status": (
+            "blocking"
+            if not quality_passed
+            else ("passed-with-warnings" if warning_count > 0 else "passed")
+        ),
         "subjectSha256": subject_sha256,
         "reportSha256": sha256_file(report_path) if report_path.is_file() else None,
+        "nativeReportHistoryKey": history_key,
         "methodLevel": [],
         "pageLocal": classifications,
         "notExercised": ["multi-page-rhythm", "cross-page-repetition"],
@@ -2050,59 +2066,19 @@ def _page_local_agent_gate(
     }
 
 
-def _final_page_agent_gate(
-    workspace_root: Path,
-    project: Path,
-    pnn: str,
-    svg_path: Path,
-    subject_sha256: str,
-    roster: list[dict[str, Any]],
-) -> dict[str, Any]:
-    safe_svg_report = _page_local_agent_gate(project, pnn, svg_path, subject_sha256)
-    if not safe_svg_report.get("passed"):
-        return safe_svg_report
-
-    report = _run_final_svg_checker(workspace_root, project, allow_failure=True)
-    findings = _svg_gate_findings_by_page(report, roster).get(pnn, [])
-    classifications = [
-        {
-            "classification": "page-local-final",
-            "code": finding["code"],
-            "message": finding["message"],
-        }
-        for finding in findings
-    ]
-    return {
-        "passed": not findings,
-        "subjectSha256": subject_sha256,
-        "reportSha256": sha256_file(project / "validation" / "svg_quality_report.json"),
-        "methodLevel": (
-            [
-                {
-                    "classification": "page-local-final",
-                    "code": "SVG_PAGE_FINAL_VALIDATED",
-                    "message": "current page passed the production final SVG quality checker",
-                }
-            ]
-            if not findings
-            else []
-        ),
-        "pageLocal": classifications,
-        "notExercised": ["multi-page-rhythm", "cross-page-repetition"],
-        "failureMessage": (
-            None
-            if not findings
-            else json.dumps(findings, ensure_ascii=False, separators=(",", ":"))
-        ),
-    }
+def _final_svg_report_passed(report: dict[str, Any], svg_paths: list[Path]) -> bool:
+    return final_report_passed(report, svg_paths)
 
 
-def _final_svg_report_passed(report: dict[str, Any]) -> bool:
-    return (
-        int(report.get("summary", {}).get("errors") or 0) == 0
-        and int(report.get("categories", {}).get("blocking", {}).get("count") or 0) == 0
-        and not report.get("_commandError")
-    )
+def _archive_native_quality_report(project: Path, report_path: Path, stage: str) -> str:
+    """Content-address each unmodified report before the next checker run."""
+
+    history_dir = project / "validation" / "svg-quality-history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    history_path = history_dir / f"{stage}-{sha256_file(report_path)}.json"
+    if not history_path.is_file():
+        shutil.copy2(report_path, history_path)
+    return history_path.relative_to(project).as_posix()
 
 
 def _final_svg_failure_message(report: dict[str, Any]) -> str:
@@ -2134,6 +2110,7 @@ def _run_final_svg_checker(
     allow_failure: bool = False,
 ) -> dict[str, Any]:
     report_path = project / "validation" / "svg_quality_report.json"
+    report_path.unlink(missing_ok=True)
     command_error: AdapterError | None = None
     try:
         _run(
@@ -2158,8 +2135,10 @@ def _run_final_svg_checker(
         if command_error is not None:
             raise command_error
         raise AdapterError(RENDER_FAILED, "final SVG checker produced no JSON report")
+    history_key = _archive_native_quality_report(project, report_path, "final")
     _normalize_project_paths(report_path, project)
     report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["_nativeReportHistoryKey"] = history_key
     if command_error is not None:
         report["_commandError"] = command_error.message
         if not allow_failure:
@@ -2170,23 +2149,26 @@ def _run_final_svg_checker(
 def _svg_gate_findings_by_page(
     report: dict[str, Any],
     roster: list[dict[str, Any]],
+    *,
+    category: str = "blocking",
 ) -> dict[str, list[dict[str, str]]]:
     pnn_by_file = {
         f"slide_{index:02d}.svg": str(item["pnn"]) for index, item in enumerate(roster, start=1)
     }
     findings: dict[str, list[dict[str, str]]] = {}
-    candidates = list(report.get("categories", {}).get("blocking", {}).get("issues") or [])
-    for file_report in report.get("files") or []:
-        if not isinstance(file_report, dict):
-            continue
-        for message in file_report.get("errors") or []:
-            candidates.append(
-                {
-                    "file": file_report.get("file"),
-                    "code": "SVG_FILE_ERROR",
-                    "message": message,
-                }
-            )
+    candidates = list(report.get("categories", {}).get(category, {}).get("issues") or [])
+    if category == "blocking":
+        for file_report in report.get("files") or []:
+            if not isinstance(file_report, dict):
+                continue
+            for message in file_report.get("errors") or []:
+                candidates.append(
+                    {
+                        "file": file_report.get("file"),
+                        "code": "SVG_FILE_ERROR",
+                        "message": message,
+                    }
+                )
     seen: set[tuple[str, str, str]] = set()
     for issue in candidates:
         if not isinstance(issue, dict):
@@ -2206,6 +2188,13 @@ def _svg_gate_findings_by_page(
         seen.add(identity)
         findings.setdefault(pnn, []).append(finding)
     return findings
+
+
+def _svg_gate_advisories_by_page(
+    report: dict[str, Any],
+    roster: list[dict[str, Any]],
+) -> dict[str, list[dict[str, str]]]:
+    return _svg_gate_findings_by_page(report, roster, category="introduced")
 
 
 def _executor_locked_context(
@@ -2414,10 +2403,6 @@ def _author_slides_with_agent(
                             current_pnn,
                             current_path,
                             current_sha256,
-                            quality_is_advisory=(
-                                request.authoring.visual_review_policy_version
-                                == "visual-review-opt-in@v3"
-                            ),
                         )
                     )
                 )
@@ -2610,7 +2595,9 @@ def _repair_final_svg_gate_with_agent(
             request=request,
             provider=repair_provider,
         )
-        for repair_round in range(1, FINAL_SVG_REPAIR_HARD_MAX_ROUNDS + 1):
+        repair_round = 0
+        while True:
+            repair_round += 1
             findings_by_page = _svg_gate_findings_by_page(report, plan["roster"])
             if not findings_by_page:
                 raise AdapterError(
@@ -2618,6 +2605,14 @@ def _repair_final_svg_gate_with_agent(
                     "final SVG gate failed without page-owned repair findings: "
                     + _final_svg_failure_message(report),
                 )
+            advisories_by_page = _svg_gate_advisories_by_page(report, plan["roster"])
+            global_advisories = [
+                dict(issue)
+                for issue in report.get("categories", {})
+                .get("introduced", {})
+                .get("issues", [])
+                if isinstance(issue, dict) and not str(issue.get("file") or "").strip()
+            ]
             before_hash = _svg_roster_hash(sorted((project / "svg_output").glob("*.svg")))
             for pnn, findings in findings_by_page.items():
                 page_index = next(
@@ -2645,6 +2640,8 @@ def _repair_final_svg_gate_with_agent(
                         "mode": "svg-gate-repair",
                         "repairRound": repair_round,
                         "finalSvgGateFindings": findings,
+                        "finalSvgGateAdvisories": advisories_by_page.get(pnn, []),
+                        "finalSvgGateGlobalAdvisories": global_advisories,
                         "geometryContract": {
                             "viewBox": [0, 0, 1280, 720],
                             "dataPptxBoundsFormat": "x y width height",
@@ -2689,13 +2686,11 @@ def _repair_final_svg_gate_with_agent(
                         author_attempt=repair_round + 1,
                         callbacks=ToolCallbacks(
                             svg_gate=lambda current_pnn, current_path, current_sha256: (
-                                _final_page_agent_gate(
-                                    workspace_root,
+                                _page_local_agent_gate(
                                     project,
                                     current_pnn,
                                     current_path,
                                     current_sha256,
-                                    plan["roster"],
                                 )
                             )
                         ),
@@ -2707,12 +2702,14 @@ def _repair_final_svg_gate_with_agent(
                     phase_id=phase_id,
                     role="executor",
                     goal=(
-                        f"Repair {pnn} for every supplied final SVG gate finding. Preserve "
+                        f"Repair {pnn} for every supplied blocking final SVG finding in one "
+                        "concentrated edit. Advisory warnings are optional and must never block "
+                        "completion. Preserve "
                         "approved facts, stable IDs, page ownership, and all unaffected content. "
                         "Treat every data-pptx-bounds tuple as x y width height, never as "
-                        "x1 y1 x2 y2. After every write, run the page SVG gate, consume its "
-                        "complete observation, and continue repairing until the current SVG "
-                        "hash passes before completing the phase."
+                        "x1 y1 x2 y2. After the edit, run the lightweight current-page XML and "
+                        "safety gate exactly once; the supervisor will run one whole-deck checker "
+                        "after every affected page has been edited."
                     ),
                     locked_context=repair_context,
                     tools=repair_tools,
@@ -2752,25 +2749,21 @@ def _repair_final_svg_gate_with_agent(
             svg_paths = sorted((project / "svg_output").glob("*.svg"))
             final_hash = _svg_roster_hash(svg_paths)
             if final_hash == before_hash:
-                raise AdapterError(
-                    RENDER_FAILED,
-                    "final SVG gate repair completed without changing the SVG roster hash",
+                _event(
+                    project,
+                    "final_svg_gate",
+                    "repair-round-no-change",
+                    repairRound=repair_round,
                 )
             report = _run_final_svg_checker(
                 workspace_root,
                 project,
                 allow_failure=True,
             )
-            if _final_svg_report_passed(report):
+            if _final_svg_report_passed(report, svg_paths):
                 return completed_pages, svg_paths, final_hash, report
     finally:
         _close_owned_text_provider(repair_provider, repair_provider_owned)
-    raise AdapterError(
-        RENDER_FAILED,
-        "final SVG gate remained blocking after "
-        f"{FINAL_SVG_REPAIR_HARD_MAX_ROUNDS} Agent repair rounds: "
-        + _final_svg_failure_message(report),
-    )
 
 
 def run_default_workflow(
@@ -3324,17 +3317,10 @@ def run_default_workflow(
     final_svg_report = _run_final_svg_checker(
         workspace_root,
         project,
-        allow_failure=request.authoring.mode == "agent-authoring" or advisory_validation,
+        allow_failure=request.authoring.mode == "agent-authoring",
     )
-    if not _final_svg_report_passed(final_svg_report):
-        if advisory_validation:
-            _event(
-                project,
-                "final_svg_gate",
-                "warnings-disclosed",
-                warning=_final_svg_failure_message(final_svg_report),
-            )
-        elif request.authoring.mode != "agent-authoring":
+    if not _final_svg_report_passed(final_svg_report, svg_paths):
+        if request.authoring.mode != "agent-authoring":
             raise AdapterError(
                 RENDER_FAILED,
                 _final_svg_failure_message(final_svg_report),
@@ -3360,11 +3346,7 @@ def run_default_workflow(
         request,
         receipts,
         kind="final-svg-gate",
-        status=(
-            "passed"
-            if _final_svg_report_passed(final_svg_report)
-            else "passed-with-warnings"
-        ),
+        status=svg_quality_receipt_status(final_svg_report, svg_paths),
         subject_sha256=final_svg_sha256,
         payload={
             "pageCount": len(svg_paths),
@@ -3372,6 +3354,8 @@ def run_default_workflow(
             "blockingCount": int(
                 final_svg_report.get("categories", {}).get("blocking", {}).get("count", 0)
             ),
+            "advisoryCount": svg_quality_advisory_count(final_svg_report),
+            "nativeReportHistoryKey": final_svg_report.get("_nativeReportHistoryKey"),
         },
     )
 
@@ -3704,13 +3688,11 @@ def run_default_workflow(
                         require_svg_gate=False,
                     )
                     if is_opt_in_visual_review:
-                        page_gate = _final_page_agent_gate(
-                            workspace_root,
+                        page_gate = _page_local_agent_gate(
                             project,
                             pnn,
                             svg_path,
                             str(repair_receipt["subjectSha256"]),
-                            plan["roster"],
                         )
                         if not page_gate.get("passed"):
                             backup_key = str(
@@ -3752,24 +3734,10 @@ def run_default_workflow(
                     )
                 svg_paths = sorted(svg_dir.glob("*.svg"))
                 final_svg_sha256 = _svg_roster_hash(svg_paths)
+                no_retained_visual_change = final_svg_sha256 == before_review_repair_sha256
                 if final_svg_sha256 == before_review_repair_sha256:
-                    if is_opt_in_visual_review:
-                        final_svg_report = _run_final_svg_checker(
-                            workspace_root,
-                            project,
-                            allow_failure=True,
-                        )
-                        final_review = {
-                            **final_review,
-                            "passed": True,
-                            "status": "passed-with-warnings",
-                            "summary": (
-                                "Standard review completed without a retained SVG change; "
-                                "all findings are disclosed for user inspection."
-                            ),
-                        }
-                        break
-                    raise VisualReviewError(
+                    if not is_opt_in_visual_review:
+                        raise VisualReviewError(
                         "visual repair completed without changing the owned SVG roster hash"
                     )
                 post_visual_svg_report = _run_final_svg_checker(
@@ -3777,73 +3745,76 @@ def run_default_workflow(
                     project,
                     allow_failure=True,
                 )
-                if not _final_svg_report_passed(post_visual_svg_report):
-                    if is_opt_in_visual_review:
-                        affected_pages = set(
-                            _svg_gate_findings_by_page(
-                                post_visual_svg_report,
-                                plan["roster"],
-                            )
-                        ) & modified_visual_pages
-                        if not affected_pages and post_visual_svg_report.get("_commandError"):
-                            affected_pages = set(modified_visual_pages)
-                        for pnn in affected_pages:
-                            page_number = int(pnn[1:])
-                            baseline_page = baseline_snapshot / f"slide_{page_number:02d}.svg"
-                            if baseline_page.is_file():
-                                shutil.copy2(baseline_page, svg_dir / baseline_page.name)
-                                rolled_back_visual_pages.add(pnn)
-                        svg_paths = sorted(svg_dir.glob("*.svg"))
-                        final_svg_sha256 = _svg_roster_hash(svg_paths)
-                        post_visual_svg_report = _run_final_svg_checker(
-                            workspace_root,
-                            project,
-                            allow_failure=True,
-                        )
-                        _event(
-                            project,
-                            "visual_repair",
-                            "rolled-back-with-warning",
-                            pages=sorted(rolled_back_visual_pages),
-                            reason="deterministic-final-gate-failed-after-visual-repair",
-                        )
-                    else:
-                        (
-                            completed_pages,
-                            svg_paths,
-                            final_svg_sha256,
+                if (
+                    not _final_svg_report_passed(post_visual_svg_report, svg_paths)
+                    and is_opt_in_visual_review
+                ):
+                    affected_pages = set(
+                        _svg_gate_findings_by_page(
                             post_visual_svg_report,
-                        ) = _repair_final_svg_gate_with_agent(
-                            workspace_root,
-                            project,
-                            request,
-                            fragments,
-                            deck,
-                            plan,
-                            image_preparation,
-                            image_resource_by_slide,
-                            completed_pages,
-                            post_visual_svg_report,
-                            review_agent_provider,
-                            phase_prefix=(f"svg-gate-repair-post-visual-v{review_round}"),
+                            plan["roster"],
                         )
+                    ) & modified_visual_pages
+                    if not affected_pages and post_visual_svg_report.get("_commandError"):
+                        affected_pages = set(modified_visual_pages)
+                    for pnn in affected_pages:
+                        page_number = int(pnn[1:])
+                        baseline_page = baseline_snapshot / f"slide_{page_number:02d}.svg"
+                        if baseline_page.is_file():
+                            shutil.copy2(baseline_page, svg_dir / baseline_page.name)
+                            rolled_back_visual_pages.add(pnn)
+                    svg_paths = sorted(svg_dir.glob("*.svg"))
+                    final_svg_sha256 = _svg_roster_hash(svg_paths)
+                    post_visual_svg_report = _run_final_svg_checker(
+                        workspace_root,
+                        project,
+                        allow_failure=True,
+                    )
+                    _event(
+                        project,
+                        "visual_repair",
+                        "rolled-back-with-warning",
+                        pages=sorted(rolled_back_visual_pages),
+                        reason="deterministic-final-gate-failed-after-visual-repair",
+                    )
+                if not _final_svg_report_passed(post_visual_svg_report, svg_paths):
+                    (
+                        completed_pages,
+                        svg_paths,
+                        final_svg_sha256,
+                        post_visual_svg_report,
+                    ) = _repair_final_svg_gate_with_agent(
+                        workspace_root,
+                        project,
+                        request,
+                        fragments,
+                        deck,
+                        plan,
+                        image_preparation,
+                        image_resource_by_slide,
+                        completed_pages,
+                        post_visual_svg_report,
+                        review_agent_provider,
+                        phase_prefix=(f"svg-gate-repair-post-visual-v{review_round}"),
+                    )
                 final_svg_report = post_visual_svg_report
                 _receipt(
                     project,
                     request,
                     receipts,
                     kind="final-svg-gate",
-                    status=(
-                        "passed"
-                        if _final_svg_report_passed(post_visual_svg_report)
-                        else "passed-with-warnings"
-                    ),
+                    status=svg_quality_receipt_status(post_visual_svg_report, svg_paths),
                     subject_sha256=final_svg_sha256,
                     payload={
                         "pageCount": len(svg_paths),
                         "exactRoster": [item["pnn"] for item in plan["roster"]],
                         "rerunAfterVisualRepairRound": review_round,
                         "stalePreviousSubjectSha256": before_review_repair_sha256,
+                        "blockingCount": 0,
+                        "advisoryCount": svg_quality_advisory_count(post_visual_svg_report),
+                        "nativeReportHistoryKey": post_visual_svg_report.get(
+                            "_nativeReportHistoryKey"
+                        ),
                     },
                 )
                 if is_opt_in_visual_review:
@@ -3851,8 +3822,14 @@ def run_default_workflow(
                         **final_review,
                         "passed": True,
                         "summary": (
-                            "Standard opt-in review completed one atomic repair pass; "
-                            "remaining findings and deterministic checks are disclosed as warnings."
+                            "Standard opt-in review completed; subjective findings are disclosed "
+                            "for inspection and the deterministic final SVG gate has zero errors."
+                            if not no_retained_visual_change
+                            else (
+                                "Standard review retained no visual SVG change; subjective "
+                                "findings are disclosed and the deterministic final SVG gate has "
+                                "zero errors."
+                            )
                         ),
                         "status": "passed-with-warnings",
                         "fixedPages": sorted(modified_visual_pages),
@@ -3996,6 +3973,62 @@ def run_default_workflow(
                 "rolledBackPages": sorted(rolled_back_visual_pages),
             },
         )
+
+    current_quality_path = project / "validation" / "svg_quality_report.json"
+    try:
+        current_quality_report = json.loads(current_quality_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        current_quality_report = {}
+    if not _final_svg_report_passed(current_quality_report, svg_paths):
+        current_quality_report = _run_final_svg_checker(
+            workspace_root,
+            project,
+            allow_failure=request.authoring.mode == "agent-authoring",
+        )
+        if not _final_svg_report_passed(current_quality_report, svg_paths):
+            if request.authoring.mode != "agent-authoring":
+                raise AdapterError(
+                    RENDER_FAILED,
+                    _final_svg_failure_message(current_quality_report),
+                )
+            (
+                completed_pages,
+                svg_paths,
+                final_svg_sha256,
+                current_quality_report,
+            ) = _repair_final_svg_gate_with_agent(
+                workspace_root,
+                project,
+                request,
+                fragments,
+                deck,
+                plan,
+                image_preparation,
+                image_resource_by_slide,
+                completed_pages,
+                current_quality_report,
+                text_provider,
+                phase_prefix="svg-gate-repair-pre-export",
+            )
+        _receipt(
+            project,
+            request,
+            receipts,
+            kind="final-svg-gate",
+            status=svg_quality_receipt_status(current_quality_report, svg_paths),
+            subject_sha256=final_svg_sha256,
+            payload={
+                "pageCount": len(svg_paths),
+                "exactRoster": [item["pnn"] for item in plan["roster"]],
+                "blockingCount": 0,
+                "advisoryCount": svg_quality_advisory_count(current_quality_report),
+                "nativeReportHistoryKey": current_quality_report.get(
+                    "_nativeReportHistoryKey"
+                ),
+                "preExportRecovery": True,
+            },
+        )
+    final_svg_report = current_quality_report
 
     chart_roster = [item for item in plan["roster"] if item["chart"] is not None]
     if chart_roster:
@@ -4237,6 +4270,13 @@ def run_default_workflow(
             raise AdapterError(RENDER_FAILED, "speaker-note split did not cover every slide")
         _event(project, "notes", "split-completed", pageCount=len(note_pages))
 
+    export_gate_diagnostics = final_report_diagnostics(final_svg_report, svg_paths)
+    if export_gate_diagnostics:
+        raise AdapterError(
+            RENDER_FAILED,
+            "final SVG report is not exportable: "
+            + json.dumps(export_gate_diagnostics, ensure_ascii=False, separators=(",", ":")),
+        )
     _run(
         [sys.executable, str(ENGINE_SCRIPTS / "finalize_svg.py"), str(project)],
         cwd=workspace_root,
@@ -4275,8 +4315,6 @@ def run_default_workflow(
     ]
     if not notes_enabled:
         export_command.append("--no-notes")
-    if advisory_validation and not _final_svg_report_passed(final_svg_report):
-        export_command.append("--allow-quality-warnings")
     export_command.append("--native-charts-and-tables")
     _run(
         export_command,

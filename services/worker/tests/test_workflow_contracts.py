@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 from instant_ppt_worker.models import AdapterRequest
 from instant_ppt_worker.workflow_models import WorkflowRequestV2
-from instant_ppt_worker.workflow_state import WorkflowTransitionError, validate_stage_entry
+from instant_ppt_worker.workflow_state import (
+    WorkflowTransitionError,
+    validate_receipt,
+    validate_stage_entry,
+)
 from pydantic import TypeAdapter, ValidationError
 
 ULIDS = {
@@ -361,6 +365,19 @@ def test_stage1_and_gate2_cannot_be_silently_skipped() -> None:
             design_spec_sha256=HASH,
             refine_spec=False,
         )
+
+
+def test_final_svg_gate_receipt_cannot_close_with_blocking_errors() -> None:
+    receipts = {
+        "final-svg-gate": {
+            "status": "passed-with-warnings",
+            "subjectSha256": HASH,
+            "payload": {"blockingCount": 1, "advisoryCount": 0},
+        }
+    }
+
+    with pytest.raises(WorkflowTransitionError, match="zero blocking SVG errors"):
+        validate_receipt(receipts, "final-svg-gate", subject_sha256=HASH)
 
 
 def test_conditional_capabilities_reject_missing_dependencies() -> None:

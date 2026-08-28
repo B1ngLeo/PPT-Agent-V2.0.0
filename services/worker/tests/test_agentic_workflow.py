@@ -14,6 +14,7 @@ from instant_ppt_worker.presentation_agent_fixture_provider import (
     DeterministicPresentationAgentProvider,
     _fit_text,
 )
+from instant_ppt_worker.presentation_agent_runtime import AgentRuntimeError
 from instant_ppt_worker.providers import TextCompletion
 from instant_ppt_worker.source_parser import deterministic_ulid
 from instant_ppt_worker.visual_review_runtime import VisualReviewReport
@@ -848,18 +849,32 @@ def test_blocking_final_svg_gate_is_repaired_by_the_owned_page_agent(
         if checker_calls == 1:
             assert allow_failure is True
             return {
-                "summary": {"errors": 1, "warnings": 0},
+                "summary": {"errors": 2, "warnings": 1},
                 "categories": {
                     "blocking": {
-                        "count": 1,
+                        "count": 2,
                         "issues": [
+                            {
+                                "file": "slide_01.svg",
+                                "code": "TEXT_OVERFLOW",
+                                "message": "P01 title exceeds its owned content bounds.",
+                            },
                             {
                                 "file": "slide_02.svg",
                                 "code": "TEXT_OVERFLOW",
                                 "message": "P02 body exceeds its owned content bounds.",
                             }
                         ],
-                    }
+                    },
+                    "introduced": {
+                        "count": 1,
+                        "issues": [
+                            {
+                                "file": "slide_02.svg",
+                                "message": "P02 has advisory spacing drift.",
+                            }
+                        ],
+                    },
                 },
                 "files": [],
                 "_commandError": "fixture final SVG checker failed",
@@ -889,6 +904,15 @@ def test_blocking_final_svg_gate_is_repaired_by_the_owned_page_agent(
             and record["stage"] == "svg-gate-repair"
         )
     ]
+    all_repair_writes = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in (project / "agent" / "tool-calls").glob("*.json")
+        if (
+            (record := json.loads(path.read_text(encoding="utf-8")))["toolName"]
+            == "write_or_patch_slide_svg"
+            and record["stage"] == "svg-gate-repair"
+        )
+    ]
     repair_gates = [
         json.loads(path.read_text(encoding="utf-8"))
         for path in (project / "agent" / "tool-calls").glob("*.json")
@@ -903,20 +927,85 @@ def test_blocking_final_svg_gate_is_repaired_by_the_owned_page_agent(
     )
 
     assert outcome["result"].status == "succeeded"
-    assert checker_calls == 3
+    assert checker_calls == 2
+    assert len(all_repair_writes) == 2
     assert len(repair_writes) == 1
     assert len(repair_gates) == 1
     assert repair_gates[0]["observation"]["report"]["passed"] is True
     assert repair_gates[0]["observation"]["report"]["methodLevel"][0]["code"] == (
-        "SVG_PAGE_FINAL_VALIDATED"
+        "SVG_PAGE_LOCAL_VALIDATED"
     )
     assert repair_writes[0]["authorAttempt"] == 2
     assert repair_writes[0]["observation"]["authoringMode"] == "validated-direct-svg"
     assert receipt["payload"]["blockingCount"] == 0
+    p02_context = json.loads(
+        (project / "agent" / "locked-context" / "svg-gate-repair-r1-p02.json").read_text(
+            encoding="utf-8"
+        )
+    )["context"]
+    assert p02_context["finalSvgGateAdvisories"][0]["message"] == (
+        "P02 has advisory spacing drift."
+    )
+    assert (project / "agent" / "phase-receipts" / "svg-gate-repair-r1-p01.json").is_file()
     assert (project / "agent" / "phase-receipts" / "svg-gate-repair-r1-p02.json").is_file()
 
 
-def test_v3_deterministic_svg_findings_are_disclosed_without_blocking_export(
+def test_first_page_svg_errors_remain_blocking_for_v3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "p01-blocking"
+    svg_path = project / "svg_output" / "slide_01.svg"
+    svg_path.parent.mkdir(parents=True)
+    svg_path.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
+
+    def failing_checker(command: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        report_path = Path(command[command.index("--json-output") + 1])
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(
+                {
+                    "schema": "ppt-master.svg-quality-report.v1",
+                    "stage": "first-page",
+                    "summary": {"errors": 1, "warnings": 0},
+                    "categories": {
+                        "blocking": {
+                            "count": 1,
+                            "issues": [
+                                {
+                                    "file": "slide_01.svg",
+                                    "code": "TEXT_OVERFLOW",
+                                    "message": "P01 title is clipped.",
+                                }
+                            ],
+                        },
+                        "introduced": {"count": 0, "issues": []},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        raise AdapterError("RENDER_FAILED", "fixture checker found a blocking error")
+
+    monkeypatch.setattr(workflow_module, "_run", failing_checker)
+
+    report = workflow_module._first_page_agent_gate(
+        tmp_path,
+        project,
+        "P01",
+        svg_path,
+        hashlib.sha256(svg_path.read_bytes()).hexdigest(),
+    )
+
+    assert report["passed"] is False
+    assert report["qualityPassed"] is False
+    assert report["status"] == "blocking"
+    assert report["pageLocal"][0]["code"] == "TEXT_OVERFLOW"
+    history = (project / "validation" / "svg-quality-history").glob("first-page-*.json")
+    assert len(list(history)) == 1
+
+
+def test_v3_deterministic_svg_errors_are_repaired_before_export(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -933,7 +1022,9 @@ def test_v3_deterministic_svg_findings_are_disclosed_without_blocking_export(
     )
     workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
     original_checker = workflow_module._run_final_svg_checker
+    original_run = workflow_module._run
     injected = False
+    export_commands: list[list[str]] = []
 
     def injected_checker(
         workspace_root: Path,
@@ -973,6 +1064,13 @@ def test_v3_deterministic_svg_findings_are_disclosed_without_blocking_export(
         )
 
     monkeypatch.setattr(workflow_module, "_run_final_svg_checker", injected_checker)
+
+    def recording_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if len(command) > 1 and Path(command[1]).name == "svg_to_pptx.py":
+            export_commands.append(list(command))
+        return original_run(command, **kwargs)
+
+    monkeypatch.setattr(workflow_module, "_run", recording_run)
     project = tmp_path / "v3-svg-warning_ppt169_20260828"
 
     outcome = workflow_module.run_default_workflow(
@@ -991,13 +1089,149 @@ def test_v3_deterministic_svg_findings_are_disclosed_without_blocking_export(
         for path in (project / "agent" / "tool-calls").glob("*.json")
         if json.loads(path.read_text(encoding="utf-8")).get("stage")
         == "svg-gate-repair"
+        and json.loads(path.read_text(encoding="utf-8")).get("toolName")
+        == "write_or_patch_slide_svg"
     ]
 
     assert outcome["result"].status == "succeeded"
-    assert receipt["status"] == "passed-with-warnings"
-    assert receipt["payload"]["blockingCount"] == 1
-    assert repair_writes == []
+    assert receipt["status"] in {"passed", "passed-with-warnings"}
+    assert receipt["payload"]["blockingCount"] == 0
+    assert len(repair_writes) == 1
+    assert export_commands
+    assert all("--allow-quality-warnings" not in command for command in export_commands)
     assert (project / "exports" / "deck.pptx").is_file()
+
+
+def test_final_svg_repair_continues_beyond_the_old_four_round_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = _payload()
+    workflow["runtime"]["maxTurns"] = 200
+    workflow["runtime"]["maxTokens"] = 2_000_000
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    original_checker = workflow_module._run_final_svg_checker
+    checker_calls = 0
+
+    def injected_checker(
+        workspace_root: Path,
+        project: Path,
+        *,
+        allow_failure: bool = False,
+    ) -> dict[str, Any]:
+        nonlocal checker_calls
+        checker_calls += 1
+        report = original_checker(
+            workspace_root,
+            project,
+            allow_failure=True,
+        )
+        if checker_calls <= 5:
+            assert allow_failure is True
+            report["summary"]["errors"] = 1
+            report["categories"]["blocking"] = {
+                "count": 1,
+                "issues": [
+                    {
+                        "file": "slide_02.svg",
+                        "code": "TEXT_OVERFLOW",
+                        "message": f"P02 remains blocking after checker batch {checker_calls}.",
+                    }
+                ],
+            }
+            report["_commandError"] = "fixture final SVG checker failed"
+            workflow_module._write_json(
+                project / "validation" / "svg_quality_report.json",
+                report,
+            )
+        return report
+
+    monkeypatch.setattr(workflow_module, "_run_final_svg_checker", injected_checker)
+    project = tmp_path / "unbounded-svg-repair_ppt169_20260828"
+
+    outcome = workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+    )
+
+    receipt = json.loads(
+        (project / "validation" / "receipts" / "final-svg-gate.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    repair_phases = sorted(
+        path.name
+        for path in (project / "agent" / "phase-receipts").glob("svg-gate-repair-r*-p02.json")
+    )
+
+    assert outcome["result"].status == "succeeded"
+    assert checker_calls == 6
+    assert "svg-gate-repair-r5-p02.json" in repair_phases
+    assert receipt["payload"]["blockingCount"] == 0
+    assert (project / "exports" / "deck.pptx").is_file()
+
+
+def test_persistent_svg_errors_never_export_when_repair_is_cancelled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = _payload()
+    workflow["runtime"]["maxTurns"] = 200
+    workflow["runtime"]["maxTokens"] = 2_000_000
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    original_checker = workflow_module._run_final_svg_checker
+    original_run_phase = workflow_module.MainPresentationAgent.run_phase
+    checker_calls = 0
+
+    def blocking_checker(
+        workspace_root: Path,
+        project: Path,
+        *,
+        allow_failure: bool = False,
+    ) -> dict[str, Any]:
+        nonlocal checker_calls
+        checker_calls += 1
+        assert allow_failure is True
+        report = original_checker(workspace_root, project, allow_failure=True)
+        report["summary"]["errors"] = 1
+        report["categories"]["blocking"] = {
+            "count": 1,
+            "issues": [
+                {
+                    "file": "slide_02.svg",
+                    "code": "TEXT_OVERFLOW",
+                    "message": "P02 remains blocking until cancellation.",
+                }
+            ],
+        }
+        report["_commandError"] = "fixture final SVG checker failed"
+        workflow_module._write_json(project / "validation" / "svg_quality_report.json", report)
+        return report
+
+    def cancelling_run_phase(self: Any, **kwargs: Any) -> Any:
+        if kwargs["phase_id"] == "svg-gate-repair-r5-p02":
+            raise AgentRuntimeError("cancel-requested")
+        return original_run_phase(self, **kwargs)
+
+    monkeypatch.setattr(workflow_module, "_run_final_svg_checker", blocking_checker)
+    monkeypatch.setattr(
+        workflow_module.MainPresentationAgent,
+        "run_phase",
+        cancelling_run_phase,
+    )
+    project = tmp_path / "cancelled-svg-repair_ppt169_20260828"
+
+    with pytest.raises(AgentRuntimeError, match="cancel-requested"):
+        workflow_module.run_default_workflow(
+            tmp_path,
+            project,
+            WorkflowRequestV2.model_validate(workflow),
+        )
+
+    assert checker_calls == 5
+    assert (project / "agent" / "phase-receipts" / "svg-gate-repair-r4-p02.json").is_file()
+    assert not (project / "exports" / "deck.pptx").exists()
 
 
 def test_v3_package_findings_are_disclosed_without_blocking_existing_pptx(
@@ -1582,14 +1816,12 @@ def test_v3_visual_repair_regression_rolls_back_and_exports(
     provider = _V3VisualRepairFixtureProvider()
 
     def regressed_page_gate(
-        workspace_root: Path,
         project: Path,
         pnn: str,
         svg_path: Path,
         subject_sha256: str,
-        roster: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        del workspace_root, project, svg_path, roster
+        del project, svg_path
         return {
             "passed": False,
             "subjectSha256": subject_sha256,
@@ -1602,7 +1834,7 @@ def test_v3_visual_repair_regression_rolls_back_and_exports(
             ],
         }
 
-    monkeypatch.setattr(workflow_module, "_final_page_agent_gate", regressed_page_gate)
+    monkeypatch.setattr(workflow_module, "_page_local_agent_gate", regressed_page_gate)
     project = tmp_path / "visual-v3-rollback_ppt169_20260828"
 
     outcome = workflow_module.run_default_workflow(

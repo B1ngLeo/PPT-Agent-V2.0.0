@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Any
 
 WORKFLOW_STAGES = (
     "attribution_guard",
@@ -81,7 +82,7 @@ def validate_workflow_transition(current: str, target: str) -> None:
 
 
 def validate_receipt(
-    receipts: Mapping[str, Mapping[str, str]],
+    receipts: Mapping[str, Mapping[str, Any]],
     kind: str,
     *,
     subject_sha256: str | None = None,
@@ -98,11 +99,18 @@ def validate_receipt(
         raise WorkflowTransitionError(f"receipt is not closed: {kind}={status}")
     if subject_sha256 is not None and receipt.get("subjectSha256") != subject_sha256:
         raise WorkflowTransitionError(f"stale receipt: {kind}")
+    if kind == "final-svg-gate":
+        payload = receipt.get("payload")
+        blocking_count = payload.get("blockingCount") if isinstance(payload, Mapping) else None
+        if blocking_count != 0:
+            raise WorkflowTransitionError(
+                "final-svg-gate receipt must prove zero blocking SVG errors"
+            )
 
 
 def validate_stage_entry(
     next_stage: str,
-    receipts: Mapping[str, Mapping[str, str]],
+    receipts: Mapping[str, Mapping[str, Any]],
     *,
     request_sha256: str,
     design_spec_sha256: str | None = None,

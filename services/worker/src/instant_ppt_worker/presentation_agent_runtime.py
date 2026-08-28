@@ -233,7 +233,13 @@ class MainPresentationAgent:
             raise AgentRuntimeError("tool registry exceeds AgentRuntimePolicy allowedTools")
         if tools.context.stage != phase_id and not phase_id.startswith(tools.context.stage + "-"):
             raise AgentRuntimeError("tool registry stage does not own this Agent phase")
-        if tools.context.author_attempt > self.request.runtime.max_stage_attempts:
+        if (
+            # Deterministic SVG repairRound is audit state, not a termination
+            # budget. Global cancellation/provider/time/token policies still
+            # apply to these phases and never convert a checker error to pass.
+            tools.context.stage != "svg-gate-repair"
+            and tools.context.author_attempt > self.request.runtime.max_stage_attempts
+        ):
             raise AgentRuntimeError("Agent author attempt exceeds runtime policy")
         if not required_tools.issubset(tools.context.allowed_tools):
             raise AgentRuntimeError("required Agent tools exceed the phase tool registry")
