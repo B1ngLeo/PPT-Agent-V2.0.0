@@ -2,12 +2,17 @@
   "schemaVersion": 1,
   "verifiedAt": "2026-08-16T00:00:00Z",
   "image": "instant-ppt-worker:g01",
-  "imageId": "sha256:d3d52adf5867fca74e8125d72a4f7e6e13ce07ed367c9f06db6abe7a9c4e8d65",
+  "imageId": "sha256:1f2d4bab1327fadc30e204a9a0248cde2ecdc682c68f1490495ee5bdaffc4408",
   "platform": "amd64",
   "runtimeUser": "10001:10001",
   "runtimeIdentity": "10001:10001",
   "adapterHelp": "passed",
   "attributionGuard": "passed",
+  "pptMasterReferenceContract": {
+    "contractSchema": "instant-ppt.spec-lock-contract.v1",
+    "referenceCount": 5,
+    "manifestSha256": "fae839c324aa3a3f265c530cefcbe865851a566ca4dbb448a0100ce64ac6a206"
+  },
   "forbiddenCredentialEnvCount": 0,
   "baseImages": [
     {

@@ -38,8 +38,10 @@ RUN uv sync --frozen --no-dev --package instant-ppt-worker --no-install-workspac
 COPY services/worker/src services/worker/src
 COPY packages/domain/src packages/domain/src
 COPY vendor/ppt-master vendor/ppt-master
+COPY vendor/ppt-master.vendor.json vendor/ppt-master.vendor.json
 RUN uv sync --frozen --no-dev --package instant-ppt-worker --no-editable \
     && .venv/bin/python vendor/ppt-master/scripts/attribution_guard.py \
+    && .venv/bin/python -c "from instant_ppt_worker.ppt_master_references import executor_reference_manifest, spec_lock_contract_payload; spec_lock_contract_payload(); executor_reference_manifest('')" \
     && mkdir -p /workspace \
     && chown 10001:10001 /workspace
 

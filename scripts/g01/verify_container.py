@@ -64,6 +64,32 @@ def main() -> None:
         IMAGE,
         "/app/vendor/ppt-master/scripts/attribution_guard.py",
     )
+    reference_smoke = json.loads(
+        _docker(
+            "run",
+            "--rm",
+            "--entrypoint",
+            "python",
+            IMAGE,
+            "-c",
+            (
+                "import json; "
+                "from instant_ppt_worker.ppt_master_references import "
+                "executor_reference_manifest, spec_lock_contract_payload; "
+                "contract = spec_lock_contract_payload(); "
+                "manifest = executor_reference_manifest(''); "
+                "print(json.dumps({"
+                "'contractSchema': contract['schema'], "
+                "'referenceCount': len(manifest['references']), "
+                "'manifestSha256': manifest['manifestSha256']"
+                "}))"
+            ),
+        )
+    )
+    if reference_smoke["contractSchema"] != "instant-ppt.spec-lock-contract.v1":
+        raise AssertionError("PPT-Master Spec Lock contract smoke returned the wrong schema")
+    if reference_smoke["referenceCount"] < 5:
+        raise AssertionError("PPT-Master Executor reference manifest is incomplete")
     evidence = {
         "schemaVersion": 1,
         "verifiedAt": "2026-08-16T00:00:00Z",
@@ -74,6 +100,7 @@ def main() -> None:
         "runtimeIdentity": identity,
         "adapterHelp": "passed",
         "attributionGuard": "passed",
+        "pptMasterReferenceContract": reference_smoke,
         "forbiddenCredentialEnvCount": len(forbidden),
         "baseImages": [
             {
