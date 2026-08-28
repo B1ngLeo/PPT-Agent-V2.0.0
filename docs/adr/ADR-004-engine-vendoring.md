@@ -15,6 +15,12 @@ Pin `ppt-master` tag `v4.7.0` at commit `e8323bfaee249cffe1301ec40fca5875eb544d4
 
 `vendor/ppt-master.vendor.json` records provenance plus a portable canonical tree digest. `scripts/verify_vendor.py` checks the tree, protected files and upstream guard before Worker tests. A versioned `engine-adapter` CLI is the only supported product invocation boundary; other application packages cannot import upstream modules directly.
 
+ADR-013 further establishes this unchanged `v4.7.0` tree as the page-contract
+authority. Application Agents may read only an explicit reference allowlist with
+path/version/SHA-256 evidence and continue to invoke upstream behavior through the
+adapter or vendored CLI; they do not patch the vendor tree or maintain a parallel
+page-semantics specification.
+
 ## Verification
 
 `python scripts/verify_vendor.py`; G01 SBOM, lock, adapter contract and golden tests.

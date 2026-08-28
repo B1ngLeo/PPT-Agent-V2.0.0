@@ -12,8 +12,15 @@ from instant_ppt_worker.agentic_workflow import (
     _spec_lock,
 )
 from instant_ppt_worker.artifacts import sha256_file
-from instant_ppt_worker.design_spec_contract import validate_design_spec
+from instant_ppt_worker.design_spec_contract import (
+    PPT_MASTER_AUTHORITY_POLICY,
+    validate_design_spec,
+)
 from instant_ppt_worker.image_resources import empty_image_preparation
+from instant_ppt_worker.ppt_master_references import (
+    EXECUTOR_BASE_REFERENCES,
+    executor_reference_paths,
+)
 from instant_ppt_worker.presentation_agent_tools import (
     AGENT_TOOL_NAMES,
     PresentationAgentToolRegistry,
@@ -89,6 +96,114 @@ def _context(
 
 def _call_id(label: str) -> str:
     return deterministic_ulid(hashlib.sha256(label.encode()).hexdigest())
+
+
+def _upstream_context(
+    tmp_path: Path,
+    *,
+    stage: str = "executor",
+    allowed_tools: frozenset[str] | None = None,
+) -> PresentationToolContext:
+    legacy = _context(tmp_path, allowed_tools=allowed_tools)
+    request = legacy.request.model_copy(
+        update={
+            "authoring": legacy.request.authoring.model_copy(
+                update={"policy_version": PPT_MASTER_AUTHORITY_POLICY}
+            )
+        }
+    )
+    design_spec = (legacy.project / "design_spec.md").read_text(encoding="utf-8")
+    for page in request.outline:
+        design_spec = design_spec.replace(
+            f"#### Slide {page.order:02d} / {page.pnn} - {page.title}",
+            f"#### Slide {page.order:02d} - {page.title}",
+        )
+    (legacy.project / "design_spec.md").write_text(design_spec, encoding="utf-8")
+    return replace(legacy, request=request, stage=stage)
+
+
+def test_upstream_design_spec_uses_native_headings_without_pnn_or_exact_title(
+    tmp_path: Path,
+) -> None:
+    request = WorkflowRequestV2.model_validate(_payload())
+    _, plan = _build_deck(request, _fragments(request))
+    text = _design_spec(request, plan, empty_image_preparation(tmp_path / "project"))
+    for page in request.outline:
+        text = text.replace(
+            f"#### Slide {page.order:02d} / {page.pnn} - {page.title}",
+            f"#### Slide {page.order:02d} - Refined {page.order}",
+        )
+
+    assert validate_design_spec(
+        text, request.outline, upstream_authority=True
+    ) == []
+    assert " / P01 - " not in text
+
+
+def test_upstream_svg_boundary_allows_native_semantics_without_local_title_contract(
+    tmp_path: Path,
+) -> None:
+    context = _upstream_context(
+        tmp_path, allowed_tools=frozenset({"write_or_patch_slide_svg"})
+    )
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">'
+        '<defs><symbol id="glyph"><circle cx="5" cy="5" r="5"/>'
+        '</symbol></defs><use id="brand-glyph" href="#glyph" x="40" y="40"/>'
+        '<text id="headline" x="72" y="120" font-size="32">Refined page name</text>'
+        '<a id="source-link" href="https://example.com/source"><text x="72" y="180">'
+        "Source</text></a></svg>"
+    )
+
+    record = PresentationAgentToolRegistry(context).execute(
+        tool_call_id=_call_id("upstream-boundary"),
+        tool_name="write_or_patch_slide_svg",
+        arguments={"pnn": "P01", "mode": "direct-svg", "svg": svg},
+        input_sha256="a" * 64,
+    )
+
+    assert record["observation"]["pnn"] == "P01"
+    assert "P01" not in svg
+    assert 'data-pptx-role="title"' not in svg
+
+
+def test_ppt_master_reference_tool_is_allowlisted_complete_and_hash_bound(
+    tmp_path: Path,
+) -> None:
+    context = _upstream_context(
+        tmp_path, allowed_tools=frozenset({"read_ppt_master_reference"})
+    )
+    registry = PresentationAgentToolRegistry(context)
+
+    record = registry.execute(
+        tool_call_id=_call_id("read-upstream-reference"),
+        tool_name="read_ppt_master_reference",
+        arguments={"path": EXECUTOR_BASE_REFERENCES[0]},
+        input_sha256="b" * 64,
+    )
+
+    observation = record["observation"]
+    assert observation["path"] == EXECUTOR_BASE_REFERENCES[0]
+    assert observation["version"]["engine"] == "ppt-master@v4.7.0"
+    assert hashlib.sha256(observation["content"].encode()).hexdigest() == observation["sha256"]
+    with pytest.raises(ToolPolicyError, match="allowlist"):
+        registry.execute(
+            tool_call_id=_call_id("read-upstream-traversal"),
+            tool_name="read_ppt_master_reference",
+            arguments={"path": "../../.env"},
+            input_sha256="b" * 64,
+        )
+
+
+def test_structured_lock_triggers_upstream_master_layout_references() -> None:
+    paths = executor_reference_paths(
+        "## pptx_structure\n- mode: structured\n"
+        "- template_reuse_scope: layout\n- template_adherence: adaptive\n"
+    )
+
+    assert "references/executor-structured.md" in paths
+    assert "references/executor-structure.md" in paths
+    assert "references/pptx-structure-interface.md" in paths
 
 
 def _execution_chart(context: PresentationToolContext) -> dict[str, object]:

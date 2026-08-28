@@ -41,6 +41,54 @@ def test_nested_workflow_tools_use_a_stable_python_hash_seed() -> None:
     assert workflow_module._safe_environment()["PYTHONHASHSEED"] == "0"
 
 
+def test_ppt_master_authority_flow_authors_lock_reads_references_and_uses_native_roles(
+    tmp_path: Path,
+) -> None:
+    workflow = _payload()
+    workflow["authoring"]["policyVersion"] = (
+        "presentation-authoring@v3-ppt-master-authority"
+    )
+    workflow["versions"].update(
+        {
+            "workflow": "instant-ppt-default@v3.2.0",
+            "prompt": "default-agentic@v6-ppt-master-authority",
+        }
+    )
+    workflow["runtime"]["allowedTools"].extend(
+        ["read_spec_lock_contract", "read_ppt_master_reference"]
+    )
+    workflow["runtime"]["maxTokens"] = 2_000_000
+    workflow["runtime"]["previewIdleTimeoutSeconds"] = 1
+    project = tmp_path / "ppt-master-authority_ppt169_20260828"
+
+    workflow_module.run_default_workflow(
+        tmp_path,
+        project,
+        WorkflowRequestV2.model_validate(workflow),
+    )
+
+    design_spec = (project / "design_spec.md").read_text(encoding="utf-8")
+    assert "#### Slide 01 - " in design_spec
+    assert " / P01 - " not in design_spec
+    spec_lock_receipt = json.loads(
+        (project / "validation" / "receipts" / "spec-lock-gate2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert spec_lock_receipt["payload"]["authority"] == "ppt-master@v4.7.0"
+    assert spec_lock_receipt["payload"]["strategistTurnId"]
+    reference_receipt = json.loads(
+        (project / "agent" / "ppt-master-reference-receipt.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert len(reference_receipt["readReceipts"]) >= 5
+    assert all(value["sha256"] for value in reference_receipt["readReceipts"])
+    p02 = (project / "svg_output" / "slide_02.svg").read_text(encoding="utf-8")
+    assert 'data-pptx-page-role="content"' in p02
+    assert 'data-pptx-page-role="data"' not in p02
+
+
 def test_gate_failure_prefers_first_structured_blocking_finding(tmp_path: Path) -> None:
     report_path = tmp_path / "quality-report.json"
     report_path.write_text(

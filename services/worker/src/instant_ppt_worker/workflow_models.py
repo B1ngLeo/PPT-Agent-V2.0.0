@@ -284,6 +284,8 @@ class AgentRuntimePolicy(WorkflowContractModel):
             "approved-web",
             "read_approved_context",
             "read_design_spec_contract",
+            "read_spec_lock_contract",
+            "read_ppt_master_reference",
             "write_planning_artifact",
             "read_design_catalog",
             "write_or_patch_slide_svg",

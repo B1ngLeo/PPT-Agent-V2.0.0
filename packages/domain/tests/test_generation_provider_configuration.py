@@ -81,6 +81,7 @@ def test_agent_authoring_visual_review_is_disabled_by_default(monkeypatch) -> No
     policy = _authoring_policy()
 
     assert policy["mode"] == "agent-authoring"
+    assert policy["policyVersion"] == "presentation-authoring@v3-ppt-master-authority"
     assert policy["visualReview"] == {
         "required": False,
         "level": "off",

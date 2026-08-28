@@ -39,7 +39,11 @@ class DeterministicPresentationAgentProvider:
         phase_index, phase = _latest_phase(messages)
         observations = _observations(messages[phase_index + 1 :])
         decision = (
-            _strategist_decision(phase, observations)
+            (
+                _spec_lock_decision(phase, observations)
+                if phase["phaseId"] == "spec-lock"
+                else _strategist_decision(phase, observations)
+            )
             if phase["role"] == "strategist"
             else _executor_decision(phase, observations)
         )
@@ -180,7 +184,8 @@ def _strategist_decision(
             tool_name="read_design_spec_contract",
             reason="Read the complete PPT Master design-spec grammar before authoring.",
         )
-    if "read_design_catalog" not in tools:
+    allowed = set(phase["context"].get("supervisorToolContracts") or {})
+    if "read_design_catalog" in allowed and "read_design_catalog" not in tools:
         return _decision(
             "strategist",
             tool_name="read_design_catalog",
@@ -189,6 +194,14 @@ def _strategist_decision(
     if "write_planning_artifact" not in tools:
         context = phase["context"]
         outline = list(context["approvedOutline"])
+        design_contract = next(
+            value.get("observation", {})
+            for value in reversed(observations)
+            if value.get("toolName") == "read_design_spec_contract"
+        )
+        upstream_authority = str(design_contract.get("pageHeadingAuthority") or "").startswith(
+            "PPT Master native"
+        )
         lines = [
             "<!-- ppt-master-schema: design-spec/v1 -->",
             f"# {context['intent']['title']} - Design Spec",
@@ -337,7 +350,11 @@ def _strategist_decision(
         for page in outline:
             lines.extend(
                 [
-                    f"#### Slide {page['order']:02d} / {page['pnn']} - {page['title']}",
+                    (
+                        f"#### Slide {page['order']:02d} - {page['title']}"
+                        if upstream_authority
+                        else f"#### Slide {page['order']:02d} / {page['pnn']} - {page['title']}"
+                    ),
                     f"- **Audience move**: uncertain → {page['audienceQuestion']}",
                     "- **Layout**: one governing assertion with supporting evidence.",
                     f"- **Title**: {page['title']}",
@@ -371,6 +388,101 @@ def _strategist_decision(
         "strategist",
         reason="The approved context was transformed directly into the locked design direction.",
         termination_reason="strategist-plan-complete",
+    )
+
+
+def _spec_lock_decision(
+    phase: dict[str, Any], observations: list[dict[str, Any]]
+) -> dict[str, Any]:
+    observations = [value for value in observations if value.get("stage") == "spec-lock"]
+    tools = _tool_names(observations)
+    if "read_approved_context" not in tools:
+        return _decision(
+            "strategist",
+            tool_name="read_approved_context",
+            arguments={"pnn": "P01"},
+            reason="Read the confirmed Design Spec and exact approved execution context.",
+        )
+    if "read_spec_lock_contract" not in tools:
+        return _decision(
+            "strategist",
+            tool_name="read_spec_lock_contract",
+            reason="Read the complete pinned PPT Master spec-lock contract.",
+        )
+    if "write_planning_artifact" not in tools:
+        approved = next(
+            value["observation"]
+            for value in observations
+            if value.get("toolName") == "read_approved_context"
+        )
+        intent = approved["intent"]
+        roster = list(approved["roster"])
+        lines = [
+            "<!-- ppt-master-schema: spec-lock/v1 -->",
+            "# Execution Lock",
+            "",
+            "## canvas",
+            "- viewBox: 0 0 1280 720",
+            "- format: PPT 16:9",
+            "",
+            "## communication",
+            f"- primary_language: {intent['language']}",
+            f"- audience: {intent['audience']}",
+            f"- objective: {intent['objective']}; {intent['desiredOutcome']}",
+            f"- core_message: {intent['desiredOutcome']}",
+            "- consumption_mode: balanced",
+            "",
+            "## mode",
+            "- mode: briefing",
+            "",
+            "## visual_style",
+            "- visual_style: editorial",
+            "",
+            "## colors",
+            "- background: #F7F8FA",
+            "- primary: #17324D",
+            "- accent: #1677FF",
+            "- body_text: #1F2937",
+            "",
+            "## typography",
+            "- font_family: Microsoft YaHei, Arial, sans-serif",
+            "- title_family: Microsoft YaHei, Arial, sans-serif",
+            "- body_family: Microsoft YaHei, Arial, sans-serif",
+            "- body: 22",
+            "- title: 48",
+            "- subtitle: 32",
+            "- annotation: 16",
+            "",
+            "## icons",
+            "- library: none",
+            "- inventory: none",
+            "",
+            "## page_rhythm",
+            *[
+                f"- {page['pnn']}: "
+                + ("anchor" if page["role"] in {"cover", "ending", "data"} else "dense")
+                for page in roster
+            ],
+            "",
+            "## pptx_structure",
+            "- mode: flat",
+            "",
+            "## forbidden",
+            "- `mask`, `<style>`, `class`, external CSS, `<foreignObject>`, `textPath`, "
+            "`@font-face`, `<animate*>`, `<set>`, `<script>` / event attributes, `<iframe>`",
+            "- HTML named entities in text; write typography as raw Unicode and escape XML "
+            "reserved characters",
+        ]
+        return _decision(
+            "strategist",
+            tool_name="write_planning_artifact",
+            arguments={"filename": "spec_lock.md", "content": "\n".join(lines)},
+            reason="Project the confirmed Design Spec into one complete upstream lock.",
+        )
+    return _decision(
+        "strategist",
+        reason="The complete spec lock passed the original vendored validator.",
+        termination_reason="spec-lock-complete",
     )
 
 
@@ -408,7 +520,30 @@ def _executor_decision(phase: dict[str, Any], observations: list[dict[str, Any]]
             arguments={"pnn": pnn},
             reason="Read the exact page evidence, roster, Design Spec, and spec lock.",
         )
-    if pnn == "P01" and "read_design_catalog" not in tools:
+    allowed = set(context.get("supervisorToolContracts") or {})
+    if pnn == "P01" and "read_ppt_master_reference" in allowed:
+        observed_paths = {
+            str(reference.get("path") or "")
+            for value in observations
+            if value.get("toolName") == "read_ppt_master_reference"
+            for reference in (
+                value.get("observation", {}).get("references")
+                or [value.get("observation", {})]
+            )
+        }
+        required_paths = [
+            str(value["path"])
+            for value in (context.get("pptMasterReferences") or {}).get("references", [])
+        ]
+        missing_path = next((path for path in required_paths if path not in observed_paths), None)
+        if missing_path is not None:
+            return _decision(
+                "executor",
+                tool_name="read_ppt_master_reference",
+                arguments={"paths": required_paths},
+                reason="Read the complete hash-bound upstream Executor reference set once.",
+            )
+    if pnn == "P01" and "read_design_catalog" in allowed and "read_design_catalog" not in tools:
         return _decision(
             "executor",
             tool_name="read_design_catalog",
@@ -1039,10 +1174,28 @@ def _direct_svg(context: dict[str, Any], *, revision: int) -> str:
             ]
         raise ValueError(f"unsupported deterministic fixture element: {kind}")
 
-    page_role = esc(str(context["page"]["role"]).replace("_", "-"))
+    references = (context.get("pptMasterReferences") or {}).get("references", [])
+    upstream_authority = bool(references)
+    structured = any(
+        value.get("path") == "references/executor-structured.md" for value in references
+    )
+    page_role = esc(
+        {
+            "cover": "cover",
+            "section": "section",
+            "ending": "ending",
+        }.get(str(context["page"]["role"]), "content")
+        if upstream_authority
+        else str(context["page"]["role"]).replace("_", "-")
+    )
     lines = [
-        '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
-        f'viewBox="0 0 1280 720" data-pptx-page-role="{page_role}">',
+        (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
+            'viewBox="0 0 1280 720">'
+            if structured
+            else '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" '
+            f'viewBox="0 0 1280 720" data-pptx-page-role="{page_role}">'
+        ),
         '<rect id="page-background" x="0" y="0" width="1280" height="720" '
         'fill="#F8FAFC" data-pptx-role="background"/>',
         '<g id="page-content" data-pptx-bounds="0 0 1280 720">',

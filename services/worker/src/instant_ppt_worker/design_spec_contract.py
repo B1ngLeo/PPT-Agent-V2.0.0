@@ -21,9 +21,15 @@ DESIGN_SPEC_SCHEMA_PATH = VENDOR_ROOT / "templates" / "schemas" / "design_spec.s
 
 _SECTION_HEADING = re.compile(r"(?m)^##[ \t]+(?P<heading>[^\r\n]+?)[ \t]*$")
 _SUBHEADING = re.compile(r"(?m)^###[ \t]+(?P<heading>[^\r\n]+?)[ \t]*$")
-_SLIDE_HEADING = re.compile(
+PPT_MASTER_AUTHORITY_POLICY = "presentation-authoring@v3-ppt-master-authority"
+
+_LEGACY_SLIDE_HEADING = re.compile(
     r"(?m)^####[ \t]+Slide[ \t]+(?P<number>\d+)[ \t]*/[ \t]*"
     r"(?P<pnn>P\d{2,3})[ \t]+-[ \t]+(?P<title>[^\r\n]+?)[ \t]*$"
+)
+_UPSTREAM_SLIDE_HEADING = re.compile(
+    r"(?m)^####[ \t]+Slide[ \t]+(?P<number>\d+)[ \t]+-[ \t]+"
+    r"(?P<title>[^\r\n]+?)[ \t]*$"
 )
 
 
@@ -104,7 +110,9 @@ def _authoring_reference_projection() -> str:
     return "\n\n".join([*rules, *(block.strip() for block in blocks)])
 
 
-def design_spec_contract_payload(outline: Iterable[Any]) -> dict[str, Any]:
+def design_spec_contract_payload(
+    outline: Iterable[Any], *, upstream_authority: bool = False
+) -> dict[str, Any]:
     """Return the complete, supervisor-owned contract the Strategist must read."""
 
     schema = _schema()
@@ -116,7 +124,11 @@ def design_spec_contract_payload(outline: Iterable[Any]) -> dict[str, Any]:
                 "order": int(page.order),
                 "pnn": str(page.pnn),
                 "title": str(page.title),
-                "canonicalHeading": f"#### Slide {page.order:02d} / {page.pnn} - {page.title}",
+                "canonicalHeading": (
+                    f"#### Slide {page.order:02d} - {page.title}"
+                    if upstream_authority
+                    else f"#### Slide {page.order:02d} / {page.pnn} - {page.title}"
+                ),
             }
         )
     return {
@@ -134,7 +146,15 @@ def design_spec_contract_payload(outline: Iterable[Any]) -> dict[str, Any]:
         "canonicalSectionHeadings": list(_canonical_headings()),
         "approvedRoster": roster,
         "markdownSchema": schema["x-markdown"],
-        "authoringReference": _authoring_reference_projection(),
+        "authoringReference": (
+            reference if upstream_authority else _authoring_reference_projection()
+        ),
+        "pageHeadingAuthority": (
+            "PPT Master native `Slide NN - <page name>`; PNN and slideId remain outside "
+            "design_spec.md and page titles may be refined without changing page count/order"
+            if upstream_authority
+            else "legacy exact order/PNN/approved-title heading"
+        ),
     }
 
 
@@ -203,7 +223,9 @@ def _image_resource_rows(body: str) -> list[list[str]]:
     return []
 
 
-def validate_design_spec(text: str, outline: Iterable[Any]) -> list[dict[str, str]]:
+def validate_design_spec(
+    text: str, outline: Iterable[Any], *, upstream_authority: bool = False
+) -> list[dict[str, str]]:
     """Validate PPT Master grammar plus this application's approved roster."""
 
     errors: list[dict[str, str]] = []
@@ -405,23 +427,39 @@ def validate_design_spec(text: str, outline: Iterable[Any]) -> list[dict[str, st
     outline_body = (
         str(content_outline_section.get("body", "")) if content_outline_section else ""
     )
-    slide_matches = list(_SLIDE_HEADING.finditer(outline_body))
-    expected_roster = [(int(page.order), str(page.pnn), str(page.title)) for page in approved]
-    actual_roster = [
-        (int(match.group("number")), match.group("pnn"), match.group("title").strip())
-        for match in slide_matches
-    ]
+    slide_pattern = _UPSTREAM_SLIDE_HEADING if upstream_authority else _LEGACY_SLIDE_HEADING
+    slide_matches = list(slide_pattern.finditer(outline_body))
+    expected_roster: list[tuple[Any, ...]]
+    actual_roster: list[tuple[Any, ...]]
+    if upstream_authority:
+        expected_roster = [(int(page.order),) for page in approved]
+        actual_roster = [(int(match.group("number")),) for match in slide_matches]
+    else:
+        expected_roster = [
+            (int(page.order), str(page.pnn), str(page.title)) for page in approved
+        ]
+        actual_roster = [
+            (int(match.group("number")), match.group("pnn"), match.group("title").strip())
+            for match in slide_matches
+        ]
     if actual_roster != expected_roster:
         errors.append(
             _error(
                 "approved_roster_mismatch",
                 "content_outline",
-                "slide headings must match every approved order/PNN/title exactly",
+                (
+                    "slide headings must use the upstream Slide NN - <page name> format "
+                    "and preserve the approved page count/order"
+                    if upstream_authority
+                    else "slide headings must match every approved order/PNN/title exactly"
+                ),
             )
         )
     for index, page in enumerate(approved):
         match = slide_matches[index] if index < len(slide_matches) else None
-        if match is None or match.group("pnn") != str(page.pnn):
+        if match is None or (
+            not upstream_authority and match.group("pnn") != str(page.pnn)
+        ):
             continue
         body_start = match.end()
         body_end = (

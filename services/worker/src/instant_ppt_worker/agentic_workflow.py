@@ -20,6 +20,7 @@ from typing import Any
 from instant_ppt_worker.artifacts import artifact_ref, sha256_file
 from instant_ppt_worker.canonical import canonical_sha256
 from instant_ppt_worker.content_quality import evaluate_deck
+from instant_ppt_worker.design_spec_contract import PPT_MASTER_AUTHORITY_POLICY
 from instant_ppt_worker.errors import CONTENT_QA_FAILED, RENDER_FAILED, AdapterError
 from instant_ppt_worker.grounding_quality import build_evidence_map
 from instant_ppt_worker.image_resources import (
@@ -31,6 +32,7 @@ from instant_ppt_worker.image_resources import (
 from instant_ppt_worker.models import DeckPlan
 from instant_ppt_worker.package_qa import inspect_pptx, write_package_report
 from instant_ppt_worker.paths import ENGINE_SCRIPTS
+from instant_ppt_worker.ppt_master_references import executor_reference_manifest
 from instant_ppt_worker.presentation_agent_fixture_provider import (
     DeterministicPresentationAgentProvider,
 )
@@ -990,9 +992,17 @@ def _design_spec(
         ]
     )
     for item in plan["roster"]:
+        native_heading = (
+            request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
+            or request.authoring.mode == "deterministic-template"
+        )
         lines.extend(
             [
-                f"#### Slide {item['order']:02d} / {item['pnn']} - {item['title']}",
+                (
+                    f"#### Slide {item['order']:02d} - {item['title']}"
+                    if native_heading
+                    else f"#### Slide {item['order']:02d} / {item['pnn']} - {item['title']}"
+                ),
                 "",
                 f"- **Communication goal**: {item['audienceQuestion']}",
                 f"- **Audience move**: {item['audienceQuestion']}",
@@ -1068,6 +1078,11 @@ def _spec_lock(
     *,
     design_spec_sha256: str,
 ) -> str:
+    """Build the deterministic-template fallback lock.
+
+    Agent-authoring snapshots governed by PPT Master authority never call this
+    local fallback; their Strategist authors and validates the upstream lock.
+    """
     rows = [
         "<!-- ppt-master-schema: spec-lock/v1 -->",
         "# Execution Lock",
@@ -1691,19 +1706,21 @@ def _author_design_spec_with_agent(
     image_preparation: ImagePreparation,
     text_provider: TextProvider | None,
 ) -> str:
+    uses_upstream_authority = (
+        request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
+    )
+    strategist_tool_names = {
+        "read_approved_context",
+        "read_design_spec_contract",
+        "write_planning_artifact",
+        *(() if uses_upstream_authority else ("read_design_catalog",)),
+    }
     strategist_tools = PresentationAgentToolRegistry(
         PresentationToolContext(
             project=project,
             request=request,
             fragments=tuple(fragments),
-            allowed_tools=frozenset(
-                {
-                    "read_approved_context",
-                    "read_design_spec_contract",
-                    "read_design_catalog",
-                    "write_planning_artifact",
-                }
-            ),
+            allowed_tools=frozenset(strategist_tool_names),
             current_pnn="P01",
             stage="strategist",
             author_attempt=1,
@@ -1725,7 +1742,8 @@ def _author_design_spec_with_agent(
             goal=(
                 "Read the approved Intent, Outline, complete source corpus, template choice, and "
                 "production policy. Independently establish the narrative and visual language, "
-                "read the complete PPT Master design-spec contract, then directly author the "
+                "read the complete pinned PPT Master design-spec contract, then directly author "
+                "the upstream-native "
                 "canonical design_spec.md. Do not create a Page "
                 "Blueprint, page contract, support score, or other intermediate page schema."
             ),
@@ -1746,22 +1764,10 @@ def _author_design_spec_with_agent(
                     "policyVersion": request.authoring.visual_review_policy_version,
                     "maxRounds": request.authoring.resolved_visual_review_max_rounds(),
                 },
-                "requiredTools": [
-                    "read_approved_context",
-                    "read_design_spec_contract",
-                    "read_design_catalog",
-                    "write_planning_artifact",
-                ],
+                "requiredTools": sorted(strategist_tool_names),
             },
             tools=strategist_tools,
-            required_tools=frozenset(
-                {
-                    "read_approved_context",
-                    "read_design_spec_contract",
-                    "read_design_catalog",
-                    "write_planning_artifact",
-                }
-            ),
+            required_tools=frozenset(strategist_tool_names),
         )
     except AgentRuntimeError as error:
         raise AdapterError(
@@ -1770,15 +1776,10 @@ def _author_design_spec_with_agent(
     finally:
         _close_owned_text_provider(strategist_provider, strategist_provider_owned)
     _require_agent_phase(strategist_result, "Strategist")
-    strategist_tool_names = {
+    completed_tool_names = {
         record["toolName"] for record in _agent_tool_records(project, strategist_result)
     }
-    if not {
-        "read_approved_context",
-        "read_design_spec_contract",
-        "read_design_catalog",
-        "write_planning_artifact",
-    }.issubset(strategist_tool_names):
+    if not strategist_tool_names.issubset(completed_tool_names):
         raise AdapterError(
             RENDER_FAILED,
             "Main Presentation Agent Strategist completed without its required tool loop",
@@ -1787,6 +1788,84 @@ def _author_design_spec_with_agent(
     if not design_spec_path.is_file():
         raise AdapterError(RENDER_FAILED, "Strategist completed without design_spec.md")
     return strategist_result.turn_ids[-1]
+
+
+def _author_spec_lock_with_agent(
+    project: Path,
+    request: WorkflowRequestV2,
+    fragments: list[dict[str, Any]],
+    image_preparation: ImagePreparation,
+    text_provider: TextProvider | None,
+) -> str:
+    tools = PresentationAgentToolRegistry(
+        PresentationToolContext(
+            project=project,
+            request=request,
+            fragments=tuple(fragments),
+            allowed_tools=frozenset(
+                {
+                    "read_approved_context",
+                    "read_spec_lock_contract",
+                    "write_planning_artifact",
+                }
+            ),
+            current_pnn="P01",
+            stage="spec-lock",
+            author_attempt=1,
+            prepared_images=image_preparation.resources,
+        )
+    )
+    provider, provider_owned = _presentation_text_provider(request, text_provider)
+    try:
+        agent = MainPresentationAgent(project=project, request=request, provider=provider)
+        result = agent.run_phase(
+            phase_id="spec-lock",
+            role="strategist",
+            goal=(
+                "Read the complete pinned PPT Master spec_lock reference and machine schema. "
+                "Project the confirmed design_spec.md and current resource/template context into "
+                "one complete spec_lock.md, then submit it to the original vendored validator. "
+                "Do not introduce page-local layout, title, footer, or font rules."
+            ),
+            locked_context={
+                "schema": "instant-ppt.spec-lock-strategist-context.v1",
+                "workflowRunId": request.workflow_run_id,
+                "designSpecSha256": sha256_file(project / "design_spec.md"),
+                "approvedPageCount": len(request.outline),
+                "template": request.template.model_dump(by_alias=True, mode="json"),
+                "preparedImages": list(image_preparation.resources),
+                "requiredTools": [
+                    "read_approved_context",
+                    "read_spec_lock_contract",
+                    "write_planning_artifact",
+                ],
+            },
+            tools=tools,
+            required_tools=frozenset(
+                {
+                    "read_approved_context",
+                    "read_spec_lock_contract",
+                    "write_planning_artifact",
+                }
+            ),
+        )
+    except AgentRuntimeError as error:
+        raise AdapterError(
+            RENDER_FAILED, f"Main Presentation Agent Spec Lock phase failed: {error}"
+        ) from error
+    finally:
+        _close_owned_text_provider(provider, provider_owned)
+    _require_agent_phase(result, "Spec Lock")
+    names = {record["toolName"] for record in _agent_tool_records(project, result)}
+    if not {
+        "read_approved_context",
+        "read_spec_lock_contract",
+        "write_planning_artifact",
+    }.issubset(names):
+        raise AdapterError(RENDER_FAILED, "Spec Lock phase lacks required tool evidence")
+    if not (project / "spec_lock.md").is_file():
+        raise AdapterError(RENDER_FAILED, "Strategist completed without spec_lock.md")
+    return result.turn_ids[-1]
 
 
 def _agent_tool_records(project: Path, result: AgentPhaseResult) -> list[dict[str, Any]]:
@@ -2138,6 +2217,7 @@ def _executor_locked_context(
     completed_pages: list[dict[str, Any]],
     image_href: str | None,
     image_crop: str,
+    ppt_master_references: dict[str, Any] | None = None,
     author_attempt: int = 1,
 ) -> dict[str, Any]:
     page = request.outline[index]
@@ -2154,13 +2234,23 @@ def _executor_locked_context(
         "imageCrop": image_crop,
         "authorAttempt": author_attempt,
         "requiredTools": (
-            ["read_approved_context", "write_or_patch_slide_svg", "run_svg_gate"]
+            [
+                "read_approved_context",
+                *(
+                    ["read_ppt_master_reference"]
+                    if ppt_master_references is not None
+                    and not ppt_master_references.get("readReceipts")
+                    else []
+                ),
+                "write_or_patch_slide_svg",
+                "run_svg_gate",
+            ]
             if page.pnn == "P01"
             else ["read_approved_context", "write_or_patch_slide_svg"]
         ),
         "directSvgContract": {
             "canvas": "exact viewBox 0 0 1280 720",
-            "ids": "unique stable kebab-case IDs",
+            "ids": "unique IDs; stable IDs are mandatory only for repair targets",
             "chart": (
                 "native metadata values must be explicitly present in approved source facts"
                 if request.production.native_charts
@@ -2169,6 +2259,7 @@ def _executor_locked_context(
             "image": "only the supplied project-local ../images href",
             "safety": "no scripts, foreignObject, external hrefs, or event handlers",
         },
+        "pptMasterReferences": ppt_master_references,
     }
 
 
@@ -2275,6 +2366,14 @@ def _author_slides_with_agent(
 ) -> list[dict[str, Any]]:
     svg_dir = project / "svg_output"
     completed_pages: list[dict[str, Any]] = []
+    uses_upstream_authority = (
+        request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
+    )
+    reference_evidence: dict[str, Any] | None = None
+    if uses_upstream_authority:
+        reference_evidence = executor_reference_manifest(
+            (project / "spec_lock.md").read_text(encoding="utf-8")
+        )
     executor_provider, executor_provider_owned = _presentation_text_provider(request, text_provider)
     try:
         executor_agent = MainPresentationAgent(
@@ -2298,11 +2397,12 @@ def _author_slides_with_agent(
             resource = image_resource_by_slide.get(slide.slide_id)
             requested_crop = str(resource.get("cropPolicy", "cover") if resource else "cover")
             image_crop = "contain" if requested_crop in {"contain", "fit"} else "cover"
-            allowed_tools = {
-                "read_approved_context",
-                "read_design_catalog",
-                "write_or_patch_slide_svg",
-            }
+            allowed_tools = {"read_approved_context", "write_or_patch_slide_svg"}
+            if uses_upstream_authority:
+                if pnn == "P01":
+                    allowed_tools.add("read_ppt_master_reference")
+            else:
+                allowed_tools.add("read_design_catalog")
             callbacks = ToolCallbacks()
             if pnn == "P01":
                 allowed_tools.add("run_svg_gate")
@@ -2374,6 +2474,7 @@ def _author_slides_with_agent(
                     completed_pages=completed_pages,
                     image_href=image_href,
                     image_crop=image_crop,
+                    ppt_master_references=reference_evidence,
                 ),
                 tools=tools,
                 required_tools=frozenset(
@@ -2381,10 +2482,54 @@ def _author_slides_with_agent(
                         "read_approved_context",
                         "write_or_patch_slide_svg",
                         *(["run_svg_gate"] if pnn == "P01" else []),
+                        *(
+                            ["read_ppt_master_reference"]
+                            if uses_upstream_authority and pnn == "P01"
+                            else []
+                        ),
                     }
                 ),
             )
             _require_agent_phase(result, phase_id)
+            if uses_upstream_authority and pnn == "P01":
+                records = _agent_tool_records(project, result)
+                reads = {
+                    str(reference.get("path") or ""): (record, reference)
+                    for record in records
+                    if record.get("toolName") == "read_ppt_master_reference"
+                    for reference in (
+                        record.get("observation", {}).get("references")
+                        or [record.get("observation", {})]
+                    )
+                }
+                expected = {
+                    str(value["path"]): str(value["sha256"])
+                    for value in (reference_evidence or {}).get("references", [])
+                }
+                if set(reads) != set(expected) or any(
+                    str(reads[path][1].get("sha256") or "") != sha256
+                    for path, sha256 in expected.items()
+                ):
+                    raise AdapterError(
+                        RENDER_FAILED,
+                        "Executor P01 did not read every hash-bound PPT Master reference",
+                    )
+                reference_evidence = {
+                    **(reference_evidence or {}),
+                    "readReceipts": [
+                        {
+                            "path": path,
+                            "sha256": expected[path],
+                            "toolCallId": str(reads[path][0]["toolCallId"]),
+                            "outputSha256": str(reads[path][0]["outputSha256"]),
+                        }
+                        for path in sorted(expected)
+                    ],
+                }
+                _write_json(
+                    project / "agent" / "ppt-master-reference-receipt.json",
+                    reference_evidence,
+                )
             author_receipt = _agent_page_author_receipt(
                 project,
                 result,
@@ -2989,15 +3134,28 @@ def run_default_workflow(
             "paths": [project / "design_spec.md", project / "workflow-result.json"],
         }
 
-    _write_text(
-        project / "spec_lock.md",
-        _spec_lock(
+    spec_lock_turn_id: str | None = None
+    if (
+        request.authoring.mode == "agent-authoring"
+        and request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
+    ):
+        spec_lock_turn_id = _author_spec_lock_with_agent(
+            project,
             request,
-            plan,
+            fragments,
             image_preparation,
-            design_spec_sha256=design_spec_sha256,
-        ),
-    )
+            text_provider,
+        )
+    else:
+        _write_text(
+            project / "spec_lock.md",
+            _spec_lock(
+                request,
+                plan,
+                image_preparation,
+                design_spec_sha256=design_spec_sha256,
+            ),
+        )
     spec_lock_sha256 = sha256_file(project / "spec_lock.md")
     validate_stage_entry(
         "spec_lock_gate2",
@@ -3023,7 +3181,16 @@ def run_default_workflow(
         kind="spec-lock-gate2",
         status="passed",
         subject_sha256=spec_lock_sha256,
-        payload={"readBack": True, "derivedFromDesignSpecSha256": design_spec_sha256},
+        payload={
+            "readBack": True,
+            "derivedFromDesignSpecSha256": design_spec_sha256,
+            "strategistTurnId": spec_lock_turn_id,
+            "authority": (
+                "ppt-master@v4.7.0"
+                if request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
+                else "legacy-local-fallback"
+            ),
+        },
     )
     checkpoint_id, _ = _checkpoint(
         project,

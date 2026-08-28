@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -20,15 +22,25 @@ from pydantic import ValidationError
 
 from instant_ppt_worker.canonical import canonical_sha256
 from instant_ppt_worker.design_spec_contract import (
+    PPT_MASTER_AUTHORITY_POLICY,
     design_spec_contract_payload,
     rejected_design_spec_sha256,
     validate_design_spec,
+)
+from instant_ppt_worker.paths import VENDOR_ROOT
+from instant_ppt_worker.ppt_master_references import (
+    DESIGN_SPEC_REFERENCE,
+    DESIGN_SPEC_SCHEMA,
+    read_ppt_master_reference,
+    spec_lock_contract_payload,
 )
 from instant_ppt_worker.workflow_models import ApprovedOutlineSlide, WorkflowRequestV2
 
 AGENT_TOOL_NAMES = (
     "read_approved_context",
     "read_design_spec_contract",
+    "read_spec_lock_contract",
+    "read_ppt_master_reference",
     "write_planning_artifact",
     "read_design_catalog",
     "write_or_patch_slide_svg",
@@ -53,32 +65,15 @@ WRITE_STALE_TARGETS = (
 
 _TOOL_ID = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 _PNN = re.compile(r"^P\d{2,3}$")
-_NODE_ID = re.compile(r"^[a-z][a-z0-9-]{1,79}$")
-_SVG_ALLOWED_TAGS = frozenset(
-    {
-        "svg",
-        "g",
-        "defs",
-        "linearGradient",
-        "radialGradient",
-        "stop",
-        "clipPath",
-        "rect",
-        "circle",
-        "ellipse",
-        "line",
-        "path",
-        "polyline",
-        "polygon",
-        "text",
-        "tspan",
-        "image",
-        "metadata",
-    }
-)
 _SVG_FORBIDDEN_TEXT = re.compile(
-    r"(?:<!DOCTYPE|<!ENTITY|<script\b|<foreignObject\b|javascript:)",
+    r"(?:<!DOCTYPE|<!ENTITY|javascript:|vbscript:|data:text/html)",
     re.IGNORECASE,
+)
+_SVG_FORBIDDEN_TAGS = frozenset(
+    {"script", "foreignobject", "iframe", "object", "embed", "style"}
+)
+_LOCAL_FRAGMENT_PAINT = re.compile(
+    r"url\((?:['\"])?#[A-Za-z_][A-Za-z0-9_.:-]*(?:['\"])?\)"
 )
 
 
@@ -216,26 +211,28 @@ def validate_direct_svg(svg: str, project: Path) -> None:
     ids: list[str] = []
     for element in root.iter():
         tag = element.tag.rsplit("}", 1)[-1]
-        if tag not in _SVG_ALLOWED_TAGS:
-            raise ToolPolicyError(f"direct SVG tag is not allowed: {tag}")
+        if tag.casefold() in _SVG_FORBIDDEN_TAGS or tag.casefold().startswith("animate"):
+            raise ToolPolicyError(f"direct SVG contains forbidden active-content tag: {tag}")
         element_id = element.attrib.get("id")
         if element_id:
-            if _NODE_ID.fullmatch(element_id) is None:
-                raise ToolPolicyError("direct SVG IDs must be stable kebab-case values")
             ids.append(element_id)
         for name, value in element.attrib.items():
             local_name = name.rsplit("}", 1)[-1].casefold()
             if local_name.startswith("on"):
                 raise ToolPolicyError("direct SVG event handlers are forbidden")
-            if "url(" in value.casefold() and not re.fullmatch(
-                r"url\(#[a-z][a-z0-9-]{1,79}\)", value
+            if (
+                "url(" in value.casefold()
+                and _LOCAL_FRAGMENT_PAINT.fullmatch(value.strip()) is None
             ):
                 raise ToolPolicyError("direct SVG only allows local fragment paint references")
-            if local_name in {"href", "xlink:href"}:
+            if local_name == "href":
                 if tag == "image":
                     _validate_image_href(project, value)
+                elif tag == "a":
+                    if not (value.startswith("#") or re.fullmatch(r"https://[^\s]+", value)):
+                        raise ToolPolicyError("direct SVG hyperlinks must be local or HTTPS")
                 elif not value.startswith("#"):
-                    raise ToolPolicyError("direct SVG href must be a local fragment")
+                    raise ToolPolicyError("direct SVG resource href must be a local fragment")
     if len(ids) != len(set(ids)):
         raise ToolPolicyError("direct SVG IDs must be unique")
 
@@ -420,7 +417,47 @@ class PresentationAgentToolRegistry:
         if name == "read_design_spec_contract":
             if arguments:
                 raise ToolPolicyError("read_design_spec_contract accepts no arguments")
+            if self._uses_upstream_authority:
+                return {
+                    **design_spec_contract_payload(
+                        self.context.request.outline, upstream_authority=True
+                    ),
+                    "reference": read_ppt_master_reference(DESIGN_SPEC_REFERENCE),
+                    "machineSchema": read_ppt_master_reference(DESIGN_SPEC_SCHEMA),
+                }
             return design_spec_contract_payload(self.context.request.outline)
+        if name == "read_spec_lock_contract":
+            if arguments:
+                raise ToolPolicyError("read_spec_lock_contract accepts no arguments")
+            if not self._uses_upstream_authority:
+                raise ToolPolicyError("spec-lock authoring is unavailable to legacy snapshots")
+            return spec_lock_contract_payload()
+        if name == "read_ppt_master_reference":
+            if set(arguments) == {"path"}:
+                paths = [str(arguments["path"])]
+            elif set(arguments) == {"paths"} and isinstance(arguments["paths"], list):
+                paths = [str(value) for value in arguments["paths"]]
+                if not paths or len(paths) > 16 or len(paths) != len(set(paths)):
+                    raise ToolPolicyError(
+                        "read_ppt_master_reference paths must contain 1-16 unique entries"
+                    )
+            else:
+                raise ToolPolicyError(
+                    "read_ppt_master_reference requires only path or paths"
+                )
+            try:
+                references = [read_ppt_master_reference(path) for path in paths]
+            except ValueError as error:
+                raise ToolPolicyError(str(error)) from error
+            if len(references) == 1:
+                return references[0]
+            return {
+                "schema": "instant-ppt.ppt-master-reference-batch.v1",
+                "references": references,
+                "subjectSha256": canonical_sha256(
+                    [{"path": value["path"], "sha256": value["sha256"]} for value in references]
+                ),
+            }
         if name == "read_design_catalog":
             if arguments:
                 raise ToolPolicyError("read_design_catalog accepts no arguments")
@@ -442,6 +479,10 @@ class PresentationAgentToolRegistry:
         if name == "complete_or_pause_stage":
             return self._complete_or_pause(arguments)
         raise ToolPolicyError(f"unimplemented Agent tool: {name}")
+
+    @property
+    def _uses_upstream_authority(self) -> bool:
+        return self.context.request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
 
     def _read_approved_context(self, arguments: dict[str, Any]) -> dict[str, Any]:
         requested_pnn = str(arguments.get("pnn") or self.context.current_pnn)
@@ -505,12 +546,23 @@ class PresentationAgentToolRegistry:
 
     def _write_planning_artifact(self, arguments: dict[str, Any]) -> dict[str, Any]:
         filename = str(arguments.get("filename") or "")
-        if filename != "design_spec.md":
-            raise ToolPolicyError("Strategist may write only the canonical design_spec.md")
+        allowed = {"design_spec.md"}
+        if self._uses_upstream_authority and self.context.stage == "spec-lock":
+            allowed = {"spec_lock.md"}
+        if filename not in allowed:
+            raise ToolPolicyError(
+                f"Strategist may write only the canonical {next(iter(allowed))} in this phase"
+            )
         content = str(arguments.get("content") or "").strip()
         if len(content.encode("utf-8")) > 500_000:
-            raise ToolPolicyError("design_spec.md exceeds the bounded planning payload")
-        errors = validate_design_spec(content, self.context.request.outline)
+            raise ToolPolicyError(f"{filename} exceeds the bounded planning payload")
+        if filename == "spec_lock.md":
+            return self._write_and_validate_spec_lock(content)
+        errors = validate_design_spec(
+            content,
+            self.context.request.outline,
+            upstream_authority=self._uses_upstream_authority,
+        )
         if errors:
             rejected_sha256 = rejected_design_spec_sha256(content)
             rejected_path = (
@@ -548,6 +600,60 @@ class PresentationAgentToolRegistry:
             "beforeSha256": before,
             "subjectSha256": _sha_file(path),
             "sizeBytes": path.stat().st_size,
+        }
+
+    def _write_and_validate_spec_lock(self, content: str) -> dict[str, Any]:
+        path = self.project / "spec_lock.md"
+        before_content = path.read_bytes() if path.is_file() else None
+        before = _sha_file(path) if path.is_file() else None
+        path.write_text(content.rstrip() + "\n", encoding="utf-8")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(VENDOR_ROOT / "scripts" / "project_manager.py"),
+                "validate",
+                str(self.project),
+            ],
+            cwd=self.project,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+        )
+        if result.returncode != 0:
+            rejected_sha256 = _sha_file(path)
+            rejected_path = (
+                self.project / "agent" / "rejected-spec-lock" / f"{rejected_sha256}.md"
+            )
+            rejected_path.parent.mkdir(parents=True, exist_ok=True)
+            if not rejected_path.exists():
+                rejected_path.write_bytes(path.read_bytes())
+            if before_content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(before_content)
+            diagnostic = (result.stdout + "\n" + result.stderr).strip()[-4000:]
+            raise ToolPolicyError(
+                "spec_lock.md failed the pinned PPT Master project validator",
+                code="SPEC_LOCK_SCHEMA_INVALID",
+                details={
+                    "rejectedSha256": rejected_sha256,
+                    "validator": "vendor/ppt-master/scripts/project_manager.py validate",
+                    "diagnostic": diagnostic,
+                    "repairInstruction": (
+                        "Read read_spec_lock_contract again and resubmit the complete lock."
+                    ),
+                },
+            )
+        return {
+            "kind": "spec-lock",
+            "key": path.relative_to(self.project).as_posix(),
+            "beforeSha256": before,
+            "subjectSha256": _sha_file(path),
+            "sizeBytes": path.stat().st_size,
+            "validator": "vendor/ppt-master/scripts/project_manager.py validate",
         }
 
     def _write_slide(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -623,6 +729,8 @@ class PresentationAgentToolRegistry:
 
     def _validate_direct_svg_against_page(self, svg: str, page: Any) -> None:
         root = DefusedET.fromstring(svg)
+        if self._uses_upstream_authority:
+            return
         page_role = root.attrib.get("data-pptx-page-role")
         if not page_role:
             raise ToolPolicyError("direct SVG root requires data-pptx-page-role")

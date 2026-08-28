@@ -7,6 +7,7 @@ from typing import Any
 
 from instant_ppt_domain.models import GenerationJobSlide, GenerationSnapshot
 
+from instant_ppt_worker.design_spec_contract import PPT_MASTER_AUTHORITY_POLICY
 from instant_ppt_worker.presentation_agent_tools import AGENT_TOOL_NAMES
 from instant_ppt_worker.settings import native_chart_generation_enabled
 from instant_ppt_worker.workflow_models import WorkflowRequestV2
@@ -58,6 +59,10 @@ def build_default_workflow_request(
         payload.get("providerConfiguration", {}).get("planning", {}).get("model") or "kimi-k3"
     )
     frozen_authoring = dict(payload.get("authoringPolicy") or {})
+    authoring_policy_version = str(
+        frozen_authoring.get("policyVersion") or "presentation-authoring@v1"
+    )
+    uses_ppt_master_authority = authoring_policy_version == PPT_MASTER_AUTHORITY_POLICY
     authoring_mode = str(frozen_authoring.get("mode") or "deterministic-template")
     if authoring_mode not in {"agent-authoring", "deterministic-template"}:
         raise ValueError("generation snapshot has an invalid authoring mode")
@@ -105,10 +110,23 @@ def build_default_workflow_request(
         "start-live-preview",
     ]
     if is_agent_authoring:
+        active_agent_tools = (
+            AGENT_TOOL_NAMES
+            if uses_ppt_master_authority
+            else tuple(
+                tool
+                for tool in AGENT_TOOL_NAMES
+                if tool not in {"read_spec_lock_contract", "read_ppt_master_reference"}
+            )
+        )
         allowed_tools.extend(
             [
                 "provider-text",
-                *(tool for tool in AGENT_TOOL_NAMES if native_charts or tool != "run_chart_gate"),
+                *(
+                    tool
+                    for tool in active_agent_tools
+                    if native_charts or tool != "run_chart_gate"
+                ),
             ]
         )
     if "ai" in list(image_policy.get("usage") or []):
@@ -122,9 +140,7 @@ def build_default_workflow_request(
             "profile": ("default-agentic" if is_agent_authoring else "deterministic-template"),
             "authoring": {
                 "mode": authoring_mode,
-                "policyVersion": str(
-                    frozen_authoring.get("policyVersion") or "presentation-authoring@v1"
-                ),
+                "policyVersion": authoring_policy_version,
                 "fallbackReason": fallback_reason,
                 "disclosure": (
                     "agent-authored-editable-draft"
@@ -145,17 +161,25 @@ def build_default_workflow_request(
             },
             "versions": {
                 "workflow": (
-                    "instant-ppt-default@v3.1.0"
-                    if is_opt_in_visual_review_v3
-                    else "instant-ppt-default@v3.0.0"
+                    "instant-ppt-default@v3.2.0"
+                    if uses_ppt_master_authority
+                    else (
+                        "instant-ppt-default@v3.1.0"
+                        if is_opt_in_visual_review_v3
+                        else "instant-ppt-default@v3.0.0"
+                    )
                 ),
                 "engine": "ppt-master@v4.7.0",
                 "model": model,
                 "prompt": (
                     (
-                        "default-agentic@v5-visual-review-opt-in"
-                        if is_opt_in_visual_review_v3
-                        else "default-agentic@v4-strategist-direct-svg"
+                        "default-agentic@v6-ppt-master-authority"
+                        if uses_ppt_master_authority
+                        else (
+                            "default-agentic@v5-visual-review-opt-in"
+                            if is_opt_in_visual_review_v3
+                            else "default-agentic@v4-strategist-direct-svg"
+                        )
                     )
                     if is_agent_authoring
                     else "deterministic-template@v1"

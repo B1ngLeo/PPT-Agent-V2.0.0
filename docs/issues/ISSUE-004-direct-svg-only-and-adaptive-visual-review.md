@@ -4,7 +4,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | In Progress：Direct SVG-only、无 Blueprint 工作流及视觉复核 opt-in v3 核心链路已实现；2026-08-28 决策收敛为仅 `off`/`standard` 且确定性检查只披露警告，真实 Qwen 对照回归待完成 |
+| 状态 | In Progress：Direct SVG-only、无 Blueprint 工作流、视觉复核 opt-in v3 及 PPT-Master 页面契约对齐代码已实现；真实 Qwen A/B、structured 模板和 PowerPoint/WPS 发布回归待完成 |
 | 严重级别 | Sev-2 |
 | 优先级 | P1 |
 | 首次确认日期 | 2026-08-26 |
@@ -44,6 +44,17 @@
 15. 视觉修复不得重写页面内容、品牌决策或布局结构；每次修复必须有页级备份、受限差异和前置哈希，修复引入新 Hard 时只回滚受影响页面。
 16. v3 不设置视觉 `needs_human` 决策点。超出自动修复权限、修复后仍存在或无法稳定判断的问题统一写入 `passed-with-warnings`；修复引入确定性退化时自动按页回退，并继续导出供用户检查。
 17. 历史 `visual-review-adaptive@v1/v2` 快照继续按冻结轮数和旧决策解释；新 v3 策略不得改写历史证据、恢复语义或已发布 Revision。
+
+### 2026-08-28 PPT-Master 页面契约对齐修订决策（已批准，待实施）
+
+18. Vendored PPT-Master 是页面策划、跨页锁定、SVG 语义和质量检查的唯一权威；本项目不得复制、改写或另行发明标题、页码、角色、字号等页面语义合同。
+19. “照搬 PPT-Master”指复用其 Default Generate 阶段边界和原始参考文件，不编辑 `vendor/ppt-master`，也不重新引入 Page Blueprint、Approved Page Contract 或其他等价逐页中间工件。
+20. `design_spec.md §IX` 是唯一页面计划，`spec_lock.md` 是唯一跨页执行锁，完整 SVG 是唯一可见页面真源。Approved Sources/Outline 是 Strategist 的输入；稳定 PNN、`slideId`、租户和存储键仅属于应用持久化上下文。
+21. 新 Agent 任务先对齐项目已固定的 PPT-Master `v4.7.0`；升级到其他版本必须作为独立 vendor 升级执行，不与页面契约迁移混合。
+22. Executor 必须通过只读、路径白名单和哈希留痕读取 vendored Executor/shared/semantic 参考，不再依赖 Runtime 对上游规范的局部转述。
+23. 本项目的 SVG 写入前校验只负责机械可解析性、当前页写入权限、资源路径和主动内容安全。标题标记、标题精确文本、统一字号下限、固定页码位置和页面布局不得作为应用自定义的写入前阻断条件。
+24. PPT-Master 的原始检查报告必须完整保留；v3 编排层可将确定性质量问题映射为 `passed-with-warnings`。只要 SVG/PPTX 能机械生成并安全写入，就允许发布；畸形 XML、危险引用、文件缺失或实际编译/写入失败仍属于任务失败。
+25. 视觉复核继续只提供 `off` 和 `standard`，默认 `off`；该产品策略独立于 PPT-Master 页面契约，不得通过视觉复核重新建立页面合同或人工接受基线步骤。
 
 ## 目标链路
 
@@ -224,6 +235,59 @@ outline_approved
 - `services/worker/src/instant_ppt_worker/presentation_agent_tools.py`、`presentation_agent_runtime.py`：受限视觉差异合同和 Don't-touch 强制校验。
 - `apps/web/src/app/workspace-app.tsx` 及对应 API/Snapshot 合同：`off`/`standard` 用户开关、基线预览和警告展示。
 
+### E. PPT-Master 页面契约对齐实施计划
+
+#### E1. 冻结契约边界与版本
+
+- 新增页面契约权威 ADR，并在 ADR-012、ADR-004 和本 Issue 中交叉引用：Approved Sources/Outline 提供输入，`design_spec.md §IX` 提供页面计划，`spec_lock.md` 提供跨页约束，SVG 提供最终页面表达。
+- 新契约版本只应用于新 Snapshot；旧任务继续按其冻结合同恢复和解释。迁移期间不得改写历史设计方案、SVG、检查报告或已发布 Revision。
+- 第一阶段以仓库固定的 PPT-Master `v4.7.0` 为准；对 `v4.8.0` 或后续版本的升级另建提交和回归矩阵，避免把 vendor 差异与应用契约迁移混在一起。
+- 本项目只保留租户/鉴权、对象存储、任务取消、幂等、PNN/`slideId` 映射、来源隔离、Token/耗时审计、主动内容安全和产品审核策略，不再拥有页面设计语义。
+
+#### E2. 原样采用 Design Spec 与 Spec Lock
+
+- `design_spec_contract.py` 恢复 PPT-Master 原生页标题格式 `Slide NN - <page name>`，移除本项目增加的 `Slide NN / PNN - <title>` 语法。
+- PNN、`slideId` 和数据库身份继续由批准页面 roster 按页序映射，不写入 `design_spec.md`，也不形成新的页面合同文件。
+- 保持页数和页序稳定，但取消“§IX 标题必须与 Outline 标题逐字相同”的本地限制。用户明确提供的标题按原文保留；模型生成的策划标题允许 Strategist 按 PPT-Master 规则在不改变主题与事实的前提下优化。
+- Agent 路径不再由硬编码 `_spec_lock()` 注入统一 48/64px 标题下限或固定 flat 设置。新增 `read_spec_lock_contract`，由 Strategist 根据已确认 Design Spec 和 vendored `spec_lock_reference.md` 生成 `spec_lock.md`，随后调用 vendored `project_manager.py validate`。
+- 确定性模板回退如继续保留 `_design_spec()` / `_spec_lock()`，必须明确限定在 template fallback，并保证输出符合未修改的上游模板，不能反向成为 Agent 页面的契约权威。
+
+#### E3. 向 Executor 暴露原始 PPT-Master 规范
+
+- 在 `presentation_agent_tools.py`、`presentation_agent_runtime.py` 和 `workflow_models.py` 增加只读 `read_ppt_master_reference` 工具；仅允许访问 vendored 白名单文件并记录路径、版本和 SHA-256。
+- Executor P01 必须完整读取 `executor-base.md`、`shared-standards-core.md`、`semantic-svg.md`、`svg-effects.md`、`native-shape-authoring.md` 及 Spec Lock 触发的专项参考；后续页面复用哈希绑定的阅读收据，恢复、上下文失效或参考哈希变化时重新读取。
+- 删除 Runtime 中“唯一标题 ID、固定字号、精确 Outline 标题、右下角 PNN”等本地摘要，避免摘要与 vendored 规范形成两个真源。
+- 更新 Agent required-tools 证据：Strategist 必须读取 Design Spec/Spec Lock 原始合同，Executor 必须读取执行参考、批准上下文和设计目录，缺少阅读收据时不得进入对应创作阶段。
+
+#### E4. 收窄 Direct SVG 写入前校验
+
+- 将 `_validate_direct_svg_against_page()` 收窄为应用边界校验：当前 PNN/目标路径、payload 大小、XML 可解析、禁止脚本/事件处理器/`foreignObject`、禁止未批准外部引用、限制项目内图片和跨租户路径。
+- 删除以下本地阻断：必须存在 `id="title"` 或 `data-pptx-role="title"`、标题与 Outline 逐字相等、封面 64px/普通页 48px 下限、固定右下角 PNN、Outline 业务角色必须等于根 `data-pptx-page-role`。
+- 应用安全层采用主动内容 deny-list 和 URI/路径限制，不再用一个比 PPT-Master 更窄的展示标签 allow-list 代替上游兼容性检查；`use`、`symbol`、链接等能力按上游参考和转换器实际支持处理。
+- 来源、数字、图表和表格事实在 SVG 完成后由其所属内容/图表质量门检查并披露，不在写文件之前以标题或词面相似度触发工具失败。
+
+#### E5. 对齐 flat / structured SVG 语义
+
+- flat 页面根角色只使用 PPT-Master 定义的 `cover`、`toc`、`section`、`content`、`ending`；本项目的 `data`、`comparison`、`timeline`、`risk_action` 只作为策划/UI 元数据，不直接写入根页面角色。
+- `data-pptx-role` 只使用上游结构角色；普通标题不再标记为 `data-pptx-role="title"`，标题是否存在和如何布局由页面设计与上游检查器判断。
+- structured 模式按 `spec_lock.pptx_structure.mode` 省略根 page-role，改用 Master/Layout、layer atoms 和 slots。先完成当前默认 flat 迁移，再启用 structured/template 回归。
+- 不直接修改 vendored `semantic_markers.py` 或其他 PPT-Master 文件；应用通过 adapter 调用原始 checker/converter，并保留原始输出。
+
+#### E6. 对齐生成节奏、检查与发布语义
+
+- 采用 PPT-Master Default Generate 节奏：P01 写入后运行首屏门禁并一次性返回完整问题集；P01 完成后连续生成 P02…Pn；整稿完成后运行 final SVG、内容、图表和 package 检查。
+- 删除因单一标题契约触发的逐页写入失败/反复工具修复循环。确定性问题可执行一次有边界的集中修复；修复预算耗尽但仍可机械导出时，写入 `passed-with-warnings` 并继续交付。
+- 原始 PPT-Master 报告不可篡改或丢弃。应用的 advisory export bridge 必须绑定当前 final 报告和 SVG roster 哈希，明确区分“上游检查发现问题”和“产品允许用户下载检查”。
+- `off` 模式不调用视觉 Reviewer；`standard` 仅执行一次审核和最多一次页级原子修复。修复退化时自动按页恢复复核前基线，不新增人工接受基线、手动恢复或额外导出分支。
+
+#### E7. 测试、真实回归与迁移
+
+- 单元测试覆盖：上游原生 Design Spec 标题、Spec Lock 生成与校验、标题无需固定 ID、非固定标题字号/页码、canonical page-role、flat/structured 分支和主动内容安全阻断。
+- 集成测试覆盖：确定性质量错误可警告导出；畸形 XML、危险外链和实际 PPTX 编译/写入失败必须失败；页数、页序、PNN/`slideId`、数据库映射和恢复检查点保持稳定。
+- 使用官方 Qwen API、同一模型、同一 GPT-5.6 DOCX 和提示词执行迁移前后 A/B。计时从文档上传开始，分别记录总耗时、各阶段耗时、输入/输出/总 Token、工具失败/修复次数、检查警告、6 个 SVG、6 页 PPTX 和 PowerPoint/WPS 打开结果。
+- 回归必须证明此前 P05 的标题契约错误不再出现，生成能够继续进入 P06 和导出阶段；不得通过放宽主动内容安全或伪造通过报告达成。
+- 建议按以下提交拆分：`docs: define ppt-master as page contract authority`、`refactor(worker): adopt upstream design spec and spec lock`、`refactor(worker): remove local svg page semantics`、`feat(worker): expose vendored executor references`、`test(worker): add contract and real-qwen regression coverage`。
+
 ## 不变量
 
 - 不改变批准 Outline、稳定 slide ID、来源事实、图表值或图片授权；稳定 ID 只承担持久化身份，不构成页面合同。
@@ -269,6 +333,16 @@ outline_approved
 - [ ] 使用 Qwen 官方 API、`qwen3.7-plus`、指定 GPT-5.6 DOCX 和提示词“根据GPT5.6的官方公告做一份6页的PPT”完成默认模式真实网站回归，生成 6 个 SVG 和 6 页 PPTX，并记录总耗时。
 - [ ] 对同一输入启用标准视觉复核完成对照回归，保存基线/复核逐页截图、修改/回滚证据、视觉耗时和最终 PPTX；复核或确定性检查结果不得阻止已成功生成的 PPTX 下载。
 
+### PPT-Master 页面契约对齐新增验收标准
+
+- [x] `design_spec.md` 使用未修改的 PPT-Master §IX 页面格式；PNN/`slideId` 只存在于应用 roster、持久化与恢复上下文中。
+- [x] Agent 路径的 `spec_lock.md` 由 Strategist 依据 vendored reference 生成并通过原始 validator，不再由本地硬编码 48/64px 规则主导。
+- [x] Executor 的必读证据包含 vendored 执行/共享/语义参考及 SHA-256；Runtime 不再维护标题、页码、字号和页面角色的第二份摘要合同。
+- [x] Direct SVG 写入前校验不要求标题固定 ID、精确 Outline 标题、统一字号下限或右下角 PNN，同时继续拒绝畸形 XML、主动内容、危险引用和跨租户路径。
+- [ ] flat 根角色和 structured Master/Layout 语义均通过原始 PPT-Master checker；普通标题不使用未定义的 `data-pptx-role="title"`。
+- [x] 原始质量报告完整保留；确定性问题在机械导出成功时形成 `passed-with-warnings`，实际编译、文件写入或安全失败仍使任务失败。
+- [ ] 官方 Qwen 六页真实回归从文档上传开始记录时间与 Token；P05 不再因标题契约失败，任务完成 P06、PPTX 导出和 PowerPoint/WPS 打开验证。
+
 ## 发布策略
 
 1. 先部署能读取旧策略、但新快照写入 v2 Direct SVG/adaptive 策略的兼容版本。
@@ -299,3 +373,7 @@ outline_approved
 2026-08-27 自动化验证：Worker `209/209`、Domain/API `50/50`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过。2026-08-28 的语义收敛移除了“接受复核前基线并导出”恢复动作需求；真实 Qwen 网站对照回归仍待执行，因此 opt-in v3 仍不得宣称完整发布。
 
 2026-08-28 已按产品决策完成 v3 收敛：新任务只接受 `off`/`standard`，默认 `off`；标准模式仅一次 Reviewer 调用和最多一次受限修复，不再产生视觉 `needs_human`。未修复视觉 finding 及 final SVG、内容、postflight、package QA 的确定性检查问题均写入 `passed-with-warnings`/报告，只要 PPTX 已实际生成就继续发布；修复退化自动按页恢复基线。底层导出器新增显式警告覆盖，但只接受当前、final、哈希匹配的质量报告，缺失、损坏、过期或不可验证报告仍拒绝导出。验证结果为已跟踪 Worker `210/210`、Domain/API `51/51`、Ruff、Contracts `27 schemas / 39 endpoints / 171 fixtures`、Web ESLint/TypeScript/Next production build 全部通过；真实 Qwen A/B 网站回归仍待执行。
+
+2026-08-28 已完成 PPT-Master 页面契约对齐代码：新 Snapshot 冻结 `presentation-authoring@v3-ppt-master-authority`，默认工作流升级为 `instant-ppt-default@v3.2.0`。Strategist 使用 vendored 原生 Design Spec 格式并在同一 Agent 会话中生成 `spec_lock.md`，写入前调用未修改的 `project_manager.py validate`；Executor 按锁定分支读取 PPT-Master 原始参考并保存版本、路径和 SHA-256 回执。Direct SVG 写入前只保留 XML、主动内容、引用边界、画布及稳定 ID 等机械/安全检查，标题措辞、字号、页码和页面角色语义交还上游 checker；旧策略快照继续按历史合同解释。
+
+自动化验证覆盖 Worker、Domain 与 API 全量测试、PPT-Master authority 端到端、Ruff 和 Python Schema 生成一致性。当前 Windows 工作区的 pnpm junction 无法读取已安装包，供应商树校验也因非受保护文件树摘要与清单不一致而未完成；受保护的上游文件哈希均匹配。真实 Qwen A/B、structured 模板原始 checker 以及 PowerPoint/WPS 打开验证仍作为发布证据保持开放，不将其误记为本地自动化通过。

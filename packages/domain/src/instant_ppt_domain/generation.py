@@ -165,7 +165,7 @@ def _authoring_policy(
     return {
         "schemaVersion": 1,
         "mode": mode,
-        "policyVersion": "presentation-authoring@v2-direct-svg",
+        "policyVersion": "presentation-authoring@v3-ppt-master-authority",
         "fallbackReason": None,
         "visualReview": {
             "required": visual_review_required,

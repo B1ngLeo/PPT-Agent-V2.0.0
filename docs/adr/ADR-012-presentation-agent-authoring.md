@@ -1,7 +1,7 @@
 # ADR-012: Main Presentation Agent authoring and explicit template fallback
 
 - Status: accepted
-- Date: 2026-08-23; amended by ISSUE-004 on 2026-08-26 and 2026-08-27
+- Date: 2026-08-23; amended by ISSUE-004 on 2026-08-26, 2026-08-27 and 2026-08-28
 - Decision owners: Product and Engineering
 
 ## Context
@@ -18,6 +18,13 @@ The historical `default-agentic` label described an orchestration profile, but i
 6. Canary safety failures involving security, tenant isolation, grounding, cancellation/recovery, compatibility, or publication consistency require admission rollback to `deterministic-template`. A visual preference regression alone enters human review and never rewrites an approved revision.
 7. ISSUE-004 makes validated Direct SVG the sole page authoring representation. New runs neither generate nor consume Scene Graph artifacts; historical published evidence remains immutable and old frozen requests retain their recorded review limit.
 8. ISSUE-004 workflow v3 removes Page Blueprint and all equivalent page contracts. The Strategist directly reads the approved Intent, Outline, complete source boundary, template/image/review policy and authors `design_spec.md`. A recorded `strategist-design-and-lock` authorization and hash-bound `design-confirmation` receipt are mandatory before `spec_lock.md` and Executor; absent confirmation, the run stops at `awaiting_design_confirmation` with no page SVG.
+9. ADR-013 makes pinned PPT Master `v4.7.0` the sole page-contract authority for
+   new `presentation-authoring@v3-ppt-master-authority` snapshots. Strategist
+   authors the native Design Spec and Spec Lock from the complete vendored
+   references; Executor P01 records hash-bound reads of the complete required
+   upstream references. Local title markers, fixed title sizes, exact Outline-title
+   matching, footer placement, and application-specific root roles are removed from
+   the new write-time gate. Legacy frozen snapshots retain their recorded behavior.
 
 ## Consequences
 
