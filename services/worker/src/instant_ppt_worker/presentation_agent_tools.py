@@ -75,6 +75,14 @@ _SVG_FORBIDDEN_TAGS = frozenset(
 _LOCAL_FRAGMENT_PAINT = re.compile(
     r"url\((?:['\"])?#[A-Za-z_][A-Za-z0-9_.:-]*(?:['\"])?\)"
 )
+_SPEC_LOCK_CANVAS_VIEWBOX = re.compile(
+    r"^[ \t]*-[ \t]+viewBox:[ \t]*(.*?)[ \t]*$",
+    re.MULTILINE,
+)
+_PLAIN_VIEWBOX = re.compile(
+    r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)"
+    r"(?:[ \t]+[+-]?(?:\d+(?:\.\d*)?|\.\d+)){3}"
+)
 
 
 class ToolPolicyError(ValueError):
@@ -90,6 +98,21 @@ class ToolPolicyError(ValueError):
         super().__init__(message)
         self.code = code
         self.details = details or {}
+
+
+def _spec_lock_canvas_viewbox_error(content: str) -> str | None:
+    """Reject Markdown-decorated viewBox values before the lock becomes immutable."""
+
+    matches = _SPEC_LOCK_CANVAS_VIEWBOX.findall(content)
+    if len(matches) != 1:
+        return None
+    value = matches[0].strip()
+    if _PLAIN_VIEWBOX.fullmatch(value) is None:
+        return (
+            "spec_lock.md canvas.viewBox must contain exactly four plain SVG numbers "
+            "without quotes, backticks, or other Markdown decoration"
+        )
+    return None
 
 
 @dataclass(frozen=True)
@@ -622,7 +645,8 @@ class PresentationAgentToolRegistry:
             timeout=120,
             check=False,
         )
-        if result.returncode != 0:
+        viewbox_error = _spec_lock_canvas_viewbox_error(content)
+        if result.returncode != 0 or viewbox_error is not None:
             rejected_sha256 = _sha_file(path)
             rejected_path = (
                 self.project / "agent" / "rejected-spec-lock" / f"{rejected_sha256}.md"
@@ -634,7 +658,10 @@ class PresentationAgentToolRegistry:
                 path.unlink(missing_ok=True)
             else:
                 path.write_bytes(before_content)
-            diagnostic = (result.stdout + "\n" + result.stderr).strip()[-4000:]
+            diagnostic_parts = [(result.stdout + "\n" + result.stderr).strip()]
+            if viewbox_error is not None:
+                diagnostic_parts.append(viewbox_error)
+            diagnostic = "\n".join(part for part in diagnostic_parts if part)[-4000:]
             raise ToolPolicyError(
                 "spec_lock.md failed the pinned PPT Master project validator",
                 code="SPEC_LOCK_SCHEMA_INVALID",
@@ -643,7 +670,9 @@ class PresentationAgentToolRegistry:
                     "validator": "vendor/ppt-master/scripts/project_manager.py validate",
                     "diagnostic": diagnostic,
                     "repairInstruction": (
-                        "Read read_spec_lock_contract again and resubmit the complete lock."
+                        "Read read_spec_lock_contract again and resubmit the complete lock. "
+                        "Write canvas.viewBox as four plain space-separated SVG numbers, "
+                        "without quotes or Markdown backticks."
                     ),
                 },
             )

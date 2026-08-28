@@ -390,6 +390,39 @@ def test_design_spec_policy_denial_preserves_rejected_content_and_structured_err
     assert "## V. 布局原则" in rejected[0].read_text(encoding="utf-8")
 
 
+def test_spec_lock_rejects_markdown_decorated_canvas_viewbox_and_restores_lock(
+    tmp_path: Path,
+) -> None:
+    context = _upstream_context(
+        tmp_path,
+        stage="spec-lock",
+        allowed_tools=frozenset({"write_planning_artifact"}),
+    )
+    path = context.project / "spec_lock.md"
+    valid = path.read_text(encoding="utf-8")
+    invalid = valid.replace(
+        "- viewBox: 0 0 1280 720",
+        "- viewBox: `0 0 1280 720`",
+        1,
+    )
+    assert invalid != valid
+
+    with pytest.raises(ToolPolicyError) as raised:
+        PresentationAgentToolRegistry(context).execute(
+            tool_call_id=_call_id("invalid-spec-lock-viewbox"),
+            tool_name="write_planning_artifact",
+            arguments={"filename": "spec_lock.md", "content": invalid},
+            input_sha256="f" * 64,
+        )
+
+    assert raised.value.code == "SPEC_LOCK_SCHEMA_INVALID"
+    assert "four plain SVG numbers" in raised.value.details["diagnostic"]
+    assert path.read_text(encoding="utf-8") == valid
+    rejected = list((context.project / "agent" / "rejected-spec-lock").glob("*.md"))
+    assert len(rejected) == 1
+    assert "- viewBox: `0 0 1280 720`" in rejected[0].read_text(encoding="utf-8")
+
+
 def test_design_spec_ai_resource_requires_ai_image_strategy(tmp_path: Path) -> None:
     context = _context(tmp_path)
     valid = (context.project / "design_spec.md").read_text(encoding="utf-8")
