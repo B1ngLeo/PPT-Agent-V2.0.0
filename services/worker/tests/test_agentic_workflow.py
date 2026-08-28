@@ -1102,7 +1102,7 @@ class _V3VisualRepairFixtureProvider(_VisualRepairFixtureProvider):
                     "message": "P01 title overlaps a key element and is clipped.",
                     "region": "P01 page title",
                     "suggestedAction": "Move the title one pixel without changing copy.",
-                    "targetElementIds": ["page-title"],
+                    "targetElementIds": ["title"],
                 }
             )
         rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -1504,7 +1504,7 @@ def test_v3_visual_review_is_opt_in_atomic_and_bounded(
     assert receipt["status"] in {"passed", "passed-with-warnings"}
     assert (project / "agent" / "visual-reviews" / "baseline-svg" / "slide_01.svg").is_file()
     assert repair_call["observation"]["visualRepair"]["targetElementIds"] == [
-        "page-title"
+        "title"
     ]
     assert {
         change["attribute"]

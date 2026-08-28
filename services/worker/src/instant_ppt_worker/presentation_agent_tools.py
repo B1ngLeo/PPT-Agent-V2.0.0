@@ -641,9 +641,7 @@ class PresentationAgentToolRegistry:
             element
             for element in text_elements
             if (
-                (title_id := str(element.attrib.get("id") or "")) == "title"
-                or title_id.startswith("title-")
-                or title_id.endswith("-title")
+                str(element.attrib.get("id") or "") == "title"
                 or element.attrib.get("data-pptx-role") == "title"
             )
         ]

@@ -48,7 +48,7 @@ def _svg(font_size: int, suffix: str) -> str:
         'viewBox="0 0 1280 720" data-pptx-page-role="cover">'
         '<rect id="agent-background" x="0" y="0" width="1280" height="720" '
         'fill="#F8FAFC"/>'
-        f'<text id="page-title" data-test-revision="{suffix}" x="72" y="120" '
+        f'<text id="title" data-test-revision="{suffix}" x="72" y="120" '
         f'font-size="64" '
         'fill="#0F172A">私有模型公告解读</text>'
         '<text id="page-number" x="1208" y="680" text-anchor="end">P01</text>'

@@ -427,31 +427,49 @@ def test_direct_svg_mode_provider_spelling_variants_are_canonicalized(
     assert record["observation"]["authoringMode"] == "validated-direct-svg"
 
 
-@pytest.mark.parametrize("title_id", ["title-p01", "p01-title"])
-def test_stable_title_id_prefix_and_suffix_variants_are_accepted(
-    tmp_path: Path,
-    title_id: str,
-) -> None:
+def test_explicit_page_title_ignores_component_title_like_ids(tmp_path: Path) -> None:
     context = _context(tmp_path)
     svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" '
         'data-pptx-page-role="cover">'
-        f'<text id="{title_id}" x="72" y="100" font-size="64">'
+        f'<text id="title" x="72" y="100" font-size="64">'
         f"{context.request.outline[0].title}</text>"
-        f'<text id="body-copy" x="72" y="220" font-size="28">'
-        f"围绕“{context.request.outline[0].title}”展开解读</text>"
+        '<text id="title-sub" x="72" y="180" font-size="28">Executive summary</text>'
+        '<text id="avail-title" x="72" y="240" font-size="22">Global availability</text>'
         '<text id="page-number" x="1208" y="680" text-anchor="end">P01</text>'
         "</svg>"
     )
 
     record = PresentationAgentToolRegistry(context).execute(
-        tool_call_id=_call_id(title_id),
+        tool_call_id=_call_id("component-title-like-ids"),
         tool_name="write_or_patch_slide_svg",
         arguments={"pnn": "P01", "mode": "direct-svg", "svg": svg},
         input_sha256="5" * 64,
     )
 
     assert record["status"] == "succeeded"
+
+
+def test_direct_svg_rejects_multiple_explicit_page_title_markers(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" '
+        'data-pptx-page-role="cover">'
+        f'<text id="title" x="72" y="100" font-size="64">'
+        f"{context.request.outline[0].title}</text>"
+        '<text id="subtitle" data-pptx-role="title" x="72" y="180" font-size="64">'
+        'Duplicate title marker</text>'
+        '<text id="page-number" x="1208" y="680" text-anchor="end">P01</text>'
+        "</svg>"
+    )
+
+    with pytest.raises(ToolPolicyError, match="exactly one stable title text element"):
+        PresentationAgentToolRegistry(context).execute(
+            tool_call_id=_call_id("multiple-explicit-title-markers"),
+            tool_name="write_or_patch_slide_svg",
+            arguments={"pnn": "P01", "mode": "direct-svg", "svg": svg},
+            input_sha256="4" * 64,
+        )
 
 
 def test_visual_review_allows_direct_svg_authoring(tmp_path: Path) -> None:

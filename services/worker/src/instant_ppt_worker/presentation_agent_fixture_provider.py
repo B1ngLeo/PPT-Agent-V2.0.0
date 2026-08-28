@@ -691,7 +691,7 @@ def _fixture_layout(context: dict[str, Any], *, revision: int) -> list[dict[str,
             color="#2563EB",
         ),
         _text_node(
-            "page-title",
+            "title",
             title,
             x=72,
             y=76,
