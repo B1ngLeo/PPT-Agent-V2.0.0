@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, ConfigDict
 
-DEFAULT_QWEN_MODEL = "qwen3.7-plus"
-SUPPORTED_QWEN_MODELS = frozenset({DEFAULT_QWEN_MODEL, "qwen3.8-max"})
+DEFAULT_QWEN_MODEL = "qwen3.8-flash"
+QWEN38_MODELS = frozenset({"qwen3.8-max", DEFAULT_QWEN_MODEL})
+SUPPORTED_QWEN_MODELS = frozenset({"qwen3.7-plus", *QWEN38_MODELS})
 _TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
@@ -74,7 +75,7 @@ class QwenProviderSettings:
     model: str = DEFAULT_QWEN_MODEL
     reasoning_effort: str | None = "medium"
     enable_thinking: bool = True
-    preserve_thinking: bool = True
+    preserve_thinking: bool = False
     timeout_seconds: float = 600.0
     transport_max_retries: int = 4
     retry_backoff_seconds: float = 2.0
@@ -92,7 +93,7 @@ class QwenProviderSettings:
             reasoning_effort=os.getenv("QWEN_REASONING_EFFORT", "medium").strip(),
             enable_thinking=os.getenv("QWEN_ENABLE_THINKING", "true").strip().lower()
             in {"1", "true", "yes", "on"},
-            preserve_thinking=os.getenv("QWEN_PRESERVE_THINKING", "true").strip().lower()
+            preserve_thinking=os.getenv("QWEN_PRESERVE_THINKING", "false").strip().lower()
             in {"1", "true", "yes", "on"},
             timeout_seconds=float(os.getenv("QWEN_TIMEOUT_SECONDS", "600")),
             transport_max_retries=int(os.getenv("QWEN_TRANSPORT_MAX_RETRIES", "4")),

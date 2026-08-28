@@ -43,10 +43,10 @@ def test_provider_settings_use_expected_defaults_without_exposing_keys(
     assert kimi.timeout_seconds == 600
     assert kimi.transport_max_retries == 4
     assert kimi.retry_backoff_seconds == 2
-    assert qwen.model == "qwen3.7-plus"
+    assert qwen.model == "qwen3.8-flash"
     assert qwen.reasoning_effort == "medium"
     assert qwen.enable_thinking is True
-    assert qwen.preserve_thinking is True
+    assert qwen.preserve_thinking is False
     assert qwen.streaming is True
     assert image.backend == "openai"
     assert image.model == "gpt-image-2"
@@ -57,10 +57,23 @@ def test_provider_settings_use_expected_defaults_without_exposing_keys(
     assert "openai-secret" not in repr(image)
 
 
-@pytest.mark.parametrize("model", ["qwen3.7-plus", "qwen3.8-max"])
+@pytest.mark.parametrize("model", ["qwen3.7-plus", "qwen3.8-max", "qwen3.8-flash"])
 def test_qwen_provider_accepts_supported_models(model: str) -> None:
     provider = QwenProvider(QwenProviderSettings(api_key="test-qwen-key", model=model))
     provider.close()
+
+
+@pytest.mark.parametrize("model", ["qwen3.8-max", "qwen3.8-flash"])
+def test_qwen38_models_disable_preserved_thinking_by_default(model: str) -> None:
+    settings = QwenProviderSettings(api_key="test-qwen-key", model=model)
+    assert settings.preserve_thinking is False
+
+    provider = QwenProvider(settings)
+    try:
+        assert provider.preserve_thinking_history is False
+        assert provider._request_defaults["preserve_thinking"] is False
+    finally:
+        provider.close()
 
 
 def test_qwen_provider_streams_multimodal_json_and_preserves_reasoning_content() -> None:
@@ -100,6 +113,8 @@ def test_qwen_provider_streams_multimodal_json_and_preserves_reasoning_content()
         QwenProviderSettings(
             api_key="test-qwen-key",
             base_url="https://gateway.example/v1",
+            model="qwen3.7-plus",
+            preserve_thinking=True,
             retry_backoff_seconds=0,
         ),
         transport=httpx.MockTransport(handler),
@@ -139,15 +154,17 @@ def test_qwen_provider_streams_multimodal_json_and_preserves_reasoning_content()
     assert completion.finish_reason == "stop"
 
 
+@pytest.mark.parametrize("model", ["qwen3.8-max", "qwen3.8-flash"])
 @pytest.mark.parametrize("reasoning_effort", ["none", "minimal", "high", "max"])
 def test_qwen_provider_rejects_unsupported_reasoning_effort(
+    model: str,
     reasoning_effort: str,
 ) -> None:
     with pytest.raises(ProviderConfigurationError, match="QWEN_REASONING_EFFORT"):
         QwenProvider(
             QwenProviderSettings(
                 api_key="test-qwen-key",
-                model="qwen3.8-max",
+                model=model,
                 reasoning_effort=reasoning_effort,
             )
         )
@@ -209,7 +226,7 @@ def test_qwen_provider_retries_empty_stream_response() -> None:
         return httpx.Response(
             200,
             json={
-                "model": "qwen3.8-max",
+                "model": "qwen3.8-flash",
                 "choices": [{"message": {"content": '{"ok":true}'}}],
                 "usage": {"prompt_tokens": 3, "completion_tokens": 4},
             },
@@ -230,6 +247,10 @@ def test_qwen_provider_retries_empty_stream_response() -> None:
         provider.close()
 
     assert attempts == 2
+    assert observed_payloads[0]["model"] == "qwen3.8-flash"
+    assert observed_payloads[0]["reasoning_effort"] == "medium"
+    assert observed_payloads[0]["enable_thinking"] is True
+    assert observed_payloads[0]["preserve_thinking"] is False
     assert observed_payloads[0]["stream"] is True
     assert "stream" not in observed_payloads[1]
     assert "stream_options" not in observed_payloads[1]
@@ -301,12 +322,13 @@ def test_visual_review_qwen_factory_disables_thinking_for_strict_json(
         provider.close()  # type: ignore[attr-defined]
 
 
-def test_qwen38_nonthinking_mode_requires_reasoning_effort_none() -> None:
+@pytest.mark.parametrize("model", ["qwen3.8-max", "qwen3.8-flash"])
+def test_qwen38_nonthinking_mode_requires_reasoning_effort_none(model: str) -> None:
     with pytest.raises(ProviderConfigurationError, match="must be low, medium"):
         QwenProvider(
             QwenProviderSettings(
                 api_key="test-qwen-key",
-                model="qwen3.8-max",
+                model=model,
                 enable_thinking=False,
                 preserve_thinking=False,
                 reasoning_effort="medium",

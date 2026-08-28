@@ -64,15 +64,19 @@ def test_generation_snapshot_freezes_qwen_transport(monkeypatch) -> None:
     }
 
 
-def test_generation_snapshot_defaults_to_qwen37_plus(monkeypatch) -> None:
+def test_generation_snapshot_defaults_to_qwen38_flash_without_preserved_thinking(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("PLANNING_BACKEND", "qwen")
     monkeypatch.setenv("TEXT_PROVIDER", "qwen")
     monkeypatch.delenv("QWEN_MODEL", raising=False)
+    monkeypatch.delenv("QWEN_PRESERVE_THINKING", raising=False)
 
     planning = _provider_configuration()["planning"]
 
     assert planning["provider"] == "qwen"
-    assert planning["model"] == "qwen3.7-plus"
+    assert planning["model"] == "qwen3.8-flash"
+    assert planning["preserveThinking"] is False
 
 
 def test_agent_authoring_visual_review_is_disabled_by_default(monkeypatch) -> None:
@@ -87,8 +91,8 @@ def test_agent_authoring_visual_review_is_disabled_by_default(monkeypatch) -> No
         "level": "off",
         "policyVersion": "visual-review-opt-in@v3",
         "maxRounds": 0,
-        "authoringModel": "qwen3.7-plus",
-        "visualReviewModel": "qwen3.7-plus",
+        "authoringModel": "qwen3.8-flash",
+        "visualReviewModel": "qwen3.8-flash",
     }
 
 
@@ -105,8 +109,8 @@ def test_user_can_opt_into_standard_visual_review_without_disabling_agent_author
         "level": "standard",
         "policyVersion": "visual-review-opt-in@v3",
         "maxRounds": 1,
-        "authoringModel": "qwen3.7-plus",
-        "visualReviewModel": "qwen3.7-plus",
+        "authoringModel": "qwen3.8-flash",
+        "visualReviewModel": "qwen3.8-flash",
     }
 
 
@@ -117,7 +121,7 @@ def test_user_can_freeze_a_distinct_standard_review_model(monkeypatch) -> None:
     policy = _authoring_policy("standard")
 
     assert policy["visualReview"]["maxRounds"] == 1
-    assert policy["visualReview"]["authoringModel"] == "qwen3.7-plus"
+    assert policy["visualReview"]["authoringModel"] == "qwen3.8-flash"
     assert policy["visualReview"]["visualReviewModel"] == "qwen3.8-max"
 
 

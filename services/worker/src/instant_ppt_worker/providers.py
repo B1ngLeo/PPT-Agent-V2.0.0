@@ -16,6 +16,7 @@ from typing import Any, Protocol, TypeVar
 import httpx
 
 from instant_ppt_worker.settings import (
+    QWEN38_MODELS,
     SUPPORTED_QWEN_MODELS,
     KimiProviderSettings,
     OpenAIImageSettings,
@@ -495,14 +496,16 @@ class QwenProvider(OpenAICompatibleTextProvider):
             supported = ", ".join(sorted(SUPPORTED_QWEN_MODELS))
             raise ProviderConfigurationError(f"QWEN_MODEL must be one of: {supported}")
         reasoning_effort: str | None = None
-        if settings.model == "qwen3.8-max":
+        if settings.model in QWEN38_MODELS:
             allowed_reasoning_efforts = (
-                {"low", "medium", "xhigh"} if settings.enable_thinking else {"none"}
+                {"low", "medium", "xhigh"}
+                if settings.enable_thinking
+                else {None, "none"}
             )
             if settings.reasoning_effort not in allowed_reasoning_efforts:
                 raise ProviderConfigurationError(
                     "QWEN_REASONING_EFFORT must be low, medium, or xhigh when thinking "
-                    "is enabled, and none when thinking is disabled"
+                    "is enabled, and omitted or none when thinking is disabled"
                 )
             reasoning_effort = settings.reasoning_effort
         if not settings.enable_thinking and settings.preserve_thinking:
@@ -518,7 +521,7 @@ class QwenProvider(OpenAICompatibleTextProvider):
             base_url=settings.base_url,
             model=settings.model,
             # qwen3.7-plus controls thinking with enable_thinking. DashScope only
-            # documents reasoning_effort for qwen3.8-max and rejects it on 3.7.
+            # documents reasoning_effort for Qwen3.8 models and rejects it on 3.7.
             reasoning_effort=reasoning_effort,
             timeout_seconds=settings.timeout_seconds,
             transport_max_retries=settings.transport_max_retries,

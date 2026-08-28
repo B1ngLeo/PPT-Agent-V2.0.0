@@ -21,3 +21,9 @@ docs/evidence/**/tmp/
 .tmp/
 tests/golden/*/generated/
 tests/security-fixtures/generated/
+.codex-tmp/
+node_modules.broken-*/
+apps/web/node_modules.broken-*/
+exports/
+projects/
+tests/输出PPT记录/

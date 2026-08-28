@@ -10,9 +10,10 @@ import tempfile
 import time
 import zipfile
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from instant_ppt_domain.artifacts import ArtifactUnavailable, tenant_object_key
 from instant_ppt_domain.effective_spec import persist_initial_effective_revision
@@ -84,6 +85,8 @@ class DefaultWorkflowInterrupted(RuntimeError):
 _RECOVERY_MANIFEST_MAX_BYTES = 4 * 1024 * 1024
 _RECOVERY_BUNDLE_MAX_BYTES = 512 * 1024 * 1024
 _RECOVERY_BUNDLE_MAX_FILES = 10_000
+_FAILURE_EVIDENCE_MAX_FILES = 512
+_FAILURE_EVIDENCE_MAX_BYTES = 32 * 1024 * 1024
 
 
 def _safe_extract_recovery_bundle(bundle: Path, project: Path) -> None:
@@ -489,6 +492,91 @@ def _publish_files(
         store.put_file(spec.object_key, path, spec.media_type)
 
 
+def _failure_project_candidate(root: Path, output_key: str) -> Path | None:
+    target = root / output_key
+    candidates = [target] if target.is_dir() else []
+    if target.parent.is_dir():
+        candidates.extend(sorted(target.parent.glob(f"{target.name}_ppt169_????????")))
+    return max(candidates, key=lambda value: value.stat().st_mtime_ns) if candidates else None
+
+
+def _build_failed_agent_evidence_bundle(project: Path, target: Path) -> int:
+    """Write a bounded tenant-scoped failure bundle and return its member count."""
+
+    candidates: list[Path] = []
+    agent = project / "agent"
+    if agent.is_dir():
+        candidates.extend(path for path in agent.rglob("*") if path.is_file())
+    for relative in (
+        Path("validation/workflow-events.jsonl"),
+        Path("validation/workflow.log"),
+        Path("design_spec.md"),
+    ):
+        path = project / relative
+        if path.is_file():
+            candidates.append(path)
+    selected: list[Path] = []
+    selected_bytes = 0
+    for path in sorted(set(candidates), key=lambda value: value.as_posix()):
+        size = path.stat().st_size
+        if len(selected) >= _FAILURE_EVIDENCE_MAX_FILES:
+            break
+        if selected_bytes + size > _FAILURE_EVIDENCE_MAX_BYTES:
+            continue
+        selected.append(path)
+        selected_bytes += size
+    if not selected:
+        return 0
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in selected:
+            archive.write(path, path.relative_to(project).as_posix())
+    return len(selected)
+
+
+def _persist_failed_agent_evidence(
+    session_factory: sessionmaker[Session],
+    object_store: DefaultWorkflowObjectStore,
+    *,
+    project: Path | None,
+    bundle_root: Path,
+    organization_id: str,
+    workflow_run_id: str,
+) -> dict[str, Any] | None:
+    if project is None:
+        return None
+    bundle = bundle_root / "failed-agent-evidence.zip"
+    member_count = _build_failed_agent_evidence_bundle(project, bundle)
+    if member_count == 0:
+        return None
+    sha256 = sha256_file(bundle)
+    artifact_id = _stable_id(f"{workflow_run_id}:agent-failure-evidence:{sha256}")
+    object_key = tenant_object_key(organization_id, "published", artifact_id)
+    object_store.put_file(object_key, bundle, "application/zip")
+    with session_factory.begin() as session:
+        if session.get(Artifact, artifact_id) is None:
+            session.add(
+                Artifact(
+                    id=artifact_id,
+                    organization_id=organization_id,
+                    artifact_type="generation_agent_failure_evidence",
+                    partition="published",
+                    object_key=object_key,
+                    sha256=sha256,
+                    media_type="application/zip",
+                    size_bytes=bundle.stat().st_size,
+                    status="published",
+                    retention_expires_at=datetime.now(UTC) + timedelta(days=30),
+                )
+            )
+    return {
+        "artifactId": artifact_id,
+        "objectKey": object_key,
+        "sha256": sha256,
+        "memberCount": member_count,
+    }
+
+
 def _fail_default_run(
     session_factory: sessionmaker[Session],
     *,
@@ -499,6 +587,7 @@ def _fail_default_run(
     error_code: str,
     message: str,
     worker_seconds: int,
+    evidence: dict[str, Any] | None = None,
 ) -> None:
     with session_factory.begin() as session:
         run = session.get(WorkflowRun, workflow_run_id)
@@ -507,7 +596,11 @@ def _fail_default_run(
                 run,
                 status="failed",
                 stage=run.stage,
-                error={"code": error_code, "message": message[:1000]},
+                error={
+                    "code": error_code,
+                    "message": message[:1000],
+                    **({"evidence": evidence} if evidence else {}),
+                },
             )
         fail_generation_job(
             session,
@@ -711,6 +804,43 @@ def _process_default_generation_job(
             except (AdapterError, OSError, RuntimeError, ValueError) as error:
                 worker_seconds = max(1, math.ceil(time.monotonic() - started))
                 code = error.code if isinstance(error, AdapterError) else RENDER_FAILED
+                failure_project = _failure_project_candidate(root, adapter_request.output_key)
+                if failure_project is not None:
+                    planning_configuration = dict(
+                        snapshot.payload.get("providerConfiguration", {}).get("planning") or {}
+                    )
+                    _write_canonical(
+                        failure_project / "agent" / "failure-metadata.json",
+                        {
+                            "schema": "instant-ppt.agent-failure-metadata.v1",
+                            "workflowRunId": workflow_run_id,
+                            "capturedAt": datetime.now(UTC).isoformat(),
+                            "errorCode": code,
+                            "errorMessage": str(error)[:1000],
+                            "provider": str(planning_configuration.get("provider") or ""),
+                            "model": str(
+                                planning_configuration.get("model") or request.versions.model
+                            ),
+                            "endpointHost": (
+                                urlsplit(str(planning_configuration.get("baseUrl") or "")).hostname
+                                or ""
+                            ),
+                        },
+                    )
+                try:
+                    failure_evidence = _persist_failed_agent_evidence(
+                        session_factory,
+                        object_store,
+                        project=failure_project,
+                        bundle_root=root,
+                        organization_id=organization_id,
+                        workflow_run_id=workflow_run_id,
+                    )
+                except Exception as evidence_error:
+                    failure_evidence = {
+                        "status": "persistence-failed",
+                        "message": str(evidence_error)[:500],
+                    }
                 _fail_default_run(
                     session_factory,
                     job_id=job_id,
@@ -720,6 +850,7 @@ def _process_default_generation_job(
                     error_code=code,
                     message=str(error),
                     worker_seconds=worker_seconds,
+                    evidence=failure_evidence,
                 )
                 return "failed"
             project = supervised.project

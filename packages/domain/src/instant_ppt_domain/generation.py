@@ -66,12 +66,12 @@ def _provider_configuration() -> dict[str, Any]:
                 "QWEN_BASE_URL",
                 "https://dashscope.aliyuncs.com/compatible-mode/v1",
             ).strip(),
-            "model": os.getenv("QWEN_MODEL", "qwen3.7-plus").strip(),
+            "model": os.getenv("QWEN_MODEL", "qwen3.8-flash").strip(),
             "protocol": "openai",
             "reasoningEffort": os.getenv("QWEN_REASONING_EFFORT", "medium").strip(),
             "enableThinking": os.getenv("QWEN_ENABLE_THINKING", "true").strip().lower()
             in {"1", "true", "yes", "on"},
-            "preserveThinking": os.getenv("QWEN_PRESERVE_THINKING", "true").strip().lower()
+            "preserveThinking": os.getenv("QWEN_PRESERVE_THINKING", "false").strip().lower()
             in {"1", "true", "yes", "on"},
             "timeoutSeconds": float(os.getenv("QWEN_TIMEOUT_SECONDS", "600")),
             "transportMaxRetries": int(os.getenv("QWEN_TRANSPORT_MAX_RETRIES", "4")),

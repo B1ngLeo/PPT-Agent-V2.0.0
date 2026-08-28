@@ -97,14 +97,15 @@ docker compose --profile runtime down
 
 ## Provider 与作者模式
 
-当前 `.env.example` 的默认文本规划与创作 Provider 为 Qwen，默认模型为 `qwen3.7-plus`。Kimi 仍是可配置的替代文本 Provider；OpenAI GPT Image 2 仅用于受控图片任务，且默认关闭。
+当前 `.env.example` 的默认文本规划与创作 Provider 为 Qwen，默认模型为 `qwen3.8-flash`。Kimi 仍是可配置的替代文本 Provider；OpenAI GPT Image 2 仅用于受控图片任务，且默认关闭。
 
 ```dotenv
 PLANNING_BACKEND=qwen
 TEXT_PROVIDER=qwen
-QWEN_MODEL=qwen3.7-plus
+QWEN_MODEL=qwen3.8-flash
 QWEN_REASONING_EFFORT=medium
 QWEN_ENABLE_THINKING=true
+QWEN_PRESERVE_THINKING=false
 PRESENTATION_AUTHORING_MODE=agent-authoring
 PRESENTATION_VISUAL_REVIEW_REQUIRED=true
 PRESENTATION_NATIVE_CHARTS_ENABLED=false

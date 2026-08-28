@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "goal": "G08",
-  "generatedAt": "2026-08-16T21:01:27+08:00",
+  "generatedAt": "2026-08-24T10:36:07+08:00",
   "result": "passed",
   "executedProvider": "kimi",
   "secretPresence": {
@@ -13,8 +13,8 @@
       "status": "passed",
       "requestedModel": "kimi-k3",
       "returnedModel": "kimi-k3",
-      "promptTokens": 1,
-      "completionTokens": 64,
+      "promptTokens": 117,
+      "completionTokens": 23,
       "structuredJsonVerified": true
     },
     "openaiImage": {
