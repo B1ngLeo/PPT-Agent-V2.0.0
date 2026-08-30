@@ -91,7 +91,11 @@ DRAFT_STATUSES = (
     "cancelled",
     "deleted",
 )
-PLANNING_JOB_OPERATIONS = ("intent_infer", "outline_generate")
+PLANNING_JOB_OPERATIONS = (
+    "intent_infer",
+    "outline_generate",
+    "visual_style_generate",
+)
 PLANNING_JOB_STATUSES = ("queued", "running", "retrying", "succeeded", "failed")
 REVISION_ACTORS = ("user", "ai", "system")
 PROVIDER_CALL_STATUSES = ("succeeded", "failed", "rate_limited", "timed_out")
@@ -962,6 +966,9 @@ class PlanningJob(Base):
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     base_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))
     request_payload: Mapped[dict[str, Any]] = mapped_column(
+        MutableDict.as_mutable(JSONB), nullable=False, default=dict
+    )
+    result_payload: Mapped[dict[str, Any]] = mapped_column(
         MutableDict.as_mutable(JSONB), nullable=False, default=dict
     )
     result_revision_id: Mapped[str | None] = mapped_column(String(ULID_LENGTH))

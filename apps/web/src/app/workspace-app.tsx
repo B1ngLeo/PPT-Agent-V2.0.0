@@ -129,6 +129,20 @@ type TemplateVersion = {
   };
 };
 
+const TEMPLATE_CATEGORY_LABELS: Record<string, string> = {
+  business: "总结汇报",
+  strategy: "商业计划",
+  research: "教育培训",
+  marketing: "营销推广",
+  corporate: "企业宣讲",
+  hr: "人资行政",
+  healthcare: "医疗健康",
+};
+
+function templateCategoryLabel(category: string): string {
+  return TEMPLATE_CATEGORY_LABELS[category] ?? category;
+}
+
 type IntentRevision = {
   intentRevisionId: string;
   title: string;
@@ -179,10 +193,31 @@ type GenerationSummary = {
   boundary: "generation_not_started";
 };
 
+type VisualStyleOption = {
+  id: string;
+  name: string;
+  rationale: string;
+  recommended: boolean;
+  colors: {
+    theme: string;
+    background: string;
+    text: string;
+    secondaryText: string;
+  };
+  typography: {
+    headingFont: string;
+    bodyFont: string;
+  };
+};
+
+type VisualStyleProposal = {
+  options: VisualStyleOption[];
+};
+
 type PlanningJob = {
   planningJobId: string;
   draftId: string;
-  operation: "intent_infer" | "outline_generate";
+  operation: "intent_infer" | "outline_generate" | "visual_style_generate";
   status: "queued" | "running" | "retrying" | "succeeded" | "failed";
   attempt: number;
   maxAttempts: number;
@@ -192,7 +227,7 @@ type PlanningJob = {
   resultRevisionId: string | null;
   provider: string | null;
   model: string | null;
-  result?: IntentRevision | OutlineRevision | null;
+  result?: IntentRevision | OutlineRevision | VisualStyleProposal | null;
 };
 
 type GenerationImageScope = "none" | "cover_only" | "selective";
@@ -251,15 +286,10 @@ type PresentationRevision = {
   acceptedMissing: boolean;
   contentMode: "source-grounded" | "limited-general-draft" | null;
   engineProfile:
-    | "default-agentic"
-    | "deterministic-template"
-    | "quick-engineering"
-    | null;
+    "default-agentic" | "deterministic-template" | "quick-engineering" | null;
   authoringMode: "agent-authoring" | "deterministic-template" | null;
   authoringDisclosure:
-    | "agent-authored-editable-draft"
-    | "template-limited-editable-draft"
-    | null;
+    "agent-authored-editable-draft" | "template-limited-editable-draft" | null;
   suggestedFilename: string | null;
   manifestArtifactId: string;
   slides: PresentationSlide[];
@@ -326,14 +356,10 @@ type GenerationJob = {
   organizationId: string;
   processor: "real" | "fake";
   engineProfile:
-    | "default-agentic"
-    | "deterministic-template"
-    | "quick-engineering"
-    | null;
+    "default-agentic" | "deterministic-template" | "quick-engineering" | null;
   authoringMode: "agent-authoring" | "deterministic-template";
   authoringDisclosure:
-    | "agent-authored-editable-draft"
-    | "template-limited-editable-draft";
+    "agent-authored-editable-draft" | "template-limited-editable-draft";
   fallbackReason: string | null;
   visualReview: {
     required?: boolean;
@@ -509,22 +535,34 @@ function saveLabel(state: SaveState): string {
   return "所有修改都会形成版本";
 }
 
-function planningProviderLabel(
-  provider: DraftSnapshot["planningProvider"],
+function visualPreferenceLabel(
+  preference: IntentRevision["visualPreference"],
 ): string {
-  if (!provider) return "尚未调用";
-  if (provider.provider === "kimi") return `Kimi · ${provider.model}`;
-  if (provider.provider === "fake") return `本地模拟 · ${provider.model}`;
-  return `${provider.provider} · ${provider.model}`;
+  if (preference === "photo_illustration") return "图片插画";
+  if (preference === "minimal_visual") return "克制视觉";
+  return "数据优先";
 }
 
 function planningProgressLabel(job: PlanningJob): string {
   const operation =
-    job.operation === "intent_infer" ? "识别创作意图" : "生成可编辑大纲";
+    job.operation === "intent_infer"
+      ? "识别创作意图"
+      : job.operation === "outline_generate"
+        ? "生成可编辑大纲"
+        : "生成三套视觉风格";
   if (job.status === "retrying")
     return `${operation}暂时失败，正在自动重试（${job.attempt}/${job.maxAttempts}）…`;
   if (job.status === "queued") return `${operation}已排队…`;
   return `${operation}中（${job.attempt}/${job.maxAttempts}）…`;
+}
+
+function visualStyleProposal(
+  value: PlanningJob["result"],
+): VisualStyleProposal | null {
+  if (!value || !("options" in value) || !Array.isArray(value.options)) {
+    return null;
+  }
+  return value.options.length === 3 ? (value as VisualStyleProposal) : null;
 }
 
 async function waitForPlanningJob(
@@ -564,6 +602,13 @@ function generationStageLabel(stage: GenerationJob["stage"]): string {
     publishing: "发布不可变工件",
   };
   return labels[stage];
+}
+
+function generationStageStepIndex(stage: GenerationJob["stage"]): number {
+  if (stage === "deck_planning") return 0;
+  if (stage === "slide_generation") return 1;
+  if (stage === "deck_qa") return 2;
+  return 3;
 }
 
 function generationStatusLabel(status: GenerationJob["status"]): string {
@@ -655,13 +700,22 @@ export function WorkspaceApp() {
   const [topic, setTopic] = useState("");
   const [source, setSource] = useState<SourceState | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [activeTemplateCategory, setActiveTemplateCategory] =
+    useState("精品推荐");
   const [draft, setDraft] = useState<DraftSnapshot | null>(null);
   const [intent, setIntent] = useState<IntentRevision | null>(null);
   const [outline, setOutline] = useState<OutlineRevision | null>(null);
   const [summary, setSummary] = useState<GenerationSummary | null>(null);
+  const [visualStyleOptions, setVisualStyleOptions] = useState<
+    VisualStyleOption[]
+  >([]);
+  const [selectedVisualStyleId, setSelectedVisualStyleId] = useState<
+    string | null
+  >(null);
+  const [visualStylePlanningJobId, setVisualStylePlanningJobId] = useState<
+    string | null
+  >(null);
   const [continueLimitedDraft, setContinueLimitedDraft] = useState(false);
-  const [authorizeStrategistDesignLock, setAuthorizeStrategistDesignLock] =
-    useState(false);
   const [generationImageScope, setGenerationImageScope] =
     useState<GenerationImageScope>("none");
   const [visualReviewLevel, setVisualReviewLevel] =
@@ -687,7 +741,7 @@ export function WorkspaceApp() {
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [assistantMessage, setAssistantMessage] =
-    useState("我会把每次优化写成真实大纲版本。");
+    useState("我会重新优化并生成大纲");
   const [undoStack, setUndoStack] = useState<OutlineRevision[]>([]);
   const [redoStack, setRedoStack] = useState<OutlineRevision[]>([]);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
@@ -720,33 +774,6 @@ export function WorkspaceApp() {
     );
     setHistory(response.data.items);
   }, []);
-
-  const loadPresentation = useCallback(
-    async (presentationId: string, push = false, showLoading = false) => {
-      if (showLoading) setView("loading");
-      try {
-        const response = await api<Presentation>(
-          `/v1/presentations/${presentationId}`,
-        );
-        setPresentation(response.data);
-        setPresentationMessage(
-          `当前为第 ${response.data.currentRevision.revisionNumber} 个不可变版本。`,
-        );
-        setView("presentation");
-        if (push) {
-          window.history.pushState(
-            {},
-            "",
-            `/?draft=${response.data.draftId}&presentation=${response.data.presentationId}`,
-          );
-        }
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "演示文稿恢复失败");
-        if (showLoading) setView("home");
-      }
-    },
-    [],
-  );
 
   const loadGenerationJob = useCallback(
     async (jobId: string, push = false, showLoading = false) => {
@@ -782,6 +809,26 @@ export function WorkspaceApp() {
     [],
   );
 
+  const loadPresentation = useCallback(
+    async (presentationId: string, push = false, showLoading = false) => {
+      if (showLoading) setView("loading");
+      try {
+        const response = await api<Presentation>(
+          `/v1/presentations/${presentationId}`,
+        );
+        setPresentation(response.data);
+        await loadGenerationJob(response.data.generationJobId, false, false);
+        const resultUrl = `/?draft=${response.data.draftId}&job=${response.data.generationJobId}`;
+        if (push) window.history.pushState({}, "", resultUrl);
+        else window.history.replaceState({}, "", resultUrl);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "生成结果恢复失败");
+        if (showLoading) setView("home");
+      }
+    },
+    [loadGenerationJob],
+  );
+
   const applyDraftSnapshot = useCallback(async (next: DraftSnapshot) => {
     setDraft(next);
     setGenerationJob(null);
@@ -790,6 +837,19 @@ export function WorkspaceApp() {
     setIntent(next.currentIntent);
     setOutline(next.currentOutline);
     setSummary(next.generationSummary);
+    const restoredStyles =
+      next.planningJob?.operation === "visual_style_generate"
+        ? visualStyleProposal(next.planningJob.result)
+        : null;
+    setVisualStyleOptions(restoredStyles?.options ?? []);
+    setSelectedVisualStyleId(
+      restoredStyles?.options.find((option) => option.recommended)?.id ??
+        restoredStyles?.options[0]?.id ??
+        null,
+    );
+    setVisualStylePlanningJobId(
+      restoredStyles ? (next.planningJob?.planningJobId ?? null) : null,
+    );
     lastSavedIntent.current = next.currentIntent
       ? JSON.stringify(intentPayload(next.currentIntent))
       : "";
@@ -920,112 +980,109 @@ export function WorkspaceApp() {
 
   const onSourceReady = useCallback((next: SourceState) => setSource(next), []);
 
-  const continuePlanning = useCallback(async (draftId: string) => {
-    setError(null);
-    try {
-      setBusyMessage("正在核对已保存的规划状态…");
-      let current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
-      if (current.planningJob && !current.planningJob.terminal) {
-        await waitForPlanningJob(current.planningJob, (progress) =>
-          setBusyMessage(planningProgressLabel(progress)),
-        );
-        current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
-      }
-      if (!current.currentIntent) {
-        const active =
-          current.planningJob?.operation === "intent_infer" &&
-          !current.planningJob.terminal
-            ? current.planningJob
-            : null;
-        const job =
-          active ??
-          (
-            await api<PlanningJob>(`/v1/drafts/${draftId}/intent:infer`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Idempotency-Key":
-                  current.planningJob?.operation === "intent_infer" &&
-                  current.planningJob.status === "failed"
-                    ? crypto.randomUUID()
-                    : planningIdempotencyKey("intent", draftId),
-              },
-              body: mutation({ language: "zh-CN" }),
-            })
-          ).data;
-        await waitForPlanningJob(job, (progress) =>
-          setBusyMessage(planningProgressLabel(progress)),
-        );
-        current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
-      }
-      if (!current.currentOutline) {
-        const active =
-          current.planningJob?.operation === "outline_generate" &&
-          !current.planningJob.terminal
-            ? current.planningJob
-            : null;
-        const job =
-          active ??
-          (
-            await api<PlanningJob>(`/v1/drafts/${draftId}/outline:generate`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Idempotency-Key":
-                  current.planningJob?.operation === "outline_generate" &&
-                  current.planningJob.status === "failed"
-                    ? crypto.randomUUID()
-                    : planningIdempotencyKey(
-                        "outline",
-                        draftId,
-                        current.currentIntentRevisionId,
-                      ),
-              },
-              body: mutation({ action: "generate", instruction: "" }),
-            })
-          ).data;
-        await waitForPlanningJob(job, (progress) =>
-          setBusyMessage(planningProgressLabel(progress)),
-        );
-      }
-      await refreshHistory();
-      await openDraft(draftId, false);
-    } catch (reason) {
+  const continuePlanning = useCallback(
+    async (draftId: string) => {
+      setError(null);
       try {
-        const current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`))
-          .data;
-        await applyDraftSnapshot(current);
-        setError(
-          current.currentOutline
-            ? "已从持久化规划任务恢复完整大纲。"
-            : current.planningJob && !current.planningJob.terminal
-              ? "规划任务仍在后台运行，可刷新或稍后从历史创作恢复。"
-              : current.currentIntent
-                ? "创作意图已保存；大纲任务未完成，可继续生成。"
-                : reason instanceof Error
-                  ? reason.message
-                  : "规划任务暂时不可用。",
-        );
-      } catch {
-        setError(
-          reason instanceof Error ? reason.message : "规划流程暂时不可用",
-        );
-        setView("home");
+        setBusyMessage("正在核对已保存的规划状态…");
+        let current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
+        if (current.planningJob && !current.planningJob.terminal) {
+          await waitForPlanningJob(current.planningJob, (progress) =>
+            setBusyMessage(planningProgressLabel(progress)),
+          );
+          current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
+        }
+        if (!current.currentIntent) {
+          const active =
+            current.planningJob?.operation === "intent_infer" &&
+            !current.planningJob.terminal
+              ? current.planningJob
+              : null;
+          const job =
+            active ??
+            (
+              await api<PlanningJob>(`/v1/drafts/${draftId}/intent:infer`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Idempotency-Key":
+                    current.planningJob?.operation === "intent_infer" &&
+                    current.planningJob.status === "failed"
+                      ? crypto.randomUUID()
+                      : planningIdempotencyKey("intent", draftId),
+                },
+                body: mutation({ language: "zh-CN" }),
+              })
+            ).data;
+          await waitForPlanningJob(job, (progress) =>
+            setBusyMessage(planningProgressLabel(progress)),
+          );
+          current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`)).data;
+        }
+        if (!current.currentOutline) {
+          const active =
+            current.planningJob?.operation === "outline_generate" &&
+            !current.planningJob.terminal
+              ? current.planningJob
+              : null;
+          const job =
+            active ??
+            (
+              await api<PlanningJob>(`/v1/drafts/${draftId}/outline:generate`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Idempotency-Key":
+                    current.planningJob?.operation === "outline_generate" &&
+                    current.planningJob.status === "failed"
+                      ? crypto.randomUUID()
+                      : planningIdempotencyKey(
+                          "outline",
+                          draftId,
+                          current.currentIntentRevisionId,
+                        ),
+                },
+                body: mutation({ action: "generate", instruction: "" }),
+              })
+            ).data;
+          await waitForPlanningJob(job, (progress) =>
+            setBusyMessage(planningProgressLabel(progress)),
+          );
+        }
+        await refreshHistory();
+        await openDraft(draftId, false);
+      } catch (reason) {
+        try {
+          const current = (await api<DraftSnapshot>(`/v1/drafts/${draftId}`))
+            .data;
+          await applyDraftSnapshot(current);
+          setError(
+            current.currentOutline
+              ? "已从持久化规划任务恢复完整大纲。"
+              : current.planningJob && !current.planningJob.terminal
+                ? "规划任务仍在后台运行，可刷新或稍后从历史创作恢复。"
+                : current.currentIntent
+                  ? "创作意图已保存；大纲任务未完成，可继续生成。"
+                  : reason instanceof Error
+                    ? reason.message
+                    : "规划任务暂时不可用。",
+          );
+        } catch {
+          setError(
+            reason instanceof Error ? reason.message : "规划流程暂时不可用",
+          );
+          setView("home");
+        }
+      } finally {
+        setBusyMessage(null);
       }
-    } finally {
-      setBusyMessage(null);
-    }
-  }, [applyDraftSnapshot, openDraft, refreshHistory]);
+    },
+    [applyDraftSnapshot, openDraft, refreshHistory],
+  );
 
   useEffect(() => {
     const job = draft?.planningJob;
-    if (
-      view !== "workspace" ||
-      !draft ||
-      !job ||
-      job.terminal ||
-      busyMessage
-    )
+    if (view !== "workspace" || !draft || !job || job.terminal || busyMessage)
       return;
     void continuePlanning(draft.draftId);
   }, [busyMessage, continuePlanning, draft, view]);
@@ -1328,6 +1385,52 @@ export function WorkspaceApp() {
     void persistOutline(target, "redo", false);
   };
 
+  const requestVisualStyles = async (
+    draftId: string,
+    approvalId: string,
+  ): Promise<void> => {
+    setVisualStyleOptions([]);
+    setSelectedVisualStyleId(null);
+    setVisualStylePlanningJobId(null);
+    const queued = await api<PlanningJob>(
+      `/v1/drafts/${draftId}/visual-styles:generate`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: mutation({}, approvalId),
+      },
+    );
+    const completed = await waitForPlanningJob(queued.data, (progress) =>
+      setBusyMessage(planningProgressLabel(progress)),
+    );
+    const proposal = visualStyleProposal(completed.result);
+    if (!proposal) {
+      throw new Error("视觉风格生成结果不完整，请重新生成");
+    }
+    setVisualStyleOptions(proposal.options);
+    setSelectedVisualStyleId(
+      proposal.options.find((option) => option.recommended)?.id ??
+        proposal.options[0].id,
+    );
+    setVisualStylePlanningJobId(completed.planningJobId);
+  };
+
+  const retryVisualStyles = async () => {
+    if (!draft || !summary) return;
+    setBusyMessage("正在生成三套视觉风格…");
+    setError(null);
+    try {
+      await requestVisualStyles(draft.draftId, summary.approvalId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "视觉风格生成失败");
+    } finally {
+      setBusyMessage(null);
+    }
+  };
+
   const approve = async () => {
     if (!draft?.currentOutlineRevisionId) return;
     setBusyMessage("正在固定批准边界…");
@@ -1346,7 +1449,6 @@ export function WorkspaceApp() {
       );
       setSummary(response.data);
       setContinueLimitedDraft(false);
-      setAuthorizeStrategistDesignLock(false);
       setVisualReviewLevel("off");
       setDraft((current) =>
         current
@@ -1357,6 +1459,8 @@ export function WorkspaceApp() {
             }
           : current,
       );
+      setBusyMessage("正在生成三套视觉风格…");
+      await requestVisualStyles(draft.draftId, response.data.approvalId);
       await refreshHistory();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "批准失败");
@@ -1369,6 +1473,8 @@ export function WorkspaceApp() {
     if (
       !draft ||
       !summary ||
+      !visualStylePlanningJobId ||
+      !selectedVisualStyleId ||
       draft.currentOutlineRevisionId !== summary.outlineRevisionId ||
       saveState === "saving"
     )
@@ -1402,8 +1508,10 @@ export function WorkspaceApp() {
           body: mutation({
             continueLimitedDraft:
               summary.sourceSummary.sourceId === null && continueLimitedDraft,
-            authorizeStrategistDesignLock,
+            authorizeStrategistDesignLock: true,
             visualReviewLevel,
+            visualStylePlanningJobId,
+            visualStyleOptionId: selectedVisualStyleId,
             imagePolicy:
               generationImageScope === "none"
                 ? { scope: "none", usage: ["none"], notes: {} }
@@ -1582,15 +1690,19 @@ export function WorkspaceApp() {
   };
 
   const exportPresentation = async () => {
-    if (!presentation || busyMessage) return;
-    const exportFilename =
-      presentation.currentRevision.suggestedFilename ??
-      `${presentation.title}.pptx`;
+    if (!generationJob?.presentation || busyMessage) return;
     setBusyMessage("正在按当前精确版本编译并执行包检…");
     setError(null);
     try {
+      const presentationResponse = await api<Presentation>(
+        `/v1/presentations/${generationJob.presentation.presentationId}`,
+      );
+      const exportTarget = presentationResponse.data;
+      const exportFilename =
+        exportTarget.currentRevision.suggestedFilename ??
+        `${exportTarget.title}.pptx`;
       const queued = await api<PresentationExport>(
-        `/v1/presentations/${presentation.presentationId}/exports`,
+        `/v1/presentations/${exportTarget.presentationId}/exports`,
         {
           method: "POST",
           headers: {
@@ -1599,10 +1711,10 @@ export function WorkspaceApp() {
           },
           body: mutation(
             {
-              presentationRevisionId: presentation.currentRevisionId,
+              presentationRevisionId: exportTarget.currentRevisionId,
               filename: exportFilename,
             },
-            presentation.currentRevisionId,
+            exportTarget.currentRevisionId,
           ),
         },
       );
@@ -1639,9 +1751,6 @@ export function WorkspaceApp() {
       await downloadAuthorizedFile(
         authorization.data.downloadUrl,
         exportFilename,
-      );
-      setPresentationMessage(
-        `已导出版本 ${exportJob.presentationRevisionId.slice(-8)}：${exportFilename}。短期下载链接已签发。`,
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "导出失败");
@@ -1728,6 +1837,25 @@ export function WorkspaceApp() {
     void refreshHistory();
   };
 
+  const homeTemplateCategories = [
+    "精品推荐",
+    ...Array.from(
+      new Set(
+        templates.map((template) => templateCategoryLabel(template.category)),
+      ),
+    ),
+  ];
+  const visibleHomeTemplates =
+    activeTemplateCategory === "精品推荐"
+      ? templates.slice(0, 8)
+      : templates
+          .filter(
+            (template) =>
+              templateCategoryLabel(template.category) ===
+              activeTemplateCategory,
+          )
+          .slice(0, 8);
+
   if (view === "loading") {
     return (
       <main
@@ -1757,10 +1885,12 @@ export function WorkspaceApp() {
           <span className="brand-mark" aria-hidden="true">
             即
           </span>
-          <span>即刻AI-PPT</span>
+          <span className="brand-wordmark">
+            即刻<strong>AI-PPT</strong>
+          </span>
         </button>
         <div className="header-actions">
-          {entitlement ? (
+          {view !== "home" && entitlement ? (
             <span className="quota-chip">
               本月 {usage?.metrics.slides ?? 0} /{" "}
               {entitlement.monthlySlideLimit} 页 · {usage?.metrics.images ?? 0}{" "}
@@ -1775,6 +1905,11 @@ export function WorkspaceApp() {
           >
             历史创作
           </button>
+          {view === "home" ? (
+            <span className="account-avatar" aria-label="当前账户 YL">
+              YL
+            </span>
+          ) : null}
         </div>
       </header>
 
@@ -1803,18 +1938,6 @@ export function WorkspaceApp() {
                 onClick={() => void exportProjectData()}
               >
                 导出项目数据
-              </button>
-              <button
-                className="primary-button"
-                type="button"
-                disabled={
-                  Boolean(busyMessage) ||
-                  (presentation.currentRevision.partial &&
-                    !presentation.currentRevision.acceptedMissing)
-                }
-                onClick={() => void exportPresentation()}
-              >
-                {busyMessage ?? "导出当前版本 PPTX"}
               </button>
             </div>
           </div>
@@ -1886,7 +2009,8 @@ export function WorkspaceApp() {
                 <p className="eyebrow">FALLBACK DISCLOSURE</p>
                 <h2 id="template-limited-draft-title">这是模板化受限初稿</h2>
                 <p>
-                  本版本由确定性模板降级链路生成，不计入 Agent 创作成功率；导出文件名也会保留“模板化受限初稿”标记。
+                  本版本由确定性模板降级链路生成，不计入 Agent
+                  创作成功率；导出文件名也会保留“模板化受限初稿”标记。
                 </p>
               </div>
             </section>
@@ -2134,41 +2258,53 @@ export function WorkspaceApp() {
                       : "正在连接事件"}
               </span>
             </div>
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={generationJob.terminal || Boolean(busyMessage)}
-              onClick={() => void cancelGeneration()}
-            >
-              {generationJob.status === "cancel_requested"
-                ? "正在取消"
-                : "取消任务"}
-            </button>
+            <div className="monitor-top-actions">
+              {generationJob.presentation ? (
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={
+                    generationJob.presentation.status !== "ready" ||
+                    Boolean(busyMessage)
+                  }
+                  onClick={() => void exportPresentation()}
+                >
+                  {busyMessage ?? "导出 PPTX"}
+                </button>
+              ) : (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={generationJob.terminal || Boolean(busyMessage)}
+                  onClick={() => void cancelGeneration()}
+                >
+                  {generationJob.status === "cancel_requested"
+                    ? "正在取消"
+                    : "取消任务"}
+                </button>
+              )}
+            </div>
           </div>
 
-          <ol className="stepper monitor-stepper" aria-label="生成步骤">
+          <ol className="stepper" aria-label="生成步骤">
             {[
-              ["01", "生成计划", "deck_planning"],
-              ["02", "逐页生成", "slide_generation"],
-              ["03", "整稿检查", "deck_qa"],
-              ["04", "编译与包检", "compiling"],
-              ["05", "不可变发布", "publishing"],
-            ].map(([number, label, stage], index, stages) => {
-              const currentIndex = stages.findIndex(
-                ([, , candidate]) => candidate === generationJob.stage,
+              ["01", "生成计划"],
+              ["02", "逐页生成"],
+              ["03", "整稿检查"],
+              ["04", "编译与发布"],
+            ].map(([number, label], index) => {
+              const currentIndex = generationStageStepIndex(
+                generationJob.stage,
               );
-              const packageStage = generationJob.stage === "package_qa";
-              const effectiveIndex = packageStage ? 3 : currentIndex;
               const completedSuccessfully = [
                 "succeeded",
                 "partially_succeeded",
               ].includes(generationJob.status);
-              const complete = completedSuccessfully || index < effectiveIndex;
-              const active =
-                !completedSuccessfully && index === effectiveIndex;
+              const complete = completedSuccessfully || index < currentIndex;
+              const active = !completedSuccessfully && index === currentIndex;
               return (
                 <li
-                  key={stage}
+                  key={number}
                   className={complete ? "done" : active ? "active" : ""}
                 >
                   <b>{number}</b>
@@ -2214,20 +2350,21 @@ export function WorkspaceApp() {
                       : "工作流需要人工处理；任务已在导出前安全停止。"
                   : generationJob.authoringMode === "deterministic-template"
                     ? "Agent 创作链路未用于本任务；当前结果是显式标识的模板化受限初稿。"
-                  : generationJob.terminal
-                    ? generationJob.status === "succeeded"
-                      ? "全部页面、原生 PPTX 与不可变清单已经发布。"
-                      : generationJob.status === "partially_succeeded"
-                        ? "成功页面已发布；失败槽位保留，可单页重试。"
-                        : generationJob.status === "cancelled"
-                          ? "任务已安全终止，未创建演示文稿。"
-                          : "任务未发布演示文稿，可返回大纲检查输入。"
-                    : generationStageLabel(generationJob.stage)}
+                    : generationJob.terminal
+                      ? generationJob.status === "succeeded"
+                        ? "全部页面、原生 PPTX 与不可变清单已经发布。"
+                        : generationJob.status === "partially_succeeded"
+                          ? "成功页面已发布；失败槽位保留，可单页重试。"
+                          : generationJob.status === "cancelled"
+                            ? "任务已安全终止，未创建演示文稿。"
+                            : "任务未发布演示文稿，可返回大纲检查输入。"
+                      : generationStageLabel(generationJob.stage)}
               </p>
               <div className="progress-copy">
                 <span>
                   {generationJob.progress.completed} /{" "}
-                  {generationJob.progress.total} {generatedPageLabel(generationJob)}
+                  {generationJob.progress.total}{" "}
+                  {generatedPageLabel(generationJob)}
                 </span>
                 <span>任务尝试 {generationJob.attempt}</span>
               </div>
@@ -2237,44 +2374,6 @@ export function WorkspaceApp() {
                 aria-label="页面生成进度"
               />
             </div>
-            <dl className="monitor-facts">
-              <div>
-                <dt>Snapshot</dt>
-                <dd>{generationJob.snapshotId.slice(-10)}</dd>
-              </div>
-              <div>
-                <dt>事件序号</dt>
-                <dd>{generationJob.latestSeq}</dd>
-              </div>
-              <div>
-                <dt>发布版本</dt>
-                <dd>v{generationJob.publicationVersion}</dd>
-              </div>
-              <div>
-                <dt>处理器</dt>
-                <dd>
-                  {generationJob.processor === "real"
-                    ? "真实 Worker"
-                    : "Fixture"}
-                </dd>
-              </div>
-              <div>
-                <dt>创作模式</dt>
-                <dd>
-                  {generationJob.authoringMode === "agent-authoring"
-                    ? "Agent 创作"
-                    : "模板化受限初稿"}
-                </dd>
-              </div>
-              <div>
-                <dt>视觉复核</dt>
-                <dd>
-                  {generationJob.visualReview?.level === "standard"
-                    ? "标准"
-                    : "关闭"}
-                </dd>
-              </div>
-            </dl>
           </section>
 
           {generationJob.authoringMode === "deterministic-template" ? (
@@ -2284,9 +2383,14 @@ export function WorkspaceApp() {
             >
               <div>
                 <p className="eyebrow">FALLBACK DISCLOSURE</p>
-                <h2 id="monitor-template-limited-title">模板化降级已显式启用</h2>
+                <h2 id="monitor-template-limited-title">
+                  模板化降级已显式启用
+                </h2>
                 <p>
-                  原因：{generationJob.fallbackReason ?? "旧快照未包含 Agent 创作策略"}。该结果不会写入 Agent 作者证据，也不会被计入 Agent 成功率。
+                  原因：
+                  {generationJob.fallbackReason ??
+                    "旧快照未包含 Agent 创作策略"}
+                  。该结果不会写入 Agent 作者证据，也不会被计入 Agent 成功率。
                 </p>
               </div>
             </section>
@@ -2311,8 +2415,8 @@ export function WorkspaceApp() {
                     ? "请按已保存的图片提示与资源计划补充文件，完成图片验证后从当前检查点恢复。"
                     : manualInterventionKind(generationJob) === "visual"
                       ? "请检查页面渲染和视觉复核报告；修复阻断项后从视觉复核检查点恢复。"
-                    : (generationJob.workflow.recoveryAction ??
-                      "请按已保存的资源计划处理后，从当前检查点恢复。")}
+                      : (generationJob.workflow.recoveryAction ??
+                        "请按已保存的资源计划处理后，从当前检查点恢复。")}
                 </p>
                 <small>
                   阶段{" "}
@@ -2335,7 +2439,6 @@ export function WorkspaceApp() {
                 <p className="eyebrow">STABLE SLIDE IDS</p>
                 <h2 id="monitor-slides-title">逐页状态</h2>
               </div>
-              <p>刷新或重试不会改变页面身份；成功页面不会重复生成。</p>
             </div>
             <div className="generation-slide-grid">
               {generationJob.slides.map((slide) => (
@@ -2345,29 +2448,24 @@ export function WorkspaceApp() {
                 >
                   <div className="generation-slide-head">
                     <span>{String(slide.position).padStart(2, "0")}</span>
-                    <strong>
-                      {generationSlideStatusLabel(slide)}
-                    </strong>
+                    <strong>{generationSlideStatusLabel(slide)}</strong>
                   </div>
                   <h3>{slide.title}</h3>
-                  <p>
-                    {slide.status === "running" || slide.status === "retrying"
-                      ? slide.renderSha256
-                        ? `SVG 已生成，等待整稿复核 · ${slide.renderSha256.slice(0, 12)}…`
-                        : slide.stage === "content_generation"
-                        ? "生成内容"
-                        : slide.stage === "rendering"
-                          ? "渲染 SVG"
-                          : "逐页质量检查"
-                      : slide.status === "failed"
-                        ? `错误：${slide.errorCode ?? "slide_failed"}`
-                        : slide.status === "ready"
-                          ? `渲染指纹 ${slide.renderSha256?.slice(0, 12) ?? "待发布"}…`
-                          : "等待 Worker"}
-                  </p>
-                  <small>
-                    slide · {slide.slideId.slice(-8)} · attempt {slide.attempt}
-                  </small>
+                  {slide.status !== "ready" ? (
+                    <p>
+                      {slide.status === "running" || slide.status === "retrying"
+                        ? slide.renderSha256
+                          ? "已生成，等待整稿复核"
+                          : slide.stage === "content_generation"
+                            ? "生成内容"
+                            : slide.stage === "rendering"
+                              ? "渲染页面"
+                              : "逐页质量检查"
+                        : slide.status === "failed"
+                          ? "生成失败"
+                          : "等待生成"}
+                    </p>
+                  ) : null}
                   {slide.status === "failed" && slide.attempt < 2 ? (
                     <button
                       className="secondary-button"
@@ -2382,125 +2480,97 @@ export function WorkspaceApp() {
               ))}
             </div>
           </section>
-
-          {generationJob.presentation ? (
-            <section
-              className="publication-card"
-              aria-labelledby="publication-title"
-            >
-              <div>
-                <p className="eyebrow">IMMUTABLE GENERATION PUBLICATION</p>
-                <h2 id="publication-title">
-                  {generationJob.authoringMode === "deterministic-template"
-                    ? "模板化受限初稿已发布"
-                    : generationJob.presentation.status === "ready"
-                    ? "原生基线已发布"
-                    : "部分基线已发布"}
-                </h2>
-                <p>
-                  修订 {generationJob.presentation.currentRevisionId.slice(-8)}{" "}
-                  · 清单{" "}
-                  {generationJob.publication?.manifestSha256.slice(0, 14)}…
-                </p>
-              </div>
-              <div className="publication-artifacts">
-                {generationJob.artifacts
-                  .filter((artifact) => artifact.slideId === null)
-                  .map((artifact) => (
-                    <span key={artifact.artifactId}>
-                      {artifact.artifactType.replace("generation_", "")} ·{" "}
-                      {(artifact.sizeBytes / 1024).toFixed(1)} KB
-                    </span>
-                  ))}
-              </div>
-              <small>
-                生成基线已固定；随附的 final SVG、内容和 package QA 报告用于人工检查，报告中的警告不会阻止已有 PPTX 下载。进入编辑器后的修改会创建独立修订，不会覆盖原始发布。
-              </small>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() =>
-                  void loadPresentation(
-                    generationJob.presentation!.presentationId,
-                    true,
-                    true,
-                  )
-                }
-              >
-                打开可编辑演示
-              </button>
-            </section>
-          ) : null}
         </div>
       ) : view === "home" ? (
         <div className="home-content">
-          <section className="creation-hero" aria-labelledby="home-title">
-            <div className="creation-copy">
-              <p className="eyebrow">IDEA TO EDITABLE DECK</p>
-              <h1 id="home-title">让想法即刻成片。</h1>
-              <p>
-                先确认创作意图与故事结构，再进入原生可编辑 PPT
-                生成。每一步都可恢复、可比较、可追溯。
-              </p>
-              <div className="capability-row" aria-label="当前能力">
-                <span>原生专业模式</span>
-                <span>不可变版本</span>
-                <span>AI 修改可撤销</span>
-              </div>
-            </div>
+          <section className="homepage-hero" aria-labelledby="home-title">
+            <h1 id="home-title">
+              让想法<span>即刻成片</span>
+            </h1>
             <section
-              className="creation-panel"
+              className="homepage-composer"
               aria-labelledby="creation-title"
             >
-              <div className="panel-title-row">
-                <div>
-                  <p className="eyebrow">NEW DRAFT</p>
-                  <h2 id="creation-title">今天要讲什么？</h2>
-                </div>
-                <span className="mode-badge">仅原生专业</span>
-              </div>
-              <label htmlFor="topic">主题或目标</label>
+              <h2 id="creation-title" className="sr-only">
+                AI 创作输入
+              </h2>
+              <label className="sr-only" htmlFor="topic">
+                主题或目标
+              </label>
               <textarea
                 id="topic"
                 value={topic}
                 onChange={(event) => setTopic(event.target.value)}
-                placeholder="例如：面向管理层的 2027 年产品增长策略"
-                rows={4}
+                placeholder="帮我生成一份 PPT，例如：面向管理层的 2027 年产品增长策略……"
+                rows={5}
                 maxLength={1000}
               />
-              <div className="or-divider">
-                <span>或添加主文档</span>
+              <div className="composer-toolbar">
+                <div className="composer-tools">
+                  <SourceUploader
+                    variant="compact"
+                    onSourceReady={onSourceReady}
+                  />
+                  <div className="mode-switch" aria-label="创作模式">
+                    <button className="active" type="button">
+                      自由设计
+                    </button>
+                    <button type="button" disabled title="即将开放">
+                      模板复用
+                    </button>
+                  </div>
+                </div>
+                <button
+                  className="primary-button homepage-generate"
+                  type="button"
+                  disabled={
+                    (!topic.trim() && !source?.sourceId) || Boolean(busyMessage)
+                  }
+                  onClick={() => void createWorkspace()}
+                >
+                  {busyMessage ?? "立即生成"}
+                </button>
               </div>
-              <SourceUploader onSourceReady={onSourceReady} />
-              <button
-                className="primary-button create-button"
-                type="button"
-                disabled={
-                  (!topic.trim() && !source?.sourceId) || Boolean(busyMessage)
-                }
-                onClick={() => void createWorkspace()}
-              >
-                {busyMessage ?? "生成大纲"}
-              </button>
-              <p className="boundary-note">
-                此步骤只生成意图与大纲，不会启动 PPT 生成任务。
-              </p>
             </section>
           </section>
 
           <section
-            className="template-catalog"
+            className="homepage-templates"
             aria-labelledby="template-title"
           >
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">BUILT-IN CATALOG</p>
-                <h2 id="template-title">选择叙事气质</h2>
-              </div>
-              <p>模板来自 API 的不可变版本；历史草稿不会随模板升级改变。</p>
+            <div className="homepage-template-heading">
+              <h2 id="template-title">选择模板创作</h2>
+              <button
+                className="upload-template-button"
+                type="button"
+                onClick={() => setError("自定义模板上传将在后续版本开放。")}
+              >
+                <span aria-hidden="true">＋</span>
+                上传模板
+              </button>
+            </div>
+            <div
+              className="template-category-row"
+              role="tablist"
+              aria-label="模板分类"
+            >
+              {homeTemplateCategories.map((category) => (
+                <button
+                  className={
+                    activeTemplateCategory === category ? "active" : ""
+                  }
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTemplateCategory === category}
+                  key={category}
+                  onClick={() => setActiveTemplateCategory(category)}
+                >
+                  {category}
+                </button>
+              ))}
             </div>
             <div className="template-grid">
-              {templates.map((template) => {
+              {visibleHomeTemplates.map((template) => {
                 const selected =
                   selectedTemplate === template.templateVersionId;
                 return (
@@ -2530,7 +2600,6 @@ export function WorkspaceApp() {
                     </span>
                     <span className="template-copy">
                       <strong>{template.name}</strong>
-                      <small>{template.description}</small>
                     </span>
                     {selected ? (
                       <span className="selected-label">已选择</span>
@@ -2577,7 +2646,7 @@ export function WorkspaceApp() {
             </li>
             <li className={intent ? "active" : ""}>
               <b>03</b>
-              <span>故事与大纲</span>
+              <span>逐页大纲</span>
             </li>
             <li>
               <b>04</b>
@@ -2605,12 +2674,24 @@ export function WorkspaceApp() {
             {intent ? (
               <dl>
                 <div>
-                  <dt>标题</dt>
-                  <dd>{intent.title}</dd>
+                  <dt>制作目标</dt>
+                  <dd>{intent.goal}</dd>
                 </div>
                 <div>
-                  <dt>目标页数</dt>
+                  <dt>目标受众</dt>
+                  <dd>{intent.audience}</dd>
+                </div>
+                <div>
+                  <dt>页数规模</dt>
                   <dd>{intent.targetSlideCount} 页</dd>
+                </div>
+                <div>
+                  <dt>配图偏好</dt>
+                  <dd>{visualPreferenceLabel(intent.visualPreference)}</dd>
+                </div>
+                <div className="planning-notes">
+                  <dt>补充说明</dt>
+                  <dd>{intent.notes || "无"}</dd>
                 </div>
               </dl>
             ) : null}
@@ -2668,13 +2749,13 @@ export function WorkspaceApp() {
               <b>02</b>
               <span>创作意图</span>
             </li>
-            <li className="active">
+            <li className={summary ? "done" : "active"}>
               <b>03</b>
-              <span>故事与大纲</span>
+              <span>逐页大纲</span>
             </li>
-            <li>
+            <li className={summary ? "active" : undefined}>
               <b>04</b>
-              <span>生成确认</span>
+              <span>视觉风格</span>
             </li>
           </ol>
 
@@ -2692,62 +2773,115 @@ export function WorkspaceApp() {
               className="approval-summary"
               aria-labelledby="summary-title"
             >
-              <div>
-                <p className="eyebrow">APPROVED INPUT BOUNDARY</p>
-                <h2 id="summary-title">生成前确认摘要已固定</h2>
-                <p>
-                  Intent {summary.intentRevisionId.slice(-6)} · Outline{" "}
-                  {summary.outlineRevisionId.slice(-6)} · 模板{" "}
-                  {summary.templateVersionId.slice(-6)} · {summary.mode}
-                </p>
-                <small>
-                  输入指纹 {summary.snapshotInputHash.slice(0, 16)}…
-                </small>
+              <div className="approval-summary-heading">
+                <div>
+                  <p className="eyebrow">VISUAL STYLE CONFIRMATION</p>
+                  <h2 id="summary-title">视觉风格确认</h2>
+                </div>
+                <button
+                  className="quiet-button"
+                  type="button"
+                  disabled={Boolean(busyMessage)}
+                  onClick={() => void retryVisualStyles()}
+                >
+                  重新生成
+                </button>
               </div>
-              <div>
-                {draft.currentOutlineRevisionId !==
-                summary.outlineRevisionId ? (
-                  <p className="revision-warning">
-                    你已继续编辑；批准摘要仍绑定旧版本，未被覆盖。
-                  </p>
-                ) : (
-                  <p className="revision-ok">当前内容与已批准版本一致。</p>
-                )}
-                {summary.sourceSummary.sourceId === null ? (
-                  <label className="limited-draft-choice">
-                    <input
-                      type="checkbox"
-                      checked={continueLimitedDraft}
-                      onChange={(event) =>
-                        setContinueLimitedDraft(event.target.checked)
-                      }
-                    />
-                    <span>
-                      当前没有已批准来源。我选择继续“受限通用初稿”，其中不会把事实解读伪装成已核实结论。
-                    </span>
-                  </label>
-                ) : (
-                  <p className="revision-ok">
-                    已固定 {summary.sourceSummary.artifacts}{" "}
-                    个来源工件，可追溯生成。
-                  </p>
-                )}
-                <label className="limited-draft-choice">
-                  <input
-                    type="checkbox"
-                    checked={authorizeStrategistDesignLock}
-                    onChange={(event) =>
-                      setAuthorizeStrategistDesignLock(event.target.checked)
-                    }
-                  />
-                  <span>
-                    我授权 PPT‑Master Strategist 直接读取已批准的 Intent、Outline
-                    与来源，自主形成 design_spec.md；该方案将被记录为已确认并锁定为
-                    spec_lock.md 后，Executor 才会开始逐页创作。
-                  </span>
-                </label>
+              <p className="visual-style-intro">
+                AI
+                已根据创作意图和批准大纲生成三套方案。选择一套后，色彩与字体会随生成快照一并锁定。
+              </p>
+              {visualStyleOptions.length === 3 ? (
+                <div
+                  className="visual-style-grid"
+                  role="radiogroup"
+                  aria-label="视觉风格方案"
+                >
+                  {visualStyleOptions.map((option, index) => {
+                    const selected = option.id === selectedVisualStyleId;
+                    const swatches = [
+                      ["主题", option.colors.theme],
+                      ["背景", option.colors.background],
+                      ["文字", option.colors.text],
+                      ["次要文字", option.colors.secondaryText],
+                    ];
+                    return (
+                      <button
+                        key={option.id}
+                        className={`visual-style-card${selected ? " selected" : ""}`}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => setSelectedVisualStyleId(option.id)}
+                      >
+                        <span className="visual-style-card-heading">
+                          <span className="visual-style-index">
+                            {String.fromCharCode(65 + index)}
+                          </span>
+                          <strong>{option.name}</strong>
+                          {option.recommended ? <em>推荐</em> : null}
+                        </span>
+                        <span className="visual-style-rationale">
+                          {option.rationale}
+                        </span>
+                        <span className="visual-style-swatches">
+                          {swatches.map(([label, color]) => (
+                            <span key={label} title={`${label} ${color}`}>
+                              <i style={{ backgroundColor: color }} />
+                              <small>{label}</small>
+                              <code>{color}</code>
+                            </span>
+                          ))}
+                        </span>
+                        <span className="visual-style-fonts">
+                          <span>标题 {option.typography.headingFont}</span>
+                          <span>正文 {option.typography.bodyFont}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="visual-style-empty" aria-live="polite">
+                  <span>{busyMessage ?? "尚未生成视觉风格方案"}</span>
+                  {!busyMessage ? (
+                    <button
+                      type="button"
+                      onClick={() => void retryVisualStyles()}
+                    >
+                      生成三套方案
+                    </button>
+                  ) : null}
+                </div>
+              )}
+              {draft.currentOutlineRevisionId !== summary.outlineRevisionId ||
+              summary.sourceSummary.sourceId === null ? (
+                <div className="approval-summary-status">
+                  {draft.currentOutlineRevisionId !==
+                  summary.outlineRevisionId ? (
+                    <p className="revision-warning">
+                      你已继续编辑；批准摘要仍绑定旧版本，未被覆盖。
+                    </p>
+                  ) : null}
+                  {summary.sourceSummary.sourceId === null ? (
+                    <label className="limited-draft-choice">
+                      <input
+                        type="checkbox"
+                        checked={continueLimitedDraft}
+                        onChange={(event) =>
+                          setContinueLimitedDraft(event.target.checked)
+                        }
+                      />
+                      <span>
+                        当前没有已批准来源。我选择继续“受限通用初稿”，其中不会把事实解读伪装成已核实结论。
+                      </span>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="generation-policy-grid">
                 <fieldset className="image-policy-choice">
-                  <legend>图片策略（显式开启）</legend>
+                  <legend>图片策略</legend>
                   <label>
                     <span>页面范围</span>
                     <select
@@ -2824,14 +2958,9 @@ export function WorkspaceApp() {
                         ))}
                     </div>
                   ) : null}
-                  <small>
-                    图片只作非证据型视觉表达；未配置受控 Provider
-                    或额度时，任务会停在 Needs‑Manual，不会静默省略资源。
-                    当前单份演示上限为 {entitlement?.maxImagesPerDeck ?? 0} 张。
-                  </small>
                 </fieldset>
                 <fieldset className="image-policy-choice">
-                  <legend>视觉复核（可选，默认关闭）</legend>
+                  <legend>视觉复核</legend>
                   <label>
                     <span>复核级别</span>
                     <select
@@ -2848,10 +2977,9 @@ export function WorkspaceApp() {
                       </option>
                     </select>
                   </label>
-                  <small>
-                    确定性 SVG、内容、图表与包检始终执行并披露为检查报告，但不会阻止已有 PPTX 导出。标准视觉复核只运行一次审核与最多一次受限修复，不会自由重画整页。
-                  </small>
                 </fieldset>
+              </div>
+              <div className="generation-actions">
                 <button
                   className="primary-button"
                   type="button"
@@ -2859,7 +2987,6 @@ export function WorkspaceApp() {
                     draft.currentOutlineRevisionId !==
                       summary.outlineRevisionId ||
                     saveState === "saving" ||
-                    !authorizeStrategistDesignLock ||
                     (summary.sourceSummary.sourceId === null &&
                       !continueLimitedDraft) ||
                     (generationImageScope === "selective" &&
@@ -2868,15 +2995,15 @@ export function WorkspaceApp() {
                           (entitlement?.maxImagesPerDeck ?? 0))) ||
                     (generationImageScope === "cover_only" &&
                       (entitlement?.maxImagesPerDeck ?? 0) < 1) ||
+                    !visualStylePlanningJobId ||
+                    !selectedVisualStyleId ||
                     Boolean(busyMessage)
                   }
                   onClick={() => void startGeneration()}
                 >
                   {busyMessage ?? "开始真实生成"}
                 </button>
-                <small>
-                  未授权设计方案确认与锁定时不会启动 Executor；授权会写入不可变生成快照。
-                </small>
+                <small>设计方案确认与锁定将自动写入不可变生成快照。</small>
               </div>
             </section>
           ) : null}
@@ -2889,29 +3016,10 @@ export function WorkspaceApp() {
                     <p className="eyebrow">INTENT REVISION</p>
                     <h2 id="intent-title">确认创作意图</h2>
                   </div>
-                  <span>rev · {intent.intentRevisionId.slice(-6)}</span>
                 </div>
                 <div className="intent-grid">
                   <label>
-                    标题
-                    <input
-                      value={intent.title}
-                      onChange={(event) =>
-                        changeIntent("title", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    受众
-                    <input
-                      value={intent.audience}
-                      onChange={(event) =>
-                        changeIntent("audience", event.target.value)
-                      }
-                    />
-                  </label>
-                  <label>
-                    目标
+                    制作目标
                     <input
                       value={intent.goal}
                       onChange={(event) =>
@@ -2920,7 +3028,16 @@ export function WorkspaceApp() {
                     />
                   </label>
                   <label>
-                    目标页数
+                    目标受众
+                    <input
+                      value={intent.audience}
+                      onChange={(event) =>
+                        changeIntent("audience", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    页数规模
                     <input
                       type="number"
                       min={4}
@@ -2935,38 +3052,7 @@ export function WorkspaceApp() {
                     />
                   </label>
                   <label>
-                    语言
-                    <select
-                      value={intent.language}
-                      onChange={(event) =>
-                        changeIntent(
-                          "language",
-                          event.target.value as IntentRevision["language"],
-                        )
-                      }
-                    >
-                      <option value="zh-CN">简体中文</option>
-                      <option value="en-US">English</option>
-                    </select>
-                  </label>
-                  <label>
-                    内容深度
-                    <select
-                      value={intent.contentDepth}
-                      onChange={(event) =>
-                        changeIntent(
-                          "contentDepth",
-                          event.target.value as IntentRevision["contentDepth"],
-                        )
-                      }
-                    >
-                      <option value="conclusion_first">结论先行</option>
-                      <option value="balanced">均衡展开</option>
-                      <option value="research">研究深入</option>
-                    </select>
-                  </label>
-                  <label>
-                    视觉偏好
+                    配图偏好
                     <select
                       value={intent.visualPreference}
                       onChange={(event) =>
@@ -2998,28 +3084,6 @@ export function WorkspaceApp() {
                     页数已改变，请用“整纲优化”调整大纲；系统不会静默改写。
                   </p>
                 ) : null}
-              </section>
-
-              <section className="story-card" aria-labelledby="story-title">
-                <div className="card-section-heading">
-                  <div>
-                    <p className="eyebrow">STORYLINE</p>
-                    <h2 id="story-title">一句话故事线</h2>
-                  </div>
-                  <span>{outline.slides.length} 页</span>
-                </div>
-                <textarea
-                  aria-label="一句话故事线"
-                  rows={2}
-                  value={outline.storySummary}
-                  onChange={(event) => {
-                    outlineEditToken.current += 1;
-                    setOutline({
-                      ...outline,
-                      storySummary: event.target.value,
-                    });
-                  }}
-                />
               </section>
 
               <section
@@ -3098,9 +3162,6 @@ export function WorkspaceApp() {
                             }
                           />
                         </label>
-                        <small>
-                          {slide.type} · ID {slide.outlineSlideId.slice(-6)}
-                        </small>
                       </div>
                       <div
                         className="outline-actions"
@@ -3190,16 +3251,6 @@ export function WorkspaceApp() {
                   >
                     整纲优化并创建版本
                   </button>
-                  <div className="assistant-facts">
-                    <span>
-                      Provider：{planningProviderLabel(draft.planningProvider)}
-                    </span>
-                    <span>
-                      图片调用：{usage?.metrics.images ?? 0} /{" "}
-                      {entitlement?.monthlyImageLimit ?? 0}
-                    </span>
-                    <span>当前 rev：{outline.outlineRevisionId.slice(-6)}</span>
-                  </div>
                 </div>
               </details>
             </aside>

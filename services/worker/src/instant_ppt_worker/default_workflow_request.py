@@ -95,8 +95,7 @@ def build_default_workflow_request(
     if visual_review and visual_review_max_rounds == 0:
         raise ValueError("required visual review needs at least one review round")
     is_opt_in_visual_review_v3 = (
-        str(frozen_visual_review.get("policyVersion") or "")
-        == "visual-review-opt-in@v3"
+        str(frozen_visual_review.get("policyVersion") or "") == "visual-review-opt-in@v3"
     )
     native_charts = native_chart_generation_enabled()
     planning_configuration = dict(payload.get("providerConfiguration", {}).get("planning") or {})
@@ -122,11 +121,7 @@ def build_default_workflow_request(
         allowed_tools.extend(
             [
                 "provider-text",
-                *(
-                    tool
-                    for tool in active_agent_tools
-                    if native_charts or tool != "run_chart_gate"
-                ),
+                *(tool for tool in active_agent_tools if native_charts or tool != "run_chart_gate"),
             ]
         )
     if "ai" in list(image_policy.get("usage") or []):
@@ -155,9 +150,7 @@ def build_default_workflow_request(
                 "visualReviewMaxRounds": visual_review_max_rounds,
                 "visualReviewLevel": visual_review_level,
                 "authoringModel": str(frozen_visual_review.get("authoringModel") or model),
-                "visualReviewModel": str(
-                    frozen_visual_review.get("visualReviewModel") or model
-                ),
+                "visualReviewModel": str(frozen_visual_review.get("visualReviewModel") or model),
             },
             "versions": {
                 "workflow": (
@@ -249,6 +242,7 @@ def build_default_workflow_request(
                 ],
                 "activeTemplateVersion": None,
             },
+            "visualStyle": payload.get("visualStyle"),
             "image": image_policy,
             "research": {"mode": "closed_corpus", "allowedDomains": []},
             "production": {

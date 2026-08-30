@@ -68,9 +68,25 @@ class CreateGenerationJobData(BaseModel):
     visual_review_level: Literal["off", "standard"] = Field(
         default="off", alias="visualReviewLevel"
     )
+    visual_style_planning_job_id: str | None = Field(
+        default=None,
+        alias="visualStylePlanningJobId",
+        pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$",
+    )
+    visual_style_option_id: str | None = Field(
+        default=None,
+        alias="visualStyleOptionId",
+        pattern=r"^[a-z][a-z0-9-]{1,31}$",
+    )
     image_policy: GenerationImagePolicyData = Field(
         default_factory=GenerationImagePolicyData, alias="imagePolicy"
     )
+
+    @model_validator(mode="after")
+    def visual_style_selection_is_complete(self) -> CreateGenerationJobData:
+        if bool(self.visual_style_planning_job_id) != bool(self.visual_style_option_id):
+            raise ValueError("visual style planning job and option must be selected together")
+        return self
 
 
 class MutationRequest(BaseModel):

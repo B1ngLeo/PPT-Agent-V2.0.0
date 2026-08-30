@@ -87,6 +87,8 @@ def create_job(
                         continue_limited_draft=data.continue_limited_draft,
                         authorize_strategist_design_lock=(data.authorize_strategist_design_lock),
                         visual_review_level=data.visual_review_level,
+                        visual_style_planning_job_id=data.visual_style_planning_job_id,
+                        visual_style_option_id=data.visual_style_option_id,
                         image_policy=data.image_policy.model_dump(by_alias=True, mode="json"),
                     ),
                 )

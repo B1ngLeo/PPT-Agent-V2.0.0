@@ -1065,6 +1065,138 @@
       "title": "TemplatePolicy",
       "type": "object"
     },
+    "VisualStyleColors": {
+      "additionalProperties": false,
+      "properties": {
+        "theme": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Theme",
+          "type": "string"
+        },
+        "background": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Background",
+          "type": "string"
+        },
+        "text": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Text",
+          "type": "string"
+        },
+        "secondaryText": {
+          "pattern": "^#[0-9A-Fa-f]{6}$",
+          "title": "Secondarytext",
+          "type": "string"
+        }
+      },
+      "required": [
+        "theme",
+        "background",
+        "text",
+        "secondaryText"
+      ],
+      "title": "VisualStyleColors",
+      "type": "object"
+    },
+    "VisualStyleSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9-]{1,31}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "rationale": {
+          "maxLength": 240,
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "recommended": {
+          "title": "Recommended",
+          "type": "boolean"
+        },
+        "colors": {
+          "$ref": "#/$defs/VisualStyleColors"
+        },
+        "typography": {
+          "$ref": "#/$defs/VisualStyleTypography"
+        },
+        "planningJobId": {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "title": "Planningjobid",
+          "type": "string"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 160,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "rationale",
+        "recommended",
+        "colors",
+        "typography",
+        "planningJobId"
+      ],
+      "title": "VisualStyleSelection",
+      "type": "object"
+    },
+    "VisualStyleTypography": {
+      "additionalProperties": false,
+      "properties": {
+        "headingFont": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Headingfont",
+          "type": "string"
+        },
+        "bodyFont": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Bodyfont",
+          "type": "string"
+        }
+      },
+      "required": [
+        "headingFont",
+        "bodyFont"
+      ],
+      "title": "VisualStyleTypography",
+      "type": "object"
+    },
     "WorkflowVersions": {
       "additionalProperties": false,
       "properties": {
@@ -1170,6 +1302,17 @@
     },
     "template": {
       "$ref": "#/$defs/TemplatePolicy"
+    },
+    "visualStyle": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VisualStyleSelection"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "image": {
       "$ref": "#/$defs/ImagePolicy"

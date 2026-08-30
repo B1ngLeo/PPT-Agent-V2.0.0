@@ -25,6 +25,7 @@ from instant_ppt_domain.models import (
     OutlineApproval,
     OutlineRevision,
     OutlineSlide,
+    PlanningJob,
     Presentation,
     PresentationRevision,
     SlideVersion,
@@ -257,9 +258,59 @@ class CreateApprovedJobCommand:
     continue_limited_draft: bool = False
     authorize_strategist_design_lock: bool = False
     visual_review_level: str = "off"
+    visual_style_planning_job_id: str | None = None
+    visual_style_option_id: str | None = None
     image_policy: dict[str, Any] = field(
         default_factory=lambda: {"scope": "none", "usage": ["none"], "notes": {}}
     )
+
+
+def _selected_visual_style(
+    session: Session,
+    command: CreateApprovedJobCommand,
+    approval: OutlineApproval,
+) -> dict[str, Any] | None:
+    if not command.visual_style_planning_job_id and not command.visual_style_option_id:
+        return None
+    if not command.visual_style_planning_job_id or not command.visual_style_option_id:
+        raise GenerationApprovalRequired("a complete visual-style selection is required")
+    job = session.scalar(
+        select(PlanningJob).where(
+            PlanningJob.id == command.visual_style_planning_job_id,
+            PlanningJob.organization_id == command.context.organization_id,
+            PlanningJob.draft_id == command.draft_id,
+            PlanningJob.operation == "visual_style_generate",
+            PlanningJob.status == "succeeded",
+            PlanningJob.base_revision_id == approval.id,
+        )
+    )
+    if job is None:
+        raise GenerationApprovalRequired(
+            "selected visual styles are missing, incomplete, or bound to another approval"
+        )
+    options = list(dict(job.result_payload).get("options") or [])
+    selected = next(
+        (
+            dict(option)
+            for option in options
+            if str(option.get("id") or "") == command.visual_style_option_id
+        ),
+        None,
+    )
+    if selected is None:
+        raise GenerationApprovalRequired("selected visual-style option does not exist")
+    colors = dict(selected.get("colors") or {})
+    typography = dict(selected.get("typography") or {})
+    required_colors = {"theme", "background", "text", "secondaryText"}
+    required_fonts = {"headingFont", "bodyFont"}
+    if set(colors) != required_colors or set(typography) != required_fonts:
+        raise GenerationApprovalRequired("selected visual-style contract is invalid")
+    return {
+        **selected,
+        "planningJobId": job.id,
+        "provider": job.provider,
+        "model": job.model,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,6 +506,7 @@ def create_approved_generation_job(
             "Strategist design and spec-lock authorization is required"
         )
     approval, intent, outline, outline_slides, template = _approved_inputs(session, draft)
+    visual_style = _selected_visual_style(session, command, approval)
     has_approved_source = bool(approval.source_summary.get("sourceId"))
     if not has_approved_source and not command.continue_limited_draft:
         raise GenerationSourceDecisionRequired(
@@ -616,6 +668,8 @@ def create_approved_generation_job(
         "imagePolicy": image_policy,
         "createdAt": now.isoformat().replace("+00:00", "Z"),
     }
+    if visual_style is not None:
+        snapshot_payload["visualStyle"] = visual_style
     snapshot_sha = canonical_sha256(snapshot_payload)
     snapshot_payload["snapshotSha256"] = snapshot_sha
     snapshot = GenerationSnapshot(

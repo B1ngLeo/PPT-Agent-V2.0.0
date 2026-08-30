@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from instant_ppt_domain.ids import new_ulid
-from instant_ppt_domain.models import Artifact, SourceArtifact
+from instant_ppt_domain.models import Artifact, OutlineApproval, SourceArtifact
 from instant_ppt_domain.planning_jobs import (
     finish_planning_failure,
     finish_planning_success,
@@ -52,9 +52,7 @@ class PlanningResult:
 
 
 class PlanningExecutor(Protocol):
-    def infer_intent(
-        self, *, topic: str, source_refs: list[str], language: str
-    ) -> Any: ...
+    def infer_intent(self, *, topic: str, source_refs: list[str], language: str) -> Any: ...
 
     def generate_outline(
         self,
@@ -64,6 +62,14 @@ class PlanningExecutor(Protocol):
         instruction: str,
         action: str,
         target_slide_id: str | None,
+        source_context: dict[str, Any] | None = None,
+    ) -> Any: ...
+
+    def generate_visual_styles(
+        self,
+        *,
+        intent: dict[str, Any],
+        outline: dict[str, Any],
         source_context: dict[str, Any] | None = None,
     ) -> Any: ...
 
@@ -96,9 +102,7 @@ class DeterministicPlanningExecutor:
             "contentDepth": "conclusion_first",
             "visualPreference": "data_first",
             "notes": (
-                "先给结论，再解释证据与行动。"
-                if language == "zh-CN"
-                else "Lead with conclusions."
+                "先给结论，再解释证据与行动。" if language == "zh-CN" else "Lead with conclusions."
             ),
             "sourceRefs": source_refs,
         }
@@ -131,9 +135,7 @@ class DeterministicPlanningExecutor:
                 for slide in slides:
                     if slide["outlineSlideId"] == target_slide_id:
                         suffix = instruction.strip()[:80] or (
-                            "强化结论与证据"
-                            if language == "zh-CN"
-                            else "Sharpen the evidence"
+                            "强化结论与证据" if language == "zh-CN" else "Sharpen the evidence"
                         )
                         slide["keyPoints"] = [suffix, *slide["keyPoints"][:2]]
                         matched = True
@@ -183,7 +185,9 @@ class DeterministicPlanningExecutor:
                     "type": (
                         "cover"
                         if index == 0
-                        else "closing" if index == count - 1 else roles[(index - 1) % len(roles)]
+                        else "closing"
+                        if index == count - 1
+                        else roles[(index - 1) % len(roles)]
                     ),
                     "title": titles[index % len(titles)],
                     "keyPoints": [
@@ -210,6 +214,76 @@ class DeterministicPlanningExecutor:
             input_tokens=self._tokens(
                 {"intent": intent, "instruction": instruction, "action": action}
             ),
+            output_tokens=self._tokens(data),
+        )
+
+    def generate_visual_styles(
+        self,
+        *,
+        intent: dict[str, Any],
+        outline: dict[str, Any],
+        source_context: dict[str, Any] | None = None,
+    ) -> PlanningResult:
+        del source_context
+        audience = str(intent.get("audience") or "受众")
+        story = str(outline.get("storySummary") or "已批准大纲")
+        data = {
+            "options": [
+                {
+                    "id": "editorial-green",
+                    "name": "编辑绿",
+                    "rationale": f"以克制的深绿建立可信度，适合面向{audience}呈现“{story[:36]}”。",
+                    "recommended": True,
+                    "colors": {
+                        "theme": "#1E6B4D",
+                        "background": "#F7F5ED",
+                        "text": "#17221D",
+                        "secondaryText": "#5C6861",
+                    },
+                    "typography": {
+                        "headingFont": "Noto Sans CJK SC",
+                        "bodyFont": "Microsoft YaHei",
+                    },
+                },
+                {
+                    "id": "executive-blue",
+                    "name": "理性蓝",
+                    "rationale": "以冷静蓝色强化结构、数据与决策感，适合清晰的商务叙事。",
+                    "recommended": False,
+                    "colors": {
+                        "theme": "#2356A8",
+                        "background": "#F5F7FB",
+                        "text": "#172033",
+                        "secondaryText": "#58647A",
+                    },
+                    "typography": {
+                        "headingFont": "Microsoft YaHei",
+                        "bodyFont": "Noto Sans CJK SC",
+                    },
+                },
+                {
+                    "id": "warm-editorial",
+                    "name": "暖调刊物",
+                    "rationale": "用暖白与砖红形成更有人情味的编辑感，同时保持正文易读。",
+                    "recommended": False,
+                    "colors": {
+                        "theme": "#A33A2B",
+                        "background": "#FBF6EE",
+                        "text": "#2B211D",
+                        "secondaryText": "#6C5B53",
+                    },
+                    "typography": {
+                        "headingFont": "Noto Sans CJK SC",
+                        "bodyFont": "Noto Sans CJK SC",
+                    },
+                },
+            ]
+        }
+        return PlanningResult(
+            data=data,
+            provider=self.provider,
+            model=self.model,
+            input_tokens=self._tokens({"intent": intent, "outline": outline}),
             output_tokens=self._tokens(data),
         )
 
@@ -240,17 +314,31 @@ class PlanningSourceRecord:
     size_bytes: int
 
 
-def _inputs(
-    session: Session, job_id: str, organization_id: str
-) -> tuple[str, dict[str, Any]]:
+def _inputs(session: Session, job_id: str, organization_id: str) -> tuple[str, dict[str, Any]]:
     job = get_planning_job(session, job_id, organization_id)
     payload = dict(job.request_payload)
     if job.operation == "intent_infer":
         return job.operation, payload
+    if job.operation == "visual_style_generate":
+        approval = session.scalar(
+            select(OutlineApproval).where(
+                OutlineApproval.id == payload["approvalId"],
+                OutlineApproval.organization_id == organization_id,
+                OutlineApproval.draft_id == job.draft_id,
+            )
+        )
+        if approval is None:
+            raise ValueError("visual-style approval boundary no longer exists")
+        intent = serialize_intent_revision(
+            get_intent_revision(session, approval.intent_revision_id, organization_id)
+        )
+        outline = serialize_outline_revision(
+            session,
+            get_outline_revision(session, approval.outline_revision_id, organization_id),
+        )
+        return job.operation, {**payload, "intent": intent, "outline": outline}
     intent_id = str(payload["intentRevisionId"])
-    intent = serialize_intent_revision(
-        get_intent_revision(session, intent_id, organization_id)
-    )
+    intent = serialize_intent_revision(get_intent_revision(session, intent_id, organization_id))
     existing_id = payload.get("existingOutlineRevisionId")
     existing = (
         serialize_outline_revision(
@@ -368,9 +456,7 @@ def process_planning_job(
     try:
         source_context = None
         if source_records:
-            store = source_object_store or WorkerObjectStore(
-                WorkerObjectSettings.from_env()
-            )
+            store = source_object_store or WorkerObjectStore(WorkerObjectSettings.from_env())
             source_context = _load_planning_source_context(source_records, store)
         planner = executor or create_planning_executor()
         if operation == "intent_infer":
@@ -379,7 +465,7 @@ def process_planning_job(
                 source_refs=[str(item) for item in inputs.get("sourceRefs") or []],
                 language=str(inputs.get("language") or "zh-CN"),
             )
-        else:
+        elif operation == "outline_generate":
             result = planner.generate_outline(
                 intent=dict(inputs["intent"]),
                 existing=(dict(inputs["existing"]) if inputs.get("existing") else None),
@@ -388,6 +474,12 @@ def process_planning_job(
                 target_slide_id=(
                     str(inputs["targetSlideId"]) if inputs.get("targetSlideId") else None
                 ),
+                source_context=source_context,
+            )
+        else:
+            result = planner.generate_visual_styles(
+                intent=dict(inputs["intent"]),
+                outline=dict(inputs["outline"]),
                 source_context=source_context,
             )
     except (PlanningSourceFailure, SourceObjectError):

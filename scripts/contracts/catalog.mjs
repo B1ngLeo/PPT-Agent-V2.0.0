@@ -140,7 +140,9 @@ const schemas = {
     {
       planningJobId: ulid,
       draftId: ulid,
-      operation: { enum: ["intent_infer", "outline_generate"] },
+      operation: {
+        enum: ["intent_infer", "outline_generate", "visual_style_generate"],
+      },
       status: {
         enum: ["queued", "running", "retrying", "succeeded", "failed"],
       },
@@ -343,7 +345,11 @@ const schemas = {
       subjectType: { enum: ["slide", "deck", "package"] },
       subjectId: ulid,
       profile: {
-        enum: ["quick-engineering", "default-agentic", "deterministic-template"],
+        enum: [
+          "quick-engineering",
+          "default-agentic",
+          "deterministic-template",
+        ],
       },
       quickGenerate: { type: "boolean" },
       passed: { type: "boolean" },
@@ -394,7 +400,11 @@ const schemas = {
       engineVersion: nonEmptyString,
       fontPackVersion: nonEmptyString,
       engineProfile: {
-        enum: ["quick-engineering", "default-agentic", "deterministic-template"],
+        enum: [
+          "quick-engineering",
+          "default-agentic",
+          "deterministic-template",
+        ],
       },
       authoringMode: { enum: ["agent-authoring", "deterministic-template"] },
       authoringDisclosure: {
@@ -941,6 +951,12 @@ const endpoints = [
   ["get", "/v1/drafts/{draftId}/intent-revisions", "listIntentRevisions", 200],
   ["get", "/v1/intent-revisions/{intentRevisionId}", "getIntentRevision", 200],
   ["post", "/v1/drafts/{draftId}/outline:generate", "generateOutline", 202],
+  [
+    "post",
+    "/v1/drafts/{draftId}/visual-styles:generate",
+    "generateVisualStyles",
+    202,
+  ],
   [
     "post",
     "/v1/drafts/{draftId}/outline-revisions",
@@ -1515,6 +1531,19 @@ function openApiDocument() {
               default: "off",
               description:
                 "Explicit opt-in level for the frozen v3 visual-review policy; standard runs one review and at most one bounded repair.",
+            },
+            visualStylePlanningJobId: {
+              anyOf: [ulid, { type: "null" }],
+              description:
+                "Succeeded visual_style_generate planning job bound to the approved outline.",
+            },
+            visualStyleOptionId: {
+              anyOf: [
+                { type: "string", pattern: "^[a-z][a-z0-9-]{1,31}$" },
+                { type: "null" },
+              ],
+              description:
+                "Selected option from the persisted three-direction visual-style proposal.",
             },
             imagePolicy: { $ref: "#/components/schemas/GenerationImagePolicy" },
           },

@@ -597,6 +597,49 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
+  /v1/drafts/{draftId}/visual-styles:generate:
+    post:
+      operationId: generateVisualStyles
+      tags:
+        - drafts
+      parameters:
+        - name: draftId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[0-9A-HJKMNP-TV-Z]{26}$
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MutationRequest"
+      responses:
+        "202":
+          description: Successful response
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceResponse"
+        default:
+          description: RFC 7807 problem
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
   /v1/drafts/{draftId}/outline-revisions:
     post:
       operationId: createOutlineRevision
@@ -1583,6 +1626,7 @@ components:
           enum:
             - intent_infer
             - outline_generate
+            - visual_style_generate
         status:
           enum:
             - queued
@@ -2937,6 +2981,17 @@ components:
           default: off
           description: Explicit opt-in level for the frozen v3 visual-review policy; standard runs one review and at most one
             bounded repair.
+        visualStylePlanningJobId:
+          anyOf:
+            - *a2
+            - type: "null"
+          description: Succeeded visual_style_generate planning job bound to the approved outline.
+        visualStyleOptionId:
+          anyOf:
+            - type: string
+              pattern: ^[a-z][a-z0-9-]{1,31}$
+            - type: "null"
+          description: Selected option from the persisted three-direction visual-style proposal.
         imagePolicy:
           $ref: "#/components/schemas/GenerationImagePolicy"
     CreateGenerationJobRequest:

@@ -53,10 +53,11 @@ def _complete_planning_job(client: TestClient, job_id: str) -> dict[str, Any]:
         payload = dict(job.request_payload)
         operation = job.operation
         organization_id = job.organization_id
-        if operation == "outline_generate":
+        if operation in {"outline_generate", "visual_style_generate"}:
             intent = serialize_intent_revision(
                 get_intent_revision(session, payload["intentRevisionId"], organization_id)
             )
+        if operation == "outline_generate":
             existing_id = payload.get("existingOutlineRevisionId")
             existing = (
                 serialize_outline_revision(
@@ -72,7 +73,7 @@ def _complete_planning_job(client: TestClient, job_id: str) -> dict[str, Any]:
             source_refs=payload["sourceRefs"],
             language=payload["language"],
         )
-    else:
+    elif operation == "outline_generate":
         result = gateway.generate_outline(
             intent=intent,
             existing=existing,
@@ -80,6 +81,13 @@ def _complete_planning_job(client: TestClient, job_id: str) -> dict[str, Any]:
             action=payload["action"],
             target_slide_id=payload["targetSlideId"],
         )
+    else:
+        with factory() as session:
+            approved_outline = serialize_outline_revision(
+                session,
+                get_outline_revision(session, payload["outlineRevisionId"], organization_id),
+            )
+        result = gateway.generate_visual_styles(intent=intent, outline=approved_outline)
     with factory.begin() as session:
         finish_planning_success(
             session,
@@ -272,6 +280,34 @@ def test_topic_intent_outline_refresh_approval_and_post_approval_revision(
             ).scalar_one()
             == 0
         )
+
+
+def test_visual_style_job_persists_three_options_after_approval(client: TestClient) -> None:
+    draft = _create(client, topic="视觉风格规划")
+    _infer(client, draft["draftId"])
+    outline = _generate(client, draft["draftId"])
+    approval_response = client.post(
+        f"/v1/outline-revisions/{outline['outlineRevisionId']}:approve",
+        headers={**ALICE, "Idempotency-Key": "approve-visual-style"},
+        json=_mutation({}),
+    )
+    assert approval_response.status_code == 200, approval_response.text
+    approval = approval_response.json()["data"]
+
+    queued = client.post(
+        f"/v1/drafts/{draft['draftId']}/visual-styles:generate",
+        headers={**ALICE, "Idempotency-Key": "visual-style-job"},
+        json=_mutation({}, approval["approvalId"]),
+    )
+    assert queued.status_code == 202, queued.text
+    job_id = queued.json()["data"]["planningJobId"]
+    proposal = _complete_planning_job(client, job_id)
+
+    assert len(proposal["options"]) == 3
+    assert sum(option["recommended"] for option in proposal["options"]) == 1
+    restored = client.get(f"/v1/drafts/{draft['draftId']}", headers=ALICE).json()["data"]
+    assert restored["planningJob"]["planningJobId"] == job_id
+    assert restored["planningJob"]["result"] == proposal
 
 
 def test_concurrent_base_conflict_and_undo_redo_create_new_revisions(client: TestClient) -> None:

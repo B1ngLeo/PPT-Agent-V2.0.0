@@ -166,6 +166,7 @@
         "listIntentRevisions",
         "getIntentRevision",
         "generateOutline",
+        "generateVisualStyles",
         "createOutlineRevision",
         "listOutlineRevisions",
         "getOutlineRevision",

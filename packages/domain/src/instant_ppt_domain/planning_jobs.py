@@ -12,6 +12,7 @@ from instant_ppt_domain.ids import new_ulid
 from instant_ppt_domain.models import (
     Membership,
     OutboxEvent,
+    OutlineApproval,
     PlanningJob,
     SourceArtifact,
     User,
@@ -240,6 +241,43 @@ def enqueue_outline_job(
     )
 
 
+def enqueue_visual_style_job(
+    session: Session,
+    context: TenantContext,
+    draft_id: str,
+    *,
+    approval_id: str | None,
+    request_id: str,
+) -> PlanningJob:
+    draft = get_draft(session, draft_id, context.organization_id, for_update=True)
+    if not draft.approved_outline_revision_id:
+        raise WorkspaceValidationError("an approved outline is required")
+    approval = session.scalar(
+        select(OutlineApproval).where(
+            OutlineApproval.id == approval_id,
+            OutlineApproval.draft_id == draft.id,
+            OutlineApproval.organization_id == context.organization_id,
+            OutlineApproval.outline_revision_id == draft.approved_outline_revision_id,
+        )
+    )
+    if approval is None:
+        raise WorkspaceConflict("visual-style approval boundary is stale")
+    return _enqueue(
+        session,
+        context,
+        draft.id,
+        operation="visual_style_generate",
+        base_revision_id=approval.id,
+        request_payload={
+            "approvalId": approval.id,
+            "intentRevisionId": approval.intent_revision_id,
+            "outlineRevisionId": approval.outline_revision_id,
+            "templateVersionId": approval.template_version_id,
+        },
+        request_id=request_id,
+    )
+
+
 def resolve_job_context(session: Session, job: PlanningJob) -> TenantContext:
     user = session.scalar(select(User).where(User.id == job.actor_id))
     membership = session.scalar(
@@ -261,9 +299,7 @@ def resolve_job_context(session: Session, job: PlanningJob) -> TenantContext:
     )
 
 
-def start_planning_attempt(
-    session: Session, job_id: str, organization_id: str
-) -> PlanningJob:
+def start_planning_attempt(session: Session, job_id: str, organization_id: str) -> PlanningJob:
     job = get_planning_job(session, job_id, organization_id, for_update=True)
     if job.status in TERMINAL_PLANNING_STATUSES:
         return job
@@ -330,9 +366,13 @@ def finish_planning_success(
         "intent_infer"
         if job.operation == "intent_infer"
         else (
-            "outline_generate"
-            if job.request_payload.get("action") == "generate"
-            else f"outline_{job.request_payload.get('action')}"
+            "visual_style_generate"
+            if job.operation == "visual_style_generate"
+            else (
+                "outline_generate"
+                if job.request_payload.get("action") == "generate"
+                else f"outline_{job.request_payload.get('action')}"
+            )
         )
     )
     provider_call = record_provider_call(
@@ -382,10 +422,13 @@ def finish_planning_success(
             provider_call_id=provider_call.id,
             request_id=job.request_id,
         )
+    elif job.operation == "visual_style_generate":
+        job.result_payload = dict(result)
+        revision = None
     else:
         raise WorkspaceValidationError("planning job operation is invalid")
     job.status = "succeeded"
-    job.result_revision_id = revision.id
+    job.result_revision_id = revision.id if revision is not None else None
     job.provider = provider
     job.model = model
     job.error_code = None
@@ -397,7 +440,11 @@ def finish_planning_success(
 
 
 def planning_job_result(session: Session, job: PlanningJob) -> dict[str, Any] | None:
-    if job.status != "succeeded" or not job.result_revision_id:
+    if job.status != "succeeded":
+        return None
+    if job.operation == "visual_style_generate":
+        return dict(job.result_payload) if job.result_payload else None
+    if not job.result_revision_id:
         return None
     if job.operation == "intent_infer":
         from instant_ppt_domain.workspace import get_intent_revision

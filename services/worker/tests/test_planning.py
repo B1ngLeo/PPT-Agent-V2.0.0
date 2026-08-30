@@ -43,6 +43,45 @@ def test_kimi_planning_service_validates_intent_and_preserves_source_refs() -> N
     assert provider.calls[0]["maxCompletionTokens"] == 1600
 
 
+def test_visual_style_planning_returns_exactly_three_accessible_directions() -> None:
+    response = {
+        "options": [
+            {
+                "id": "editorial-green",
+                "name": "编辑绿",
+                "rationale": "克制可信",
+                "recommended": index == 0,
+                "colors": {
+                    "theme": theme,
+                    "background": "#F7F5ED",
+                    "text": "#17221D",
+                    "secondaryText": "#5C6861",
+                },
+                "typography": {
+                    "headingFont": "Noto Sans CJK SC",
+                    "bodyFont": "Microsoft YaHei",
+                },
+            }
+            for index, theme in enumerate(("#1E6B4D", "#2356A8", "#A33A2B"))
+        ],
+    }
+    for index, option in enumerate(response["options"]):
+        option["id"] = f"direction-{index + 1}"
+        option["name"] = f"方案 {index + 1}"
+    provider = DeterministicFakeProvider([json.dumps(response, ensure_ascii=False)])
+    service = PlanningService(provider)
+
+    result = service.generate_visual_styles(
+        intent={"title": "季度复盘", "audience": "管理层"},
+        outline={"storySummary": "从结论到行动", "slides": []},
+    )
+
+    assert result.data == response
+    assert len(result.data["options"]) == 3
+    assert sum(option["recommended"] for option in result.data["options"]) == 1
+    assert provider.calls[0]["maxCompletionTokens"] == 1800
+
+
 def test_kimi_planning_service_rejects_invented_citations() -> None:
     response = {
         "storySummary": "从结论到行动",
@@ -173,16 +212,12 @@ def test_planning_service_delegates_retries_to_durable_job(
     provider.provider_name = "qwen"
 
     def create_provider(name: str | None, *, transport_max_retries: int):
-        observed.update(
-            {"name": name, "transportMaxRetries": transport_max_retries}
-        )
+        observed.update({"name": name, "transportMaxRetries": transport_max_retries})
         return provider
 
     monkeypatch.setenv("PLANNING_BACKEND", "qwen")
     monkeypatch.setenv("PLANNING_TRANSPORT_MAX_RETRIES", "0")
-    monkeypatch.setattr(
-        "instant_ppt_worker.planning.create_text_provider", create_provider
-    )
+    monkeypatch.setattr("instant_ppt_worker.planning.create_text_provider", create_provider)
 
     service = PlanningService.from_env()
 
@@ -220,9 +255,9 @@ def test_private_provider_gateway_requires_token_and_serves_planning(
         url = f"http://127.0.0.1:{server.server_port}/internal/v1/planning/intent"
         http_request = request.Request(
             url,
-            data=json.dumps(
-                {"topic": "合成规划", "sourceRefs": [], "language": "zh-CN"}
-            ).encode("utf-8"),
+            data=json.dumps({"topic": "合成规划", "sourceRefs": [], "language": "zh-CN"}).encode(
+                "utf-8"
+            ),
             headers={
                 "Authorization": "Bearer private-test-token",
                 "Content-Type": "application/json",
@@ -275,9 +310,9 @@ def test_private_provider_gateway_returns_sanitized_provider_failure(
         url = f"http://127.0.0.1:{server.server_port}/internal/v1/planning/intent"
         http_request = request.Request(
             url,
-            data=json.dumps(
-                {"topic": "代理探测", "sourceRefs": [], "language": "zh-CN"}
-            ).encode("utf-8"),
+            data=json.dumps({"topic": "代理探测", "sourceRefs": [], "language": "zh-CN"}).encode(
+                "utf-8"
+            ),
             headers={
                 "Authorization": "Bearer private-test-token",
                 "Content-Type": "application/json",

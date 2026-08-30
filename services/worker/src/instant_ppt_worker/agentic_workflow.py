@@ -815,6 +815,15 @@ def _design_spec(
     plan: dict[str, Any],
     image_preparation: ImagePreparation,
 ) -> str:
+    colors = request.visual_style.colors if request.visual_style else None
+    typography = request.visual_style.typography if request.visual_style else None
+    background = colors.background if colors else "#F8FAFC"
+    theme = colors.theme if colors else "#2563EB"
+    text = colors.text if colors else "#0F172A"
+    secondary_text = colors.secondary_text if colors else "#0F766E"
+    heading_font = typography.heading_font if typography else "Microsoft YaHei"
+    body_font = typography.body_font if typography else "Microsoft YaHei"
+    style_name = request.visual_style.name if request.visual_style else "Data-journalism"
     lines = [
         "<!-- ppt-master-schema: design-spec/v1 -->",
         f"# {request.intent.title} - Design Spec",
@@ -838,7 +847,7 @@ def _design_spec(
             "| Content Strategy | Closed-corpus, conclusion-first, every claim bound "
             "to source fragments |"
         ),
-        "| Design Style | Data-journalism grid with restrained evidence hierarchy |",
+        f"| Design Style | {style_name}; restrained evidence hierarchy |",
         (
             "| AI Image Acquisition Path | "
             + (
@@ -901,12 +910,12 @@ def _design_spec(
             "",
             "| Role | HEX | Purpose |",
             "| --- | --- | --- |",
-            "| Background | #F8FAFC | publication field |",
+            f"| Background | {background} | publication field |",
             "| Secondary background | #E2E8F0 | evidence bands |",
-            "| Primary | #0F172A | titles and axes |",
-            "| Accent | #2563EB | primary data series |",
-            "| Secondary accent | #0F766E | comparison series |",
-            "| Body text | #1E293B | body copy |",
+            f"| Primary | {text} | titles and axes |",
+            f"| Accent | {theme} | primary data series |",
+            f"| Secondary accent | {secondary_text} | comparison series |",
+            f"| Body text | {text} | body copy |",
             "",
             "## IV. Typography System",
             "",
@@ -914,12 +923,12 @@ def _design_spec(
             "",
             "| Role | Character (Reference) | Primary | English if non-English | Fallback tail |",
             "| --- | --- | --- | --- | --- |",
-            "| Title | precise publication sans | Microsoft YaHei | Arial | sans-serif |",
-            "| Body | compact evidence sans | Microsoft YaHei | Arial | sans-serif |",
+            f"| Title | precise publication sans | {heading_font} | Arial | sans-serif |",
+            f"| Body | compact evidence sans | {body_font} | Arial | sans-serif |",
             "| Data | tabular numeric sans | Arial | Arial | sans-serif |",
             "",
-            "- **Title stack**: Microsoft YaHei, Arial, sans-serif",
-            "- **Body stack**: Microsoft YaHei, Arial, sans-serif",
+            f"- **Title stack**: {heading_font}, Arial, sans-serif",
+            f"- **Body stack**: {body_font}, Arial, sans-serif",
             "- **Data stack**: Arial, Microsoft YaHei, sans-serif",
             "",
             "### Font Size Hierarchy",
@@ -1090,6 +1099,15 @@ def _spec_lock(
     Agent-authoring snapshots governed by PPT Master authority never call this
     local fallback; their Strategist authors and validates the upstream lock.
     """
+    colors = request.visual_style.colors if request.visual_style else None
+    typography = request.visual_style.typography if request.visual_style else None
+    background = colors.background if colors else "#F8FAFC"
+    theme = colors.theme if colors else "#2563EB"
+    text = colors.text if colors else "#0F172A"
+    secondary_text = colors.secondary_text if colors else "#0F766E"
+    heading_font = typography.heading_font if typography else "Microsoft YaHei"
+    body_font = typography.body_font if typography else "Microsoft YaHei"
+    style_id = request.visual_style.id if request.visual_style else "data-journalism"
     rows = [
         "<!-- ppt-master-schema: spec-lock/v1 -->",
         "# Execution Lock",
@@ -1108,7 +1126,7 @@ def _spec_lock(
         "- mode: pyramid",
         "",
         "## visual_style",
-        "- visual_style: data-journalism",
+        f"- visual_style: {style_id}",
     ]
     native_fallbacks = [
         value for value in image_preparation.resources if value.get("status") == "Resolved-Native"
@@ -1129,17 +1147,17 @@ def _spec_lock(
         [
             "",
             "## colors",
-            "- background: #F8FAFC",
+            f"- background: {background}",
             "- secondary_background: #E2E8F0",
-            "- primary: #0F172A",
-            "- accent: #2563EB",
-            "- secondary_accent: #0F766E",
-            "- body_text: #1E293B",
+            f"- primary: {text}",
+            f"- accent: {theme}",
+            f"- secondary_accent: {secondary_text}",
+            f"- body_text: {text}",
             "",
             "## typography",
-            "- font_family: Microsoft YaHei, Arial, sans-serif",
-            "- title_family: Microsoft YaHei, Arial, sans-serif",
-            "- body_family: Microsoft YaHei, Arial, sans-serif",
+            f"- font_family: {body_font}, Arial, sans-serif",
+            f"- title_family: {heading_font}, Arial, sans-serif",
+            f"- body_family: {body_font}, Arial, sans-serif",
             "- data_family: Arial, Microsoft YaHei, sans-serif",
             "- body: 22",
             "- title: 48",
@@ -1468,15 +1486,9 @@ def _bundle(project: Path, target: Path) -> None:
     ):
         included.extend(sorted((project / "agent" / agent_directory).glob("*.json")))
     included.extend(
-        sorted(
-            path
-            for path in (project / "agent" / "visual-reviews").rglob("*")
-            if path.is_file()
-        )
+        sorted(path for path in (project / "agent" / "visual-reviews").rglob("*") if path.is_file())
     )
-    included.extend(
-        sorted(path for path in (project / ".review").rglob("*") if path.is_file())
-    )
+    included.extend(sorted(path for path in (project / ".review").rglob("*") if path.is_file()))
     included.extend(sorted((project / "validation").glob("visual-*.json")))
     included.extend(sorted((project / ".preview").glob("round-*/*.png")))
     included.extend(
@@ -1677,9 +1689,7 @@ def _visual_review_text_provider(
         return DeterministicPresentationAgentProvider(), True
     try:
         return (
-            create_visual_review_text_provider(
-                model_name=request.authoring.visual_review_model
-            ),
+            create_visual_review_text_provider(model_name=request.authoring.visual_review_model),
             True,
         )
     except ProviderConfigurationError as error:
@@ -1713,9 +1723,7 @@ def _author_design_spec_with_agent(
     image_preparation: ImagePreparation,
     text_provider: TextProvider | None,
 ) -> str:
-    uses_upstream_authority = (
-        request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
-    )
+    uses_upstream_authority = request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
     strategist_tool_names = {
         "read_approved_context",
         "read_design_spec_contract",
@@ -1748,7 +1756,9 @@ def _author_design_spec_with_agent(
             role="strategist",
             goal=(
                 "Read the approved Intent, Outline, complete source corpus, template choice, and "
-                "production policy. Independently establish the narrative and visual language, "
+                "production policy. Treat a confirmed visualStyle as binding for its four "
+                "colors and heading/body fonts; derive only compatible secondary roles. "
+                "Independently establish the narrative and remaining visual language, "
                 "read the complete pinned PPT Master design-spec contract, then directly author "
                 "the upstream-native "
                 "canonical design_spec.md. Do not create a Page "
@@ -1763,6 +1773,11 @@ def _author_design_spec_with_agent(
                 ],
                 "untrustedSourceData": fragments,
                 "template": request.template.model_dump(by_alias=True, mode="json"),
+                "visualStyle": (
+                    request.visual_style.model_dump(by_alias=True, mode="json")
+                    if request.visual_style
+                    else None
+                ),
                 "imagePolicy": request.image.model_dump(by_alias=True, mode="json"),
                 "preparedImages": list(image_preparation.resources),
                 "researchPolicy": request.research.model_dump(by_alias=True, mode="json"),
@@ -1840,6 +1855,11 @@ def _author_spec_lock_with_agent(
                 "designSpecSha256": sha256_file(project / "design_spec.md"),
                 "approvedPageCount": len(request.outline),
                 "template": request.template.model_dump(by_alias=True, mode="json"),
+                "visualStyle": (
+                    request.visual_style.model_dump(by_alias=True, mode="json")
+                    if request.visual_style
+                    else None
+                ),
                 "preparedImages": list(image_preparation.resources),
                 "requiredTools": [
                     "read_approved_context",
@@ -2355,9 +2375,7 @@ def _author_slides_with_agent(
 ) -> list[dict[str, Any]]:
     svg_dir = project / "svg_output"
     completed_pages: list[dict[str, Any]] = []
-    uses_upstream_authority = (
-        request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
-    )
+    uses_upstream_authority = request.authoring.policy_version == PPT_MASTER_AUTHORITY_POLICY
     reference_evidence: dict[str, Any] | None = None
     if uses_upstream_authority:
         reference_evidence = executor_reference_manifest(
@@ -2552,9 +2570,7 @@ def _author_slides_with_agent(
                     request,
                     receipts,
                     kind="first-page-gate",
-                    status=str(
-                        gate_record["observation"]["report"].get("status") or "passed"
-                    ),
+                    status=str(gate_record["observation"]["report"].get("status") or "passed"),
                     subject_sha256=str(author_receipt["subjectSha256"]),
                     payload={
                         **author_receipt,
@@ -2608,9 +2624,7 @@ def _repair_final_svg_gate_with_agent(
             advisories_by_page = _svg_gate_advisories_by_page(report, plan["roster"])
             global_advisories = [
                 dict(issue)
-                for issue in report.get("categories", {})
-                .get("introduced", {})
-                .get("issues", [])
+                for issue in report.get("categories", {}).get("introduced", {}).get("issues", [])
                 if isinstance(issue, dict) and not str(issue.get("file") or "").strip()
             ]
             before_hash = _svg_roster_hash(sorted((project / "svg_output").glob("*.svg")))
@@ -3469,14 +3483,10 @@ def run_default_workflow(
                 )
                 if is_opt_in_visual_review:
                     blocking_findings = [
-                        issue
-                        for issue in final_review["issues"]
-                        if issue["severity"] == "blocking"
+                        issue for issue in final_review["issues"] if issue["severity"] == "blocking"
                     ]
                     eligible_findings = [
-                        issue
-                        for issue in blocking_findings
-                        if issue.get("autoFixEligible") is True
+                        issue for issue in blocking_findings if issue.get("autoFixEligible") is True
                     ]
                     if not blocking_findings:
                         decision = {
@@ -3583,9 +3593,7 @@ def run_default_workflow(
                         for pnn, findings in findings_by_page.items()
                     }
                     findings_by_page = {
-                        pnn: findings
-                        for pnn, findings in findings_by_page.items()
-                        if findings
+                        pnn: findings for pnn, findings in findings_by_page.items() if findings
                     }
                 if not findings_by_page:
                     raise VisualReviewError(
@@ -3696,8 +3704,7 @@ def run_default_workflow(
                         )
                         if not page_gate.get("passed"):
                             backup_key = str(
-                                repair_receipt.get("visualRepair", {}).get("backupKey")
-                                or ""
+                                repair_receipt.get("visualRepair", {}).get("backupKey") or ""
                             )
                             backup_path = project / backup_key
                             if not backup_key or not backup_path.is_file():
@@ -3738,8 +3745,8 @@ def run_default_workflow(
                 if final_svg_sha256 == before_review_repair_sha256:
                     if not is_opt_in_visual_review:
                         raise VisualReviewError(
-                        "visual repair completed without changing the owned SVG roster hash"
-                    )
+                            "visual repair completed without changing the owned SVG roster hash"
+                        )
                 post_visual_svg_report = _run_final_svg_checker(
                     workspace_root,
                     project,
@@ -3749,12 +3756,15 @@ def run_default_workflow(
                     not _final_svg_report_passed(post_visual_svg_report, svg_paths)
                     and is_opt_in_visual_review
                 ):
-                    affected_pages = set(
-                        _svg_gate_findings_by_page(
-                            post_visual_svg_report,
-                            plan["roster"],
+                    affected_pages = (
+                        set(
+                            _svg_gate_findings_by_page(
+                                post_visual_svg_report,
+                                plan["roster"],
+                            )
                         )
-                    ) & modified_visual_pages
+                        & modified_visual_pages
+                    )
                     if not affected_pages and post_visual_svg_report.get("_commandError"):
                         affected_pages = set(modified_visual_pages)
                     for pnn in affected_pages:
@@ -3855,8 +3865,7 @@ def run_default_workflow(
                 (project / "agent" / "visual-reviews").glob("round-*.json")
             )
             review_evidence_payloads = [
-                json.loads(path.read_text(encoding="utf-8"))
-                for path in review_evidence_files
+                json.loads(path.read_text(encoding="utf-8")) for path in review_evidence_files
             ]
             review_usage = [
                 dict(payload.get("usage") or {}) for payload in review_evidence_payloads
@@ -3872,14 +3881,12 @@ def run_default_workflow(
                 ),
                 "policyVersion": request.authoring.visual_review_policy_version,
                 "reviewLevel": request.authoring.visual_review_level,
-                "authoringModel": request.authoring.authoring_model
-                or request.versions.model,
+                "authoringModel": request.authoring.authoring_model or request.versions.model,
                 "visualReviewModel": request.authoring.visual_review_model
                 or request.versions.model,
                 "reviewRoundCount": len(review_evidence_files),
                 "reviewCallCount": sum(
-                    int(payload.get("batchCount") or 0)
-                    + int(payload.get("schemaRepairCount") or 0)
+                    int(payload.get("batchCount") or 0) + int(payload.get("schemaRepairCount") or 0)
                     for payload in review_evidence_payloads
                 ),
                 "providerUsage": {
@@ -3959,9 +3966,7 @@ def run_default_workflow(
                 "contactSheetSha256": final_review["contactSheetSha256"],
                 "evidenceSha256": final_review_evidence["evidenceSha256"],
                 "blockingCount": sum(
-                    1
-                    for issue in final_review["issues"]
-                    if issue.get("severity") == "blocking"
+                    1 for issue in final_review["issues"] if issue.get("severity") == "blocking"
                 ),
                 "deferredFindingCount": len(final_review.get("deferredFindings") or []),
                 "policyVersion": request.authoring.visual_review_policy_version,
@@ -4022,9 +4027,7 @@ def run_default_workflow(
                 "exactRoster": [item["pnn"] for item in plan["roster"]],
                 "blockingCount": 0,
                 "advisoryCount": svg_quality_advisory_count(current_quality_report),
-                "nativeReportHistoryKey": current_quality_report.get(
-                    "_nativeReportHistoryKey"
-                ),
+                "nativeReportHistoryKey": current_quality_report.get("_nativeReportHistoryKey"),
                 "preExportRecovery": True,
             },
         )
@@ -4356,10 +4359,7 @@ def run_default_workflow(
     postflight.setdefault("output", {})["bytes"] = pptx_path.stat().st_size
     _write_json(postflights[-1], postflight)
     postflight_status = str(postflight.get("status", ""))
-    if (
-        postflight_status not in {"passed", "passed-with-warnings"}
-        and not advisory_validation
-    ):
+    if postflight_status not in {"passed", "passed-with-warnings"} and not advisory_validation:
         raise AdapterError(
             RENDER_FAILED, f"Default exporter postflight failed: {postflight_status}"
         )
@@ -4543,9 +4543,7 @@ def run_default_workflow(
         request,
         receipts,
         kind="publication",
-        status=(
-            "passed" if release_trace["validationPassed"] else "passed-with-warnings"
-        ),
+        status=("passed" if release_trace["validationPassed"] else "passed-with-warnings"),
         subject_sha256=pptx_sha256,
         payload={
             "route": "generate_pptx",

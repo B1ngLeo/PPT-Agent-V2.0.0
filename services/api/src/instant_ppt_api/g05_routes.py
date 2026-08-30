@@ -10,6 +10,7 @@ from instant_ppt_domain.models import OutlineApproval, ProviderCall
 from instant_ppt_domain.planning_jobs import (
     enqueue_intent_job,
     enqueue_outline_job,
+    enqueue_visual_style_job,
     get_planning_job,
     latest_planning_job,
     planning_job_result,
@@ -194,7 +195,12 @@ def _snapshot(session: Any, draft: Any) -> dict[str, Any]:
         else None
     )
     planning_job = latest_planning_job(session, draft.id, draft.organization_id)
-    data["planningJob"] = serialize_planning_job(planning_job) if planning_job else None
+    if planning_job:
+        planning_data = serialize_planning_job(planning_job)
+        planning_data["result"] = planning_job_result(session, planning_job)
+        data["planningJob"] = planning_data
+    else:
+        data["planningJob"] = None
     return data
 
 
@@ -342,9 +348,7 @@ def infer_workspace_intent(
                 base_revision_id=payload.base_revision_id,
                 request_id=request.state.request_id,
             )
-            response_body = _resource(
-                job.id, "planningJob", serialize_planning_job(job)
-            )
+            response_body = _resource(job.id, "planningJob", serialize_planning_job(job))
             store_user_idempotency(
                 session,
                 auth,
@@ -373,9 +377,7 @@ def infer_workspace_intent(
 
 
 @router.get("/planning-jobs/{job_id}")
-def get_workspace_planning_job(
-    job_id: str, request: Request, auth: AuthDependency
-) -> JSONResponse:
+def get_workspace_planning_job(job_id: str, request: Request, auth: AuthDependency) -> JSONResponse:
     try:
         with request.app.state.session_factory() as session:
             job = get_planning_job(session, job_id, auth.organization_id)
@@ -665,6 +667,65 @@ def approve_workspace_outline(
         return JSONResponse(response_body, headers={"Idempotency-Replayed": "false"})
     except (
         WorkspaceNotFound,
+        WorkspaceValidationError,
+        IdempotencyConflict,
+    ) as error:
+        return _problem(request, error)
+
+
+@router.post("/drafts/{draft_id}/visual-styles:generate", status_code=202)
+def generate_workspace_visual_styles(
+    draft_id: str,
+    payload: MutationRequest,
+    request: Request,
+    auth: AuthDependency,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+) -> JSONResponse:
+    route = f"POST /v1/drafts/{draft_id}/visual-styles:generate"
+    body = payload.model_dump(by_alias=True, mode="json")
+    try:
+        with request.app.state.session_factory.begin() as session:
+            replay = find_user_idempotency(
+                session, auth, route=route, key=idempotency_key, request_body=body
+            )
+            if replay:
+                return JSONResponse(
+                    replay.response_body,
+                    status_code=replay.response_status,
+                    headers={
+                        "Idempotency-Replayed": "true",
+                        "Location": f"/v1/planning-jobs/{replay.resource_id}",
+                    },
+                )
+            job = enqueue_visual_style_job(
+                session,
+                auth,
+                draft_id,
+                approval_id=payload.base_revision_id,
+                request_id=request.state.request_id,
+            )
+            response_body = _resource(job.id, "planningJob", serialize_planning_job(job))
+            store_user_idempotency(
+                session,
+                auth,
+                route=route,
+                key=idempotency_key,
+                request_body=body,
+                resource_id=job.id,
+                response_body=response_body,
+                response_status=202,
+            )
+        return JSONResponse(
+            response_body,
+            status_code=202,
+            headers={
+                "Idempotency-Replayed": "false",
+                "Location": f"/v1/planning-jobs/{job.id}",
+            },
+        )
+    except (
+        WorkspaceNotFound,
+        WorkspaceConflict,
         WorkspaceValidationError,
         IdempotencyConflict,
     ) as error:

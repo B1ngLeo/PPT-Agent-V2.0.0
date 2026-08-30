@@ -238,6 +238,30 @@ class ImagePolicy(WorkflowContractModel):
         return self
 
 
+class VisualStyleColors(WorkflowContractModel):
+    theme: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    background: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    text: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    secondary_text: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class VisualStyleTypography(WorkflowContractModel):
+    heading_font: str = Field(min_length=1, max_length=120)
+    body_font: str = Field(min_length=1, max_length=120)
+
+
+class VisualStyleSelection(WorkflowContractModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9-]{1,31}$")
+    name: str = Field(min_length=1, max_length=40)
+    rationale: str = Field(min_length=1, max_length=240)
+    recommended: bool
+    colors: VisualStyleColors
+    typography: VisualStyleTypography
+    planning_job_id: str = Field(pattern=r"^[0-9A-HJKMNP-TV-Z]{26}$")
+    provider: str | None = Field(default=None, min_length=1, max_length=80)
+    model: str | None = Field(default=None, min_length=1, max_length=160)
+
+
 class ProductionPolicy(WorkflowContractModel):
     proactive_speaker_notes: bool
     proactive_custom_animations: bool
@@ -416,6 +440,7 @@ class WorkflowRequestV2(WorkflowContractModel):
     outline: list[ApprovedOutlineSlide] = Field(min_length=1, max_length=30)
     sources: SourceManifest
     template: TemplatePolicy
+    visual_style: VisualStyleSelection | None = None
     image: ImagePolicy
     research: ResearchPolicy
     production: ProductionPolicy

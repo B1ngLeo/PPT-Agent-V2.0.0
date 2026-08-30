@@ -51,6 +51,18 @@ def test_generation_api_rejects_removed_final_visual_review_level() -> None:
         CreateGenerationJobRequest.model_validate(payload)
 
 
+def test_generation_api_requires_complete_visual_style_reference_pair() -> None:
+    payload = _request({"scope": "none", "usage": ["none"], "notes": {}})
+    payload["data"]["visualStylePlanningJobId"] = "01ARZ3NDEKTSV4RRFFQ69G5FAV"  # type: ignore[index]
+
+    with pytest.raises(ValidationError):
+        CreateGenerationJobRequest.model_validate(payload)
+
+    payload["data"]["visualStyleOptionId"] = "editorial-green"  # type: ignore[index]
+    parsed = CreateGenerationJobRequest.model_validate(payload)
+    assert parsed.data.visual_style_option_id == "editorial-green"
+
+
 @pytest.mark.parametrize(
     "policy",
     [

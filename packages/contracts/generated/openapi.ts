@@ -228,6 +228,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/drafts/{draftId}/visual-styles:generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["generateVisualStyles"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/drafts/{draftId}/outline-revisions": {
         parameters: {
             query?: never;
@@ -641,7 +657,7 @@ export interface components {
             planningJobId: string;
             draftId: string;
             /** @enum {unknown} */
-            operation: "intent_infer" | "outline_generate";
+            operation: "intent_infer" | "outline_generate" | "visual_style_generate";
             /** @enum {unknown} */
             status: "queued" | "running" | "retrying" | "succeeded" | "failed";
             attempt: number;
@@ -1093,6 +1109,10 @@ export interface components {
              * @enum {string}
              */
             visualReviewLevel: "off" | "standard";
+            /** @description Succeeded visual_style_generate planning job bound to the approved outline. */
+            visualStylePlanningJobId?: string | null;
+            /** @description Selected option from the persisted three-direction visual-style proposal. */
+            visualStyleOptionId?: string | null;
             imagePolicy?: components["schemas"]["GenerationImagePolicy"];
         };
         /** CreateGenerationJobRequest */
@@ -1680,6 +1700,44 @@ export interface operations {
         };
     };
     generateOutline: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MutationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            202: {
+                headers: {
+                    Location: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceResponse"];
+                };
+            };
+            /** @description RFC 7807 problem */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    generateVisualStyles: {
         parameters: {
             query?: never;
             header: {

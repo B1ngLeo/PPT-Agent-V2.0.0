@@ -69,12 +69,8 @@ _SVG_FORBIDDEN_TEXT = re.compile(
     r"(?:<!DOCTYPE|<!ENTITY|javascript:|vbscript:|data:text/html)",
     re.IGNORECASE,
 )
-_SVG_FORBIDDEN_TAGS = frozenset(
-    {"script", "foreignobject", "iframe", "object", "embed", "style"}
-)
-_LOCAL_FRAGMENT_PAINT = re.compile(
-    r"url\((?:['\"])?#[A-Za-z_][A-Za-z0-9_.:-]*(?:['\"])?\)"
-)
+_SVG_FORBIDDEN_TAGS = frozenset({"script", "foreignobject", "iframe", "object", "embed", "style"})
+_LOCAL_FRAGMENT_PAINT = re.compile(r"url\((?:['\"])?#[A-Za-z_][A-Za-z0-9_.:-]*(?:['\"])?\)")
 _SPEC_LOCK_CANVAS_VIEWBOX = re.compile(
     r"^[ \t]*-[ \t]+viewBox:[ \t]*(.*?)[ \t]*$",
     re.MULTILINE,
@@ -317,16 +313,12 @@ def _visual_repair_diff(
         (node.tag.rsplit("}", 1)[-1], node.attrib.get("id")) for node, _ in after_nodes
     ]
     if before_structure != after_structure:
-        raise ToolPolicyError(
-            "v3 visual repair cannot add, remove, reorder, or retag SVG elements"
-        )
+        raise ToolPolicyError("v3 visual repair cannot add, remove, reorder, or retag SVG elements")
     changes: list[dict[str, Any]] = []
     for (before, before_target), (after, after_target) in zip(
         before_nodes, after_nodes, strict=True
     ):
-        if (before.text or "") != (after.text or "") or (before.tail or "") != (
-            after.tail or ""
-        ):
+        if (before.text or "") != (after.text or "") or (before.tail or "") != (after.tail or ""):
             raise ToolPolicyError("v3 visual repair cannot change presentation text or metadata")
         attribute_names = set(before.attrib) | set(after.attrib)
         for name in sorted(attribute_names):
@@ -465,9 +457,7 @@ class PresentationAgentToolRegistry:
                         "read_ppt_master_reference paths must contain 1-16 unique entries"
                     )
             else:
-                raise ToolPolicyError(
-                    "read_ppt_master_reference requires only path or paths"
-                )
+                raise ToolPolicyError("read_ppt_master_reference requires only path or paths")
             try:
                 references = [read_ppt_master_reference(path) for path in paths]
             except ValueError as error:
@@ -553,6 +543,11 @@ class PresentationAgentToolRegistry:
             "fragments": fragments,
             "intent": self.context.request.intent.model_dump(by_alias=True, mode="json"),
             "template": self.context.request.template.model_dump(by_alias=True, mode="json"),
+            "visualStyle": (
+                self.context.request.visual_style.model_dump(by_alias=True, mode="json")
+                if self.context.request.visual_style
+                else None
+            ),
             "imagePolicy": self.context.request.image.model_dump(by_alias=True, mode="json"),
             "preparedImages": list(self.context.prepared_images),
             "visualReviewPolicy": {
@@ -581,6 +576,33 @@ class PresentationAgentToolRegistry:
             raise ToolPolicyError(f"{filename} exceeds the bounded planning payload")
         if filename == "spec_lock.md":
             return self._write_and_validate_spec_lock(content)
+        if self.context.request.visual_style:
+            style = self.context.request.visual_style
+            required_values = [
+                style.colors.theme,
+                style.colors.background,
+                style.colors.text,
+                style.colors.secondary_text,
+                style.typography.heading_font,
+                style.typography.body_font,
+            ]
+            normalized_content = content.casefold()
+            missing_values = [
+                value for value in required_values if value.casefold() not in normalized_content
+            ]
+            if missing_values:
+                raise ToolPolicyError(
+                    "design_spec.md does not honor the confirmed visual style",
+                    code="DESIGN_SPEC_VISUAL_STYLE_MISMATCH",
+                    details={
+                        "missingValues": missing_values,
+                        "repairInstruction": (
+                            "Preserve the confirmed theme/background/text/secondary-text HEX "
+                            "values and heading/body fonts exactly, then resubmit the complete "
+                            "design_spec.md."
+                        ),
+                    },
+                )
         errors = validate_design_spec(
             content,
             self.context.request.outline,
@@ -589,10 +611,7 @@ class PresentationAgentToolRegistry:
         if errors:
             rejected_sha256 = rejected_design_spec_sha256(content)
             rejected_path = (
-                self.project
-                / "agent"
-                / "rejected-design-spec"
-                / f"{rejected_sha256}.md"
+                self.project / "agent" / "rejected-design-spec" / f"{rejected_sha256}.md"
             )
             rejected_path.parent.mkdir(parents=True, exist_ok=True)
             if not rejected_path.exists():
@@ -648,9 +667,7 @@ class PresentationAgentToolRegistry:
         viewbox_error = _spec_lock_canvas_viewbox_error(content)
         if result.returncode != 0 or viewbox_error is not None:
             rejected_sha256 = _sha_file(path)
-            rejected_path = (
-                self.project / "agent" / "rejected-spec-lock" / f"{rejected_sha256}.md"
-            )
+            rejected_path = self.project / "agent" / "rejected-spec-lock" / f"{rejected_sha256}.md"
             rejected_path.parent.mkdir(parents=True, exist_ok=True)
             if not rejected_path.exists():
                 rejected_path.write_bytes(path.read_bytes())
@@ -709,9 +726,11 @@ class PresentationAgentToolRegistry:
         validate_direct_svg(svg, self.project)
         self._validate_direct_svg_against_page(svg, page)
         visual_repair_audit: dict[str, Any] | None = None
-        if self.context.request.authoring.visual_review_policy_version == (
-            "visual-review-opt-in@v3"
-        ) and self.context.stage == "visual-repair":
+        if (
+            self.context.request.authoring.visual_review_policy_version
+            == ("visual-review-opt-in@v3")
+            and self.context.stage == "visual-repair"
+        ):
             if before is None:
                 raise ToolPolicyError("v3 visual repair requires an existing owned SVG")
             expected_before = str(arguments.get("expectedBeforeSha256") or "")

@@ -25,6 +25,7 @@ from instant_ppt_domain.models import (
     GenerationJobSlide,
     GenerationPublication,
     GenerationSnapshot,
+    PlanningJob,
     Presentation,
     PresentationRevision,
     ProviderCall,
@@ -38,6 +39,7 @@ from instant_ppt_domain.models import (
     WorkflowStageAttempt,
 )
 from instant_ppt_worker.generation_pipeline import process_generation_job
+from instant_ppt_worker.planning_pipeline import process_planning_job
 from instant_ppt_worker.providers import GeneratedImage
 from instant_ppt_worker.source_pipeline import WorkerObjectSettings, WorkerObjectStore
 from PIL import Image
@@ -240,6 +242,55 @@ def test_generation_requires_explicit_strategist_design_lock_authorization(
     assert "design and spec-lock authorization" in response.json()["detail"]
     with session_factory() as session:
         assert session.scalar(select(func.count(GenerationJob.id))) == 0
+
+
+def test_selected_visual_style_is_frozen_into_generation_snapshot(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+) -> None:
+    approved = _approved_draft(client)
+    draft_id = approved["draft"]["draftId"]
+    approval_id = approved["approval"]["approvalId"]
+    queued = client.post(
+        f"/v1/drafts/{draft_id}/visual-styles:generate",
+        headers={**ALICE, "Idempotency-Key": f"visual-{new_ulid()}"},
+        json=_mutation({}, approval_id),
+    )
+    assert queued.status_code == 202, queued.text
+    planning_job_id = queued.json()["data"]["planningJobId"]
+    with session_factory() as session:
+        planning_job = session.get(PlanningJob, planning_job_id)
+        assert planning_job is not None
+        organization_id = planning_job.organization_id
+    assert process_planning_job(session_factory, planning_job_id, organization_id) == "succeeded"
+    proposal = client.get(f"/v1/planning-jobs/{planning_job_id}", headers=ALICE).json()["data"][
+        "result"
+    ]
+    selected = proposal["options"][1]
+
+    generation = client.post(
+        f"/v1/drafts/{draft_id}/generation-jobs",
+        headers={**ALICE, "Idempotency-Key": f"generation-style-{new_ulid()}"},
+        json=_mutation(
+            {
+                "continueLimitedDraft": True,
+                "authorizeStrategistDesignLock": True,
+                "visualStylePlanningJobId": planning_job_id,
+                "visualStyleOptionId": selected["id"],
+            }
+        ),
+    )
+    assert generation.status_code == 202, generation.text
+    generation_job_id = generation.json()["data"]["jobId"]
+    with session_factory() as session:
+        job = session.get(GenerationJob, generation_job_id)
+        assert job is not None
+        snapshot = session.get(GenerationSnapshot, job.snapshot_id)
+        assert snapshot is not None
+        assert snapshot.payload["visualStyle"]["id"] == selected["id"]
+        assert snapshot.payload["visualStyle"]["colors"] == selected["colors"]
+        assert snapshot.payload["visualStyle"]["typography"] == selected["typography"]
+        assert snapshot.payload["visualStyle"]["planningJobId"] == planning_job_id
 
 
 def test_real_generation_crash_replay_publishes_one_immutable_revision(

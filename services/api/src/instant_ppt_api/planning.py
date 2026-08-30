@@ -194,6 +194,74 @@ class DeterministicPlanningGateway:
             output_tokens=self._tokens(data),
         )
 
+    def generate_visual_styles(
+        self,
+        *,
+        intent: dict[str, Any],
+        outline: dict[str, Any],
+    ) -> PlanningResult:
+        del outline
+        audience = str(intent.get("audience") or "受众")
+        data = {
+            "options": [
+                {
+                    "id": "editorial-green",
+                    "name": "编辑绿",
+                    "rationale": f"以克制深绿建立面向{audience}的可信表达。",
+                    "recommended": True,
+                    "colors": {
+                        "theme": "#1E6B4D",
+                        "background": "#F7F5ED",
+                        "text": "#17221D",
+                        "secondaryText": "#5C6861",
+                    },
+                    "typography": {
+                        "headingFont": "Noto Sans CJK SC",
+                        "bodyFont": "Microsoft YaHei",
+                    },
+                },
+                {
+                    "id": "executive-blue",
+                    "name": "理性蓝",
+                    "rationale": "冷静蓝色强调结构、数据与决策感。",
+                    "recommended": False,
+                    "colors": {
+                        "theme": "#2356A8",
+                        "background": "#F5F7FB",
+                        "text": "#172033",
+                        "secondaryText": "#58647A",
+                    },
+                    "typography": {
+                        "headingFont": "Microsoft YaHei",
+                        "bodyFont": "Noto Sans CJK SC",
+                    },
+                },
+                {
+                    "id": "warm-editorial",
+                    "name": "暖调刊物",
+                    "rationale": "暖白与砖红形成更有人情味的编辑感。",
+                    "recommended": False,
+                    "colors": {
+                        "theme": "#A33A2B",
+                        "background": "#FBF6EE",
+                        "text": "#2B211D",
+                        "secondaryText": "#6C5B53",
+                    },
+                    "typography": {
+                        "headingFont": "Noto Sans CJK SC",
+                        "bodyFont": "Noto Sans CJK SC",
+                    },
+                },
+            ]
+        }
+        return PlanningResult(
+            data=data,
+            provider=self.provider,
+            model=self.model,
+            input_tokens=self._tokens(intent),
+            output_tokens=self._tokens(data),
+        )
+
 
 def _post_json(url: str, payload: bytes, headers: dict[str, str], timeout: float) -> dict[str, Any]:
     http_request = request.Request(url, data=payload, headers=headers, method="POST")
@@ -228,9 +296,7 @@ class RemotePlanningGateway:
         sender: Any = _post_json,
     ) -> None:
         if settings.backend not in {"kimi", "qwen"}:
-            raise ValueError(
-                "RemotePlanningGateway requires PLANNING_BACKEND=kimi or qwen"
-            )
+            raise ValueError("RemotePlanningGateway requires PLANNING_BACKEND=kimi or qwen")
         if not settings.gateway_url.startswith(("http://", "https://")):
             raise ValueError("PROVIDER_GATEWAY_URL must be an HTTP(S) URL")
         if not settings.gateway_token:

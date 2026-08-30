@@ -20,7 +20,8 @@
     "operation": {
       "enum": [
         "intent_infer",
-        "outline_generate"
+        "outline_generate",
+        "visual_style_generate"
       ]
     },
     "status": {
