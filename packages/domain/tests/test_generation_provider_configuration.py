@@ -31,9 +31,10 @@ def test_generation_snapshot_freezes_text_provider_transport(monkeypatch) -> Non
     }
 
 
-def test_generation_snapshot_freezes_qwen_transport(monkeypatch) -> None:
+def test_generation_snapshot_rejects_non_official_qwen_transport(monkeypatch) -> None:
     monkeypatch.setenv("PLANNING_BACKEND", "qwen")
     monkeypatch.setenv("TEXT_PROVIDER", "qwen")
+    monkeypatch.delenv("QWEN_OFFICIAL_BASE_URL", raising=False)
     monkeypatch.setenv("QWEN_BASE_URL", "https://cf.api.fan/v1")
     monkeypatch.setenv("QWEN_MODEL", "qwen3.7-plus")
     monkeypatch.setenv("QWEN_REASONING_EFFORT", "medium")
@@ -49,7 +50,7 @@ def test_generation_snapshot_freezes_qwen_transport(monkeypatch) -> None:
     assert planning == {
         "backend": "qwen",
         "provider": "qwen",
-        "baseUrl": "https://cf.api.fan/v1",
+        "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen3.7-plus",
         "protocol": "openai",
         "reasoningEffort": "medium",
@@ -62,6 +63,21 @@ def test_generation_snapshot_freezes_qwen_transport(monkeypatch) -> None:
         "inputCostMicrounitsPer1K": 0,
         "outputCostMicrounitsPer1K": 0,
     }
+
+
+def test_generation_snapshot_accepts_official_qwen_workspace_transport(monkeypatch) -> None:
+    monkeypatch.setenv("PLANNING_BACKEND", "qwen")
+    monkeypatch.setenv("TEXT_PROVIDER", "qwen")
+    monkeypatch.setenv(
+        "QWEN_OFFICIAL_BASE_URL",
+        "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    )
+
+    planning = _provider_configuration()["planning"]
+
+    assert planning["baseUrl"] == (
+        "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    )
 
 
 def test_generation_snapshot_defaults_to_qwen38_flash_without_preserved_thinking(

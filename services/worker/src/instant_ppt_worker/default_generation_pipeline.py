@@ -34,6 +34,7 @@ from instant_ppt_domain.models import (
     WorkflowCheckpointSet,
     WorkflowRun,
 )
+from instant_ppt_domain.provider_policy import resolve_qwen_base_url
 from instant_ppt_domain.service import (
     canonical_sha256,
     complete_slide,
@@ -249,9 +250,7 @@ def _scoped_text_environment(
         return {
             **common,
             "QWEN_API_KEY": os.getenv("QWEN_API_KEY", "").strip(),
-            "QWEN_BASE_URL": str(
-                configuration.get("baseUrl") or "https://dashscope.aliyuncs.com/compatible-mode/v1"
-            ),
+            "QWEN_BASE_URL": resolve_qwen_base_url(str(configuration.get("baseUrl") or "")),
             "QWEN_MODEL": str(configuration.get("model") or request.versions.model),
             "QWEN_REASONING_EFFORT": str(configuration.get("reasoningEffort") or "medium"),
             "QWEN_ENABLE_THINKING": (
@@ -941,12 +940,9 @@ def _process_default_generation_job(
             )
         )["status"]
         final_content_gate_status = json.loads(
-            (
-                project
-                / "validation"
-                / "receipts"
-                / "final-svg-content-gate.json"
-            ).read_text(encoding="utf-8")
+            (project / "validation" / "receipts" / "final-svg-content-gate.json").read_text(
+                encoding="utf-8"
+            )
         )["status"]
         compiled: dict[str, tuple[str, dict[str, Any]]] = {}
         for authored, path in zip(authored_slides, final_svgs, strict=True):
@@ -1030,9 +1026,7 @@ def _process_default_generation_job(
         )
         if not content_reports_current:
             raise RuntimeError("content release reports are missing or hash-stale")
-        content_validation_passed = all(
-            report.get("passed") is True for report in content_reports
-        )
+        content_validation_passed = all(report.get("passed") is True for report in content_reports)
         evidence_map = json.loads(
             (project / "analysis" / "evidence-map.json").read_text(encoding="utf-8")
         )

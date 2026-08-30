@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from instant_ppt_domain.provider_policy import (
+    configured_qwen_api_key,
+    configured_qwen_base_url,
+)
 from pydantic import BaseModel, ConfigDict
 
 DEFAULT_QWEN_MODEL = "qwen3.8-flash"
@@ -84,11 +88,8 @@ class QwenProviderSettings:
     @classmethod
     def from_env(cls) -> QwenProviderSettings:
         return cls(
-            api_key=os.getenv("QWEN_API_KEY", "").strip(),
-            base_url=os.getenv(
-                "QWEN_BASE_URL",
-                "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            ).strip(),
+            api_key=configured_qwen_api_key(),
+            base_url=configured_qwen_base_url(),
             model=os.getenv("QWEN_MODEL", DEFAULT_QWEN_MODEL).strip(),
             reasoning_effort=os.getenv("QWEN_REASONING_EFFORT", "medium").strip(),
             enable_thinking=os.getenv("QWEN_ENABLE_THINKING", "true").strip().lower()

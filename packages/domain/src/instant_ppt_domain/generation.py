@@ -34,6 +34,7 @@ from instant_ppt_domain.models import (
     UsageLedger,
     UsageReservation,
 )
+from instant_ppt_domain.provider_policy import configured_qwen_base_url
 from instant_ppt_domain.runtime_contract import ENGINE_VERSION, RuntimeIdentity
 from instant_ppt_domain.service import (
     CreateJobResult,
@@ -63,10 +64,7 @@ def _provider_configuration() -> dict[str, Any]:
     if text_provider == "qwen":
         text_configuration = {
             "provider": "qwen",
-            "baseUrl": os.getenv(
-                "QWEN_BASE_URL",
-                "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            ).strip(),
+            "baseUrl": configured_qwen_base_url(),
             "model": os.getenv("QWEN_MODEL", "qwen3.8-flash").strip(),
             "protocol": "openai",
             "reasoningEffort": os.getenv("QWEN_REASONING_EFFORT", "medium").strip(),

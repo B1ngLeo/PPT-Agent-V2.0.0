@@ -192,7 +192,7 @@ class PlanningService:
         *,
         intent_max_completion_tokens: int = 1600,
         outline_max_completion_tokens: int = 2600,
-        visual_style_max_completion_tokens: int = 1800,
+        visual_style_max_completion_tokens: int = 8000,
     ) -> None:
         if not 256 <= intent_max_completion_tokens <= 32_768:
             raise ValueError("intent_max_completion_tokens must be between 256 and 32768")
@@ -242,7 +242,7 @@ class PlanningService:
             visual_style_max_completion_tokens=int(
                 os.getenv(
                     "TEXT_VISUAL_STYLE_MAX_COMPLETION_TOKENS",
-                    os.getenv(f"{prefix}_VISUAL_STYLE_MAX_COMPLETION_TOKENS", "1800"),
+                    os.getenv(f"{prefix}_VISUAL_STYLE_MAX_COMPLETION_TOKENS", "8000"),
                 )
             ),
         )

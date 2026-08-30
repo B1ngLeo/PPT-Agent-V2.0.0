@@ -57,6 +57,42 @@ def test_provider_settings_use_expected_defaults_without_exposing_keys(
     assert "openai-secret" not in repr(image)
 
 
+def test_qwen_settings_ignore_non_official_legacy_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("QWEN_OFFICIAL_BASE_URL", raising=False)
+    monkeypatch.setenv("QWEN_BASE_URL", "https://cf.api.fan/v1")
+
+    settings = QwenProviderSettings.from_env()
+
+    assert settings.base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+
+def test_qwen_settings_prefer_official_workspace_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "QWEN_OFFICIAL_BASE_URL",
+        "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    )
+    monkeypatch.setenv("QWEN_BASE_URL", "https://cf.api.fan/v1")
+
+    settings = QwenProviderSettings.from_env()
+
+    assert settings.base_url == (
+        "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+    )
+
+
+def test_qwen_settings_prefer_official_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QWEN_API_KEY", "legacy-proxy-key")
+    monkeypatch.setenv("QWEN_OFFICIAL_API_KEY", "official-key")
+
+    settings = QwenProviderSettings.from_env()
+
+    assert settings.api_key == "official-key"
+
+
 @pytest.mark.parametrize("model", ["qwen3.7-plus", "qwen3.8-max", "qwen3.8-flash"])
 def test_qwen_provider_accepts_supported_models(model: str) -> None:
     provider = QwenProvider(QwenProviderSettings(api_key="test-qwen-key", model=model))
@@ -81,7 +117,7 @@ def test_qwen_provider_streams_multimodal_json_and_preserves_reasoning_content()
     stream = "\n".join(
         [
             'data: {"model":"qwen3.7-plus","choices":[{"delta":{"reasoning_content":"hidden"}}]}',
-            'data: {"choices":[{"delta":{"content":"{\\\"ok\\\":"}}]}',
+            'data: {"choices":[{"delta":{"content":"{\\"ok\\":"}}]}',
             'data: {"choices":[{"delta":{"content":"true}"},"finish_reason":"stop"}]}',
             'data: {"choices":[],"usage":{"prompt_tokens":19,"completion_tokens":5}}',
             "data: [DONE]",
@@ -566,9 +602,7 @@ def test_openai_image_provider_decodes_gpt_image_2_response() -> None:
     )
     assert provider.provider_name == "openai-image"
     try:
-        image = provider.generate(
-            "蓝色渐变的企业科技背景", idempotency_key="cover-job-v1"
-        )
+        image = provider.generate("蓝色渐变的企业科技背景", idempotency_key="cover-job-v1")
     finally:
         provider.close()
 
@@ -643,31 +677,31 @@ def test_kimi_anthropic_proxy_streams_long_responses() -> None:
     observed: dict[str, object] = {}
     stream = "\n".join(
         [
-            'event: message_start',
+            "event: message_start",
             (
                 'data: {"type":"message_start","message":{"model":"kimi-k3",'
                 '"usage":{"input_tokens":117,"output_tokens":0}}}'
             ),
-            '',
-            'event: content_block_start',
-            'data:',
+            "",
+            "event: content_block_start",
+            "data:",
             'data: {"type":"content_block_start","content_block":{"type":"text","text":""}}',
-            '',
-            'event: content_block_delta',
+            "",
+            "event: content_block_delta",
             (
                 'data: {"type":"content_block_delta","delta":'
                 '{"type":"text_delta","text":"{\\"ok\\":"}}'
             ),
-            '',
-            'event: content_block_delta',
+            "",
+            "event: content_block_delta",
             'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"true}"}}',
-            '',
-            'event: message_delta',
+            "",
+            "event: message_delta",
             'data: {"type":"message_delta","usage":{"output_tokens":56}}',
-            '',
-            'event: message_stop',
+            "",
+            "event: message_stop",
             'data: {"type":"message_stop"}',
-            '',
+            "",
         ]
     )
 
@@ -742,9 +776,7 @@ def test_kimi_anthropic_proxy_converts_openai_image_url_blocks() -> None:
                         {"type": "text", "text": "Review this image."},
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{encoded}"
-                            },
+                            "image_url": {"url": f"data:image/jpeg;base64,{encoded}"},
                         },
                     ],
                 }

@@ -79,7 +79,7 @@ def test_visual_style_planning_returns_exactly_three_accessible_directions() -> 
     assert result.data == response
     assert len(result.data["options"]) == 3
     assert sum(option["recommended"] for option in result.data["options"]) == 1
-    assert provider.calls[0]["maxCompletionTokens"] == 1800
+    assert provider.calls[0]["maxCompletionTokens"] == 8000
 
 
 def test_kimi_planning_service_rejects_invented_citations() -> None:

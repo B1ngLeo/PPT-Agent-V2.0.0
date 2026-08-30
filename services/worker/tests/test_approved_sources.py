@@ -376,7 +376,7 @@ def test_snapshot_maps_to_default_v2_without_opening_template_content(
     assert _scoped_text_environment(snapshot, image_request) == {
         "TEXT_PROVIDER": "qwen",
         "QWEN_API_KEY": "qwen-runtime-secret",
-        "QWEN_BASE_URL": "https://cf.api.fan/v1",
+        "QWEN_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "QWEN_MODEL": "qwen3.8-max",
         "QWEN_REASONING_EFFORT": "medium",
         "QWEN_ENABLE_THINKING": "true",
