@@ -937,9 +937,51 @@ select {
   justify-content: space-between;
   gap: 1rem;
 }
-.approval-summary-heading .quiet-button {
-  min-height: 2.35rem;
-  background: rgba(255, 255, 255, 0.62);
+.visual-style-regenerate-button {
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(30, 107, 77, 0.28);
+  border-radius: 999px;
+  color: #185b42;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 3px 10px rgba(23, 34, 29, 0.06);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+.visual-style-regenerate-button > span:first-child {
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform 200ms ease;
+}
+.visual-style-regenerate-button:hover:not(:disabled) {
+  border-color: rgba(30, 107, 77, 0.52);
+  color: #0f4732;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(23, 34, 29, 0.09);
+  transform: translateY(-1px);
+}
+.visual-style-regenerate-button:hover:not(:disabled) > span:first-child {
+  transform: rotate(-35deg);
+}
+.visual-style-regenerate-button:focus-visible {
+  outline: 3px solid rgba(0, 82, 204, 0.2);
+  outline-offset: 2px;
+}
+.visual-style-regenerate-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 .visual-style-intro {
   grid-column: 1 / -1;
@@ -1030,17 +1072,13 @@ select {
   border: 1px solid rgba(23, 34, 29, 0.13);
   border-radius: 0.48rem;
 }
-.visual-style-swatches small,
-.visual-style-swatches code {
+.visual-style-swatches small {
   overflow: hidden;
   color: #657169;
   font-size: 0.62rem;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.visual-style-swatches code {
-  color: #34433b;
 }
 .visual-style-fonts {
   display: grid;
@@ -1340,9 +1378,12 @@ select {
 }
 .generation-slide h3 {
   margin: 0.2rem 0 0;
-  font-family: Georgia, "Songti SC", serif;
-  font-size: 1.45rem;
-  font-weight: 500;
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui,
+    sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.4;
 }
 .generation-slide p {
   margin: 0;

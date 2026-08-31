@@ -604,13 +604,6 @@ function generationStageLabel(stage: GenerationJob["stage"]): string {
   return labels[stage];
 }
 
-function generationStageStepIndex(stage: GenerationJob["stage"]): number {
-  if (stage === "deck_planning") return 0;
-  if (stage === "slide_generation") return 1;
-  if (stage === "deck_qa") return 2;
-  return 3;
-}
-
 function generationStatusLabel(status: GenerationJob["status"]): string {
   const labels: Record<GenerationJob["status"], string> = {
     queued: "已排队",
@@ -2288,20 +2281,17 @@ export function WorkspaceApp() {
 
           <ol className="stepper" aria-label="生成步骤">
             {[
-              ["01", "生成计划"],
-              ["02", "逐页生成"],
-              ["03", "整稿检查"],
-              ["04", "编译与发布"],
+              ["01", "主题与来源"],
+              ["02", "创作意图"],
+              ["03", "视觉风格"],
+              ["04", "逐页生成"],
             ].map(([number, label], index) => {
-              const currentIndex = generationStageStepIndex(
-                generationJob.stage,
-              );
               const completedSuccessfully = [
                 "succeeded",
                 "partially_succeeded",
               ].includes(generationJob.status);
-              const complete = completedSuccessfully || index < currentIndex;
-              const active = !completedSuccessfully && index === currentIndex;
+              const complete = index < 3 || completedSuccessfully;
+              const active = index === 3 && !completedSuccessfully;
               return (
                 <li
                   key={number}
@@ -2366,7 +2356,6 @@ export function WorkspaceApp() {
                   {generationJob.progress.total}{" "}
                   {generatedPageLabel(generationJob)}
                 </span>
-                <span>任务尝试 {generationJob.attempt}</span>
               </div>
               <progress
                 max={generationJob.progress.total}
@@ -2646,11 +2635,11 @@ export function WorkspaceApp() {
             </li>
             <li className={intent ? "active" : ""}>
               <b>03</b>
-              <span>逐页大纲</span>
+              <span>视觉风格</span>
             </li>
             <li>
               <b>04</b>
-              <span>生成确认</span>
+              <span>逐页生成</span>
             </li>
           </ol>
 
@@ -2749,13 +2738,13 @@ export function WorkspaceApp() {
               <b>02</b>
               <span>创作意图</span>
             </li>
-            <li className={summary ? "done" : "active"}>
+            <li className="active">
               <b>03</b>
-              <span>逐页大纲</span>
-            </li>
-            <li className={summary ? "active" : undefined}>
-              <b>04</b>
               <span>视觉风格</span>
+            </li>
+            <li>
+              <b>04</b>
+              <span>逐页生成</span>
             </li>
           </ol>
 
@@ -2779,12 +2768,13 @@ export function WorkspaceApp() {
                   <h2 id="summary-title">视觉风格确认</h2>
                 </div>
                 <button
-                  className="quiet-button"
+                  className="visual-style-regenerate-button"
                   type="button"
                   disabled={Boolean(busyMessage)}
                   onClick={() => void retryVisualStyles()}
                 >
-                  重新生成
+                  <span aria-hidden="true">↻</span>
+                  <span>重新生成</span>
                 </button>
               </div>
               <p className="visual-style-intro">
@@ -2826,10 +2816,9 @@ export function WorkspaceApp() {
                         </span>
                         <span className="visual-style-swatches">
                           {swatches.map(([label, color]) => (
-                            <span key={label} title={`${label} ${color}`}>
+                            <span key={label} title={`${label}色`}>
                               <i style={{ backgroundColor: color }} />
                               <small>{label}</small>
-                              <code>{color}</code>
                             </span>
                           ))}
                         </span>
