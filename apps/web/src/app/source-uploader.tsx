@@ -73,8 +73,10 @@ function stageLabel(source: SourceState | null, phase: Phase): string {
 
 export function SourceUploader({
   onSourceReady,
+  variant = "card",
 }: {
   onSourceReady?: (source: SourceState) => void;
+  variant?: "card" | "compact";
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [source, setSource] = useState<SourceState | null>(null);
@@ -222,6 +224,52 @@ export function SourceUploader({
   };
 
   const busy = ["hashing", "uploading", "processing"].includes(phase);
+
+  if (variant === "compact") {
+    const compactLabel = busy
+      ? "正在处理文档"
+      : source?.status === "parsed"
+        ? source.filename
+        : "上传文档";
+    return (
+      <div className="compact-uploader">
+        <input
+          ref={inputRef}
+          className="sr-only"
+          id="source-file-compact"
+          aria-label="选择主文档"
+          type="file"
+          accept={ACCEPTED.join(",")}
+          onChange={onFile}
+          disabled={busy}
+        />
+        <button
+          className="compact-upload-button"
+          type="button"
+          disabled={busy}
+          title={source?.filename ?? "支持 DOCX、PDF、PPTX 和 HTML"}
+          onClick={() => inputRef.current?.click()}
+        >
+          <span aria-hidden="true">＋</span>
+          <span>{compactLabel}</span>
+        </button>
+        {phase !== "idle" ? (
+          <span
+            className={`compact-upload-status status-${phase}`}
+            role={phase === "error" ? "alert" : "status"}
+          >
+            {error ?? stageLabel(source, phase)}
+            {source?.retryable ? (
+              <button type="button" onClick={() => void retry()}>
+                重试
+              </button>
+            ) : null}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <section className="uploader-card" aria-labelledby="upload-title">
       <div className="card-heading">

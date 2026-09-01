@@ -348,20 +348,18 @@
       .step strong { display: block; color: inherit; font-size: 13px; margin-bottom: 4px; }
       .step.done { border-color: var(--success); color: var(--success); }
       .step.active { border-color: var(--blue); color: var(--ink); }
-      .intent-card, .story-card, .outline-card, .side-card {
+      .intent-card, .outline-card, .side-card {
         border: 1px solid var(--line);
         background: var(--paper-strong);
         border-radius: var(--radius);
       }
-      .story-card { padding: 22px 24px; margin-bottom: 14px; }
       .card-eyebrow { color: var(--blue-dark); font-weight: 750; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-      .story-line { margin: 13px 0 9px; font-family: Georgia, "Songti SC", serif; font-size: 25px; line-height: 1.4; }
-      .story-note { color: var(--muted); font-size: 13px; }
       .intent-card { padding: 22px 24px; margin-bottom: 14px; }
       .intent-head, .outline-section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
       .intent-head h2, .outline-section-head h2 { margin: 0; font-size: 19px; }
-      .intent-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+      .intent-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
       .field { display: grid; gap: 7px; }
+      .field-wide { grid-column: 1 / -1; }
       .field span { font-size: 12px; color: var(--muted); font-weight: 700; }
       .field input, .field select, .field textarea {
         width: 100%;
@@ -646,6 +644,7 @@
         .work-main { padding: 18px 14px 122px; }
         .stepper { overflow-x: auto; grid-template-columns: repeat(4, 160px); }
         .intent-grid { grid-template-columns: 1fr; }
+        .field-wide { grid-column: auto; }
         .outline-card { grid-template-columns: 42px minmax(0,1fr); }
         .outline-actions { grid-column: 2; }
         .sticky-action { min-height: 104px; flex-direction: column; gap: 7px; padding: 10px 14px; }

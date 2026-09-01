@@ -27,3 +27,5 @@ apps/web/node_modules.broken-*/
 exports/
 projects/
 tests/输出PPT记录/
+/SlidesGen-Bench/
+/tests/参考论文/

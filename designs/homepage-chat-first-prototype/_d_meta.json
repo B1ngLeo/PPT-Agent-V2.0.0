@@ -1,0 +1,67 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "首页 Chat-first 改版": {
+      "versions": [
+        {
+          "path": "homepage-prototype.html",
+          "createdAt": "2026-08-30T07:58:42.823Z",
+          "status": "changes-requested",
+          "subtitle": "参考 WPS AIPPT 的居中创作台与模板画廊",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        },
+        {
+          "path": "homepage-prototype-v2.html",
+          "createdAt": "2026-08-30T08:15:42.002Z",
+          "status": "changes-requested",
+          "subtitle": "V2：按批注精简结构，并采用原原型的暖纸色、蓝色与衬线标题",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        },
+        {
+          "path": "homepage-prototype-v3.html",
+          "createdAt": "2026-08-30T08:21:41.496Z",
+          "status": "changes-requested",
+          "subtitle": "V3：绿色品牌体系、标题字形优化、移除历史图标",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        },
+        {
+          "path": "homepage-prototype-v4.html",
+          "createdAt": "2026-08-30T08:27:37.651Z",
+          "status": "needs-review",
+          "subtitle": "V4：精简生成按钮与模板卡片信息，优化上传模板入口",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        }
+      ]
+    },
+    "首页标题字体三版方案": {
+      "versions": [
+        {
+          "path": "title-font-options.html",
+          "createdAt": "2026-08-30T09:00:06.100Z",
+          "status": "approved",
+          "subtitle": "已选 A 新中式雅宋，并应用至真实首页",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-08-30T07:58:42.826Z",
+  "updatedAt": "2026-08-30T09:04:47.102Z"
+}

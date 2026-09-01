@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="design_doc_mode" content="canvas" />
+    <title>即刻AI-PPT · 首页标题字体三版方案</title>
+    <style>
+      :root {
+        --paper: #f4f1e9;
+        --paper-strong: #fffef9;
+        --ink: #17251f;
+        --muted: #8b969f;
+        --accent: #1e6b4d;
+        --accent-deep: #164f39;
+        --accent-soft: rgba(137, 178, 89, 0.32);
+        --line: rgba(23, 34, 29, 0.13);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+
+      button,
+      textarea {
+        font: inherit;
+      }
+
+      .title-option {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        grid-template-rows: 40px 1fr;
+        overflow: hidden;
+        color: var(--ink);
+        background: var(--paper);
+      }
+
+      .option-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px;
+        border-bottom: 1px solid rgba(23, 34, 29, 0.1);
+        background: rgba(244, 241, 233, 0.94);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .option-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .option-mark {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        color: #c9ec86;
+        background: #17221d;
+        box-shadow: 0 4px 10px rgba(23, 34, 29, 0.16);
+        font-size: 11px;
+      }
+
+      .option-brand strong {
+        color: var(--accent);
+      }
+
+      .option-account {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--ink);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .option-account span:last-child {
+        width: 25px;
+        height: 25px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: white;
+        background: var(--accent);
+        font-size: 9px;
+      }
+
+      .option-main {
+        display: grid;
+        justify-items: center;
+        align-content: start;
+        padding: 24px 18px 18px;
+      }
+
+      .option-title {
+        margin: 0;
+        color: var(--ink);
+        line-height: 1.05;
+        white-space: nowrap;
+        text-rendering: optimizeLegibility;
+      }
+
+      .option-title span {
+        position: relative;
+        display: inline-block;
+        color: var(--accent);
+      }
+
+      .option-a .option-title {
+        font-family:
+          "STZhongsong", "Songti SC", "Noto Serif SC", SimSun, serif;
+        font-size: 34px;
+        font-weight: 500;
+        letter-spacing: -0.055em;
+      }
+
+      .option-a .option-title span {
+        margin-left: 0.02em;
+        font-weight: 700;
+      }
+
+      .option-a .option-title span::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        right: -1px;
+        bottom: 2px;
+        left: -1px;
+        height: 5px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+      }
+
+      .option-b .option-title {
+        font-family:
+          "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+        font-size: 32px;
+        font-weight: 500;
+        letter-spacing: -0.075em;
+      }
+
+      .option-b .option-title span {
+        margin-left: 0.045em;
+        font-weight: 800;
+        letter-spacing: -0.085em;
+        text-shadow: 0 8px 22px rgba(30, 107, 77, 0.1);
+      }
+
+      .option-b .option-title span::after {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        right: -4px;
+        bottom: 1px;
+        left: -2px;
+        height: 10px;
+        background: linear-gradient(
+          90deg,
+          rgba(137, 178, 89, 0.12),
+          rgba(137, 178, 89, 0.4)
+        );
+      }
+
+      .option-c .option-title {
+        font-family: "KaiTi", "Kaiti SC", "STKaiti", cursive;
+        font-size: 36px;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+
+      .option-c .option-title span {
+        margin-left: 0.035em;
+        color: var(--accent-deep);
+        font-weight: 700;
+        letter-spacing: -0.055em;
+        transform: translateY(-0.015em);
+      }
+
+      .option-c .option-title span::before {
+        content: "";
+        position: absolute;
+        top: 5px;
+        bottom: 4px;
+        left: -0.15em;
+        width: 2px;
+        border-radius: 999px;
+        background: rgba(30, 107, 77, 0.25);
+      }
+
+      .option-composer {
+        width: 100%;
+        min-height: 112px;
+        display: grid;
+        grid-template-rows: 1fr auto;
+        margin-top: 22px;
+        padding: 12px 9px 9px 12px;
+        border: 1px solid var(--line);
+        border-left: 3px solid var(--accent);
+        border-radius: 17px;
+        background: rgba(255, 254, 249, 0.96);
+        box-shadow: 0 15px 34px rgba(39, 51, 44, 0.1);
+      }
+
+      .option-placeholder {
+        padding: 0 4px;
+        color: var(--muted);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 9px;
+        line-height: 1.6;
+      }
+
+      .option-toolbar,
+      .option-tools,
+      .option-modes {
+        display: flex;
+        align-items: center;
+      }
+
+      .option-toolbar {
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .option-tools {
+        gap: 7px;
+      }
+
+      .option-upload {
+        min-height: 28px;
+        padding: 0 8px;
+        border: 1px solid #d8d7ce;
+        border-radius: 8px;
+        color: var(--ink);
+        background: #fffefa;
+        font-size: 8px;
+        font-weight: 750;
+      }
+
+      .option-modes {
+        padding: 2px;
+        border-radius: 8px;
+        background: #e9e7df;
+      }
+
+      .option-modes span {
+        min-height: 27px;
+        display: grid;
+        place-items: center;
+        padding: 0 6px;
+        border-radius: 6px;
+        color: #6c756f;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 8px;
+        font-weight: 700;
+      }
+
+      .option-modes span:first-child {
+        color: var(--ink);
+        background: #fffefa;
+        box-shadow: 0 1px 3px rgba(23, 34, 29, 0.1);
+      }
+
+      .option-generate {
+        min-width: 70px;
+        min-height: 29px;
+        border: 0;
+        border-radius: 9px;
+        color: white;
+        background: var(--accent);
+        box-shadow: 0 7px 16px rgba(30, 107, 77, 0.2);
+        font-size: 9px;
+        font-weight: 800;
+      }
+
+      .option-signature {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 13px;
+        color: rgba(23, 37, 31, 0.56);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 8px;
+      }
+
+      .option-signature strong {
+        color: var(--accent-deep);
+        font-size: 9px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script
+      src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+      integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+      integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+      integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+      crossorigin="anonymous"
+    ></script>
+    <script type="text/babel" src="title-design-canvas.jsx"></script>
+    <script type="text/babel" src="title-font-options.jsx"></script>
+  </body>
+</html>

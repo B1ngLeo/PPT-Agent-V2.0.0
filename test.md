@@ -480,3 +480,23 @@ Final SVG QA 的两项非阻断警告：P01 有一处不支持文本几何而无
 - 固定提交 `a9d71b9` 的三个网络有效完整生成样本（上一节成功基线 + 两个追加有效样本）为 **3/3 = 100%**，均达到 0 blocking 并成功发布。
 - 若不剔除已确认的本地网络中断，`a9d71b9` 总 Job 尝试为 3/4 成功，即 75%。
 - 功能稳定性结论由“整体不达标”修正为：**ISSUE04 生成与阻断门禁链路在三个网络有效样本中稳定通过；性能成本仍有明显波动**。三个成功 Workflow 耗时约 24:45、43:06、34:11，Token 约 5.53M、7.46M、7.28M。
+
+## 离线评测集 1.1：Qwen3.8 Max（2026-08-31）
+
+### 配置与结果
+
+- Provider 配置：`QWEN_MODEL=qwen3.8-max`，`PROVIDER_CONFIG_VERSION=qwen3.8-max-openai-token-plan-v1`；Runtime 容器强制重建后核验生效。
+- 输入：`tests/OpenAI_GPT-5.6_发布公告_中文版_2026-07-09.docx`；Prompt：`根据GPT5.6的官方公告做一份6页的PPT`。
+- Generation Job：`01M1BYFKJ8VM8EVMBQSJBENRG7`；Workflow Run：`01KQ7N2TH3YXDB90NB6H84MGY1`。
+- 结果：`succeeded`，6/6 ready，6 页均 attempt 1，publication v1；Workflow 墙钟约 **26 分 40 秒**。
+- Agent：60 turns、38 tool calls、0 tool failure、`repairCount=18`。
+- Token：输入 4,985,797、输出 64,695、合计 **5,050,492**；`renderSeconds=1583`；图片与视觉复核调用均为 0。
+
+### QA 与独立验收
+
+- 总体 QA、内容门禁和 Package QA 全部通过；Final SVG QA 为 0 error、0 blocking、1 warning。
+- 唯一告警是 P02 使用复杂 `tspan` 文本几何，自动检查器无法证明根 viewBox bounds；逐页原尺寸渲染检查确认未越界、未裁切。
+- Package QA：6 页、136 个可编辑文本形状、42 个原生可编辑形状、0 个整页图片、0 个媒体部件、0 个 missing relationship/external relationship/finding。
+- 本地独立渲染通过；`slides_test.py` 报告 `Test passed. No overflow detected.`。
+- PPTX：`tests/输出PPT记录/qwen3.8-max-eval-1.1-20260831.pptx`，28,717 bytes，SHA-256 `000b3e96036cfeb26bd3c2ba06af64845b59fa56a832ba13c48779a0b48b0404`。
+- 同目录保留 Final SVG QA、Package QA、QA Report、Workflow Result、Manifest、Design Spec 与 Spec Lock 证据文件。

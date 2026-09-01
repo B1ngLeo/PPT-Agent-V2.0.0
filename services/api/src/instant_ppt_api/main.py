@@ -52,7 +52,7 @@ def create_app(
     resolved_factory = session_factory or create_session_factory(
         create_domain_engine(resolved_settings.database_url)
     )
-    application = FastAPI(title="即刻AI-PPT API", version="0.0.0")
+    application = FastAPI(title="即刻AI-PPT API", version="2.1.0")
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[resolved_settings.web_origin],

@@ -685,7 +685,7 @@ def create_observability(
         resource=Resource.create(
             {
                 "service.name": service_name,
-                "service.version": "0.0.0",
+                "service.version": "2.1.0",
                 "deployment.environment.name": os.getenv("APP_ENVIRONMENT", "local"),
             }
         )

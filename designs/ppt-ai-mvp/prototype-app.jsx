@@ -147,26 +147,18 @@ function WorkspaceScreen({
         <section className="work-main">
           <div className="work-column">
             <Stepper active={2} />
-            <article className="story-card">
-              <div className="card-eyebrow">Storyline</div>
-              <div className="story-line">市场窗口 → 产品与渠道 → 九十天行动</div>
-              <div className="story-note">递进式故事：先证明机会，再给出打法，最后落到资源与行动。</div>
-            </article>
-
             <section className="intent-card" aria-labelledby="intent-heading">
               <div className="intent-head">
                 <div><div className="card-eyebrow">Intent spec</div><h2 id="intent-heading">确认创作意图</h2></div>
                 <span className="badge blue">AI 已根据输入补全</span>
               </div>
               <div className="intent-grid">
-                <label className="field"><span>演示标题</span><input value={intent.title} onChange={(event) => setIntent({ ...intent, title: event.target.value })} /></label>
-                <label className="field"><span>目标受众</span><select value={intent.audience} onChange={(event) => setIntent({ ...intent, audience: event.target.value })}><option>董事会 / 高管</option><option>业务团队</option><option>客户 / 合作伙伴</option><option>公开演讲</option></select></label>
-                <label className="field"><span>建议页数</span><select value={intent.pages} onChange={(event) => setIntent({ ...intent, pages: event.target.value })}><option>8 页</option><option>12 页</option><option>16 页</option><option>智能适配</option></select></label>
                 <label className="field"><span>制作目标</span><select value={intent.goal} onChange={(event) => setIntent({ ...intent, goal: event.target.value })}><option>策略决策</option><option>经营复盘</option><option>培训讲解</option><option>客户提案</option></select></label>
-                <label className="field"><span>内容深度</span><select value={intent.depth} onChange={(event) => setIntent({ ...intent, depth: event.target.value })}><option>结论优先</option><option>平衡</option><option>研究型</option></select></label>
+                <label className="field"><span>目标受众</span><select value={intent.audience} onChange={(event) => setIntent({ ...intent, audience: event.target.value })}><option>董事会 / 高管</option><option>业务团队</option><option>客户 / 合作伙伴</option><option>公开演讲</option></select></label>
+                <label className="field"><span>页数规模</span><select value={intent.pages} onChange={(event) => setIntent({ ...intent, pages: event.target.value })}><option>8 页</option><option>12 页</option><option>16 页</option><option>智能适配</option></select></label>
                 <label className="field"><span>配图偏好</span><select value={intent.visual} onChange={(event) => setIntent({ ...intent, visual: event.target.value })}><option>数据图表优先</option><option>照片与插画</option><option>少配图</option></select></label>
+                <label className="field field-wide"><span>补充说明</span><textarea value={intent.notes} onChange={(event) => setIntent({ ...intent, notes: event.target.value })}></textarea></label>
               </div>
-              <label className="field" style={{ marginTop: 12 }}><span>补充要求</span><textarea value={intent.notes} onChange={(event) => setIntent({ ...intent, notes: event.target.value })}></textarea></label>
               {(prompt || attachment) && <div className="inspector-note">来源：{attachment ? attachment : "主题描述"} · 原始要求已保留，可随时回看。</div>}
             </section>
 
@@ -359,7 +351,6 @@ function App() {
     audience: "董事会 / 高管",
     pages: "12 页",
     goal: "策略决策",
-    depth: "结论优先",
     visual: "数据图表优先",
     notes: "避免空泛趋势；每个关键结论注明证据来源；结束页明确需要董事会确认的三项决策。",
   });
