@@ -267,7 +267,7 @@ def build_default_workflow_request(
                 "maxCompletionTokensPerTurn": int(
                     os.getenv("PRESENTATION_MAX_COMPLETION_TOKENS_PER_TURN", "40000")
                 ),
-                "maxTurns": 120,
+                "maxTurns": 200,
                 # Long decks naturally consume more cumulative tokens. Keep usage observable,
                 # while relying on per-turn, turn-count, cost, and timeout guards for safety.
                 "maxTokens": None,
